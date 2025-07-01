@@ -1151,8 +1151,8 @@
       position: absolute;
       top: 2px;
       right: 2px;
-      background: #28a745;
-      color: white;
+      background: #ffc107;
+      color: #333;
       padding: 2px 5px;
       border-radius: 8px;
       font-size: 10px;
@@ -1163,7 +1163,8 @@
   }
 
   .stock-badge.low-stock {
-      background: #dc3545;
+      background: #ffc107;
+      color: #333;
   }
 
   .stock-badge.medium-stock {
