@@ -53,7 +53,7 @@
       const result = await response.json();
       
       if (result.success) {
-        products = result.data;
+        products = result.data.map(p => ({...p, imageError: false}));
         if (products.length === 0) {
           error = '검색 결과가 없습니다.';
         }
@@ -191,14 +191,14 @@
 </svelte:head>
 
 {#if authenticated}
-<div class="page">
-  <!-- 헤더 - 기존 스타일과 동일 -->
-  <header class="header">
-    <h1>재고 관리</h1>
-  </header>
+<div class="stock-container">
+  <!-- 페이지 타이틀 -->
+  <div class="page-title">
+    <h1>제품검색 & 재고관리</h1>
+  </div>
 
-  <!-- 컨텐츠 -->
-  <main class="content">
+  <!-- 메인 컨텐츠 -->
+  <div class="main-content">
     <!-- 검색 폼 -->
     <form class="search-form">
       <!-- 단종 구분 -->
@@ -214,17 +214,17 @@
                 bind:group={discontinuedFilter} 
                 value="normal"
               >
-              <label for="normal_discontinued">정상</label>
+              <label for="normal_discontinued" class="radio-label">정상</label>
             </div>
             <div class="radio-option">
               <input 
                 type="radio" 
                 name="discontinued_filter" 
-                id="discontinued_only" 
+                id="only_discontinued" 
                 bind:group={discontinuedFilter} 
-                value="discontinued"
+                value="only"
               >
-              <label for="discontinued_only">단종</label>
+              <label for="only_discontinued" class="radio-label">단종</label>
             </div>
             <div class="radio-option">
               <input 
@@ -234,16 +234,16 @@
                 bind:group={discontinuedFilter} 
                 value="all"
               >
-              <label for="all_discontinued">전체</label>
+              <label for="all_discontinued" class="radio-label">전체</label>
             </div>
           </div>
         </fieldset>
       </div>
 
-      <!-- 검색 필터 -->
+      <!-- 검색 구분 -->
       <div class="form-group">
         <fieldset class="radio-group">
-          <legend>검색 필터:</legend>
+          <legend>검색 구분:</legend>
           <div class="radio-options">
             <div class="radio-option">
               <input 
@@ -253,7 +253,7 @@
                 bind:group={searchType} 
                 value="name"
               >
-              <label for="search_name">제품 검색</label>
+              <label for="search_name" class="radio-label">제품명</label>
             </div>
             <div class="radio-option">
               <input 
@@ -263,130 +263,127 @@
                 bind:group={searchType} 
                 value="code"
               >
-              <label for="search_code">코드 검색</label>
+              <label for="search_code" class="radio-label">제품코드</label>
             </div>
           </div>
         </fieldset>
       </div>
 
       <!-- 검색 입력 -->
-      <div class="form-group search-input-group">
-        <input
-          type="text"
-          name="text1"
-          id="searchInput"
-          class="form-control"
-          placeholder="검색어를 입력하세요"
-          bind:value={searchTerm}
-          on:keydown={handleKeydown}
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="off"
-          spellcheck="false"
-        >
-        {#if searchTerm}
-          <button
-            type="button"
-            class="clear-btn"
-            on:click={clearSearch}
+      <div class="form-group">
+        <div class="search-input-group">
+          <div class="input-wrapper">
+            <input 
+              type="text" 
+              id="searchInput"
+              class="form-control search-input" 
+              placeholder={searchType === 'name' ? '제품명을 입력하세요' : '제품코드를 입력하세요'}
+              bind:value={searchTerm}
+              on:keydown={handleKeydown}
+              autocomplete="off"
+            >
+            {#if searchTerm}
+              <button type="button" class="clear-btn" on:click={clearSearch}>✕</button>
+            {/if}
+          </div>
+          <button 
+            type="button" 
+            class="btn-search" 
+            on:click={handleSearch}
+            disabled={loading}
           >
-            ✕
+            {#if loading}
+              <span class="loading-spinner">⟳</span> 검색중...
+            {:else}
+              🔍 검색
+            {/if}
           </button>
-        {/if}
-        <button
-          type="button"
-          class="btn btn-search"
-          on:click={handleSearch}
-          disabled={loading}
-        >
-          {#if loading}
-            <span class="loading-spinner">⟳</span>
-          {:else}
-            검색
-          {/if}
-        </button>
+        </div>
       </div>
     </form>
 
     <!-- 에러 메시지 -->
     {#if error}
-      <div class="error-message">
-        {error}
+      <div class="alert alert-danger">
+        ⚠️ {error}
       </div>
     {/if}
 
-    <!-- 제품 목록 -->
+    <!-- 제품 카드 목록 -->
     <div class="cards-container">
       {#if products.length > 0}
-        {#each products as product}
-          <div class="product-card {product.discontinued ? 'discontinued' : ''}" data-product-code={product.code}>
+        {#each products as product (product.code)}
+          <div class="product-card {product.discontinued ? 'discontinued' : ''} {product.stock === 0 ? 'highlight-info' : ''}">
             <!-- 제품 이미지 -->
             <div class="product-image">
-              <img
-                src="https://image.kungkungne.synology.me/{product.code}_1.jpg"
-                alt={product.name}
-                class="product-img {product.discontinued ? 'discontinued-image' : ''}"
-                loading="lazy"
-                on:error={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextElementSibling.style.display = 'flex';
-                }}
-              />
-              <div class="no-image" style="display: none;">
-                이미지 없음
-              </div>
+              {#if !product.imageError}
+                <img
+                  src="https://image.kungkungne.synology.me/{product.code}_1.jpg"
+                  alt={product.name}
+                  class="product-img {product.discontinued ? 'discontinued-image' : ''}"
+                  loading="lazy"
+                  on:error={() => {
+                    console.log('이미지 로드 실패:', product.code);
+                    product.imageError = true;
+                    products = [...products];
+                  }}
+                />
+              {/if}
+              {#if product.imageError}
+                <div class="no-image">
+                  이미지 없음
+                </div>
+              {/if}
             </div>
 
             <!-- 제품 정보 -->
-            <div class="product-info {product.discontinued ? 'highlight-info' : ''}">
+            <div class="product-info">
               <div class="product-code">{product.code}</div>
               <div class="product-name">{product.name}</div>
               <div class="product-cost">원가: {new Intl.NumberFormat('ko-KR').format(product.cost)}원</div>
-              <div class="product-price">판매가: {new Intl.NumberFormat('ko-KR').format(product.price)}원</div>
-              
-              <!-- 현재고 표시 -->
-              <div class="current-stock-display">
-                현재고: <span class="stock-amount {product.stock === 0 ? 'zero-stock' : product.stock < 10 ? 'low-stock' : 'good-stock'}">{product.stock}개</span>
-              </div>
+              <div class="product-price">금액: {new Intl.NumberFormat('ko-KR').format(product.price)}원</div>
             </div>
 
-            <!-- 재고 조정 컨트롤 -->
-            <div class="stock-controls">
-              <div class="stock-adjust-section">
-                <div class="stock-adjust-label">재고 조정:</div>
-                <div class="stock-input-group">
-                  <input
-                    type="number"
-                    class="stock-quantity"
-                    placeholder="±수량"
-                    data-code={product.code}
-                    on:keydown={(e) => handleStockInput(e, product.code)}
-                    inputmode="numeric"
-                  >
-                  <button
-                    type="button"
-                    class="stock-save-btn {adjustingStock.has(product.code) ? 'loading' : ''}"
-                    on:click={() => {
-                      const input = document.querySelector(`input[data-code="${product.code}"]`);
-                      if (input && input.value) {
-                        adjustStock(product.code, input.value);
-                      } else {
-                        alert('수량을 입력해주세요.');
-                      }
-                    }}
-                    disabled={adjustingStock.has(product.code)}
-                  >
-                    {#if adjustingStock.has(product.code)}
-                      <span class="loading-spinner">⟳</span>
-                    {:else}
-                      저장
-                    {/if}
-                  </button>
+            <!-- 재고 정보 영역 -->
+            <div class="stock-info-area">
+              <!-- 재고 조정 컨트롤 -->
+              <div class="stock-controls">
+                <div class="stock-adjust-section">
+                  <div class="stock-adjust-label">재고: {product.stock}개</div>
+                  <div class="stock-input-group">
+                    <input
+                      type="number"
+                      class="stock-quantity"
+                      placeholder="±수량"
+                      data-code={product.code}
+                      on:keydown={(e) => handleStockInput(e, product.code)}
+                      inputmode="numeric"
+                    >
+                    <button
+                      type="button"
+                      class="stock-save-btn {adjustingStock.has(product.code) ? 'loading' : ''}"
+                      on:click={() => {
+                        const input = document.querySelector(`input[data-code="${product.code}"]`);
+                        if (input && input.value) {
+                          adjustStock(product.code, input.value);
+                        } else {
+                          alert('수량을 입력해주세요.');
+                        }
+                      }}
+                      disabled={adjustingStock.has(product.code)}
+                    >
+                      {#if adjustingStock.has(product.code)}
+                        <span class="loading-spinner">⟳</span>
+                      {:else}
+                        저장
+                      {/if}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <!-- 단종 처리 버튼 -->
+            <!-- 단종 처리 버튼 - 맨 아래 오른쪽 -->
             <div class="product-actions">
               <button
                 type="button"
@@ -408,7 +405,7 @@
         </div>
       {/if}
     </div>
-  </main>
+  </div>
 </div>
 
 {:else}
@@ -421,63 +418,57 @@
 {/if}
 
 <style>
-  /* 기존 통합 스타일시트와 동일한 스타일 */
+  /* 기본 리셋 */
   * {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
   }
 
-  body {
+  /* 메인 컨테이너 */
+  .stock-container {
+    width: 100%;
+    max-width: none;
+    background-color: #f5f5f5;
     font-family: 'Malgun Gothic', Arial, sans-serif;
-    background-color: #f8f8f8;
     line-height: 1.6;
     color: #333;
+    min-height: calc(100vh - 140px);
   }
 
-  /* 페이지 레이아웃 - 기존과 동일 */
-  .page {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    background-color: #f8f8f8;
-  }
-
-  .header {
-    background-color: #2a69ac;
-    color: white;
-    padding: 1rem;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .header h1 {
-    font-size: 1.2rem;
-    font-weight: bold;
-    text-align: center;
-    margin: 0;
-  }
-
-  .content {
-    flex: 1;
-    padding: 1rem;
-    width: 100%;
-    margin: 0 auto;
-  }
-
-  /* 폼 스타일 - 기존과 동일 */
-  .search-form {
+  /* 페이지 타이틀 */
+  .page-title {
+    background: #ffffff;
+    border-bottom: 1px solid #dee2e6;
+    padding: 1rem 0;
     margin-bottom: 1.5rem;
-    padding: 1rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+
+  .page-title h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #333;
+    margin: 0;
+    text-align: center;
+  }
+
+  /* 메인 컨텐츠 */
+  .main-content {
+    width: 100%;
+    padding: 0 1rem;
+    max-width: none;
+  }
+
+  /* 검색 폼 */
+  .search-form {
+    width: 100%;
+    margin-bottom: 1.5rem;
+    padding: 1.5rem;
     background-color: #ffffff;
-    border-radius: 12px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05), 
-                0 1px 2px rgba(0, 0, 0, 0.1);
-    border: 1px solid #f3f4f6;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border: 1px solid #dee2e6;
   }
 
   .form-group {
@@ -519,106 +510,90 @@
     height: 0;
   }
 
-  .radio-option label {
+  .radio-label {
     display: block;
-    padding: 0.5rem 0.75rem;
+    padding: 0.6rem 1rem;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    cursor: pointer;
     text-align: center;
     font-size: 0.85rem;
     font-weight: 500;
-    color: #6b7280;
-    background-color: #f3f4f6;
-    border-radius: 8px;
-    cursor: pointer;
+    color: #495057;
     transition: all 0.2s ease;
     user-select: none;
-    white-space: nowrap;
-    min-height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
 
-  .radio-option input[type="radio"]:checked + label {
-    background-color: #2a69ac;
-    color: #ffffff;
-    font-weight: 600;
-    transform: translateY(-1px);
+  .radio-option input[type="radio"]:checked + .radio-label {
+    background: linear-gradient(135deg, #2a69ac 0%, #1e4f7a 100%);
+    color: white;
+    border-color: #2a69ac;
+    box-shadow: 0 2px 4px rgba(42, 105, 172, 0.2);
   }
 
-  .radio-option label:hover {
-    color: #374151;
-    background-color: #e5e7eb;
+  .radio-label:hover {
+    background: #e9ecef;
+    border-color: #ced4da;
   }
 
-  .radio-option input[type="radio"]:checked + label:hover {
-    color: #ffffff;
-    background-color: #1e4f7a;
+  .radio-option input[type="radio"]:checked + .radio-label:hover {
+    background: linear-gradient(135deg, #1e4f7a 0%, #164063 100%);
   }
 
   /* 검색 입력 그룹 */
   .search-input-group {
-    display: flex !important;
-    flex-direction: row !important;
-    gap: 0.5rem;
-    align-items: center;
-    flex-wrap: nowrap !important;
+    display: flex;
+    gap: 0.75rem;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .input-wrapper {
+    flex: 1;
     position: relative;
+    min-width: 0;
   }
 
   .form-control {
     width: 100%;
-    padding: 0.65rem 0.875rem;
-    border: 2px solid #e5e7eb;
+    padding: 0.65rem 1rem;
+    border: 1px solid #ced4da;
     border-radius: 8px;
     font-size: 0.95rem;
     background-color: #ffffff;
     transition: all 0.2s ease;
-    min-height: 40px;
-    flex: 1 !important;
-    margin: 0 !important;
   }
 
   .form-control:focus {
     outline: none;
     border-color: #2a69ac;
-    background-color: #fafbfc;
-    box-shadow: 0 0 0 3px rgba(42, 105, 172, 0.1);
-    transform: translateY(-1px);
+    box-shadow: 0 0 0 2px rgba(42, 105, 172, 0.1);
   }
 
   .clear-btn {
     position: absolute;
-    right: 100px;
+    right: 8px;
     top: 50%;
     transform: translateY(-50%);
-    background: none;
+    background: #6c757d;
+    color: white;
     border: none;
-    color: #9ca3af;
-    font-size: 18px;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
     cursor: pointer;
-    padding: 4px;
-    z-index: 2;
-  }
-
-  .clear-btn:hover {
-    color: #6b7280;
-  }
-
-  .btn {
-    padding: 0.75rem 1.5rem;
-    border: none;
-    border-radius: 4px;
-    font-size: 1rem;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-block;
-    text-align: center;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: all 0.3s ease;
   }
 
   .btn-search {
     background: linear-gradient(135deg, #2a69ac 0%, #1e4f7a 100%);
     color: white;
+    border: none;
     border-radius: 8px;
     font-weight: 600;
     font-size: 0.95rem;
@@ -628,8 +603,9 @@
     transition: all 0.2s ease;
     letter-spacing: 0.025em;
     white-space: nowrap;
-    min-width: 80px;
-    flex-shrink: 0 !important;
+    min-width: 100px;
+    flex-shrink: 0;
+    cursor: pointer;
   }
 
   .btn-search:hover:not(:disabled) {
@@ -639,26 +615,44 @@
   }
 
   .btn-search:disabled {
-    opacity: 0.5;
+    opacity: 0.6;
     cursor: not-allowed;
+    transform: none;
+  }
+
+  /* 알림 메시지 - 헤더와 동일한 가로 크기 */
+  .alert {
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 0 1rem 1rem 1rem; /* 카드와 동일한 마진 */
+    font-weight: 500;
+  }
+
+  .alert-danger {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
   }
 
   /* 카드 컨테이너 */
   .cards-container {
+    width: 100%;
     margin-top: 1rem;
   }
 
-  /* 제품 카드 스타일 */
+  /* 제품 카드 */
   .product-card {
     display: flex;
     margin-bottom: 0.75rem;
-    border: 1px solid #ddd;
+    border: 1px solid #dee2e6;
     border-radius: 8px;
     overflow: hidden;
     background-color: #fff;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     position: relative;
+    width: 100%;
+    min-height: 130px; /* 이미지 높이에 맞춰 최소 높이 설정 */
   }
 
   .product-card:hover {
@@ -672,17 +666,17 @@
   }
 
   .product-image {
-    flex: 0 0 120px;
-    height: 120px;
+    flex-shrink: 0;
+    width: 120px;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     background-color: #f9f9f9;
   }
 
   .product-img {
-    max-width: 100%;
-    max-height: 100%;
+    width: 120px;
+    height: 120px;
     object-fit: contain;
   }
 
@@ -696,9 +690,9 @@
     align-items: center;
     justify-content: center;
     width: 100%;
-    height: 100%;
+    height: 120px;
     color: #aaa;
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     text-align: center;
     background-color: #f0f0f0;
     border: 1px dashed #ddd;
@@ -706,10 +700,11 @@
 
   .product-info {
     flex: 1;
-    padding: 0.75rem;
+    padding: 1rem;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    min-width: 0;
   }
 
   .highlight-info {
@@ -729,6 +724,7 @@
     margin: 0.25rem 0;
     font-weight: bold;
     color: #333;
+    word-break: break-word;
   }
 
   .product-cost, .product-price {
@@ -745,64 +741,49 @@
   .current-stock-display {
     font-size: 0.9rem;
     color: #666;
-    margin-top: 0.25rem;
+    margin-top: 0.5rem;
     font-weight: 500;
   }
 
-  .stock-amount {
-    font-weight: bold;
-  }
 
-  .stock-amount.zero-stock {
-    color: #dc2626;
-  }
 
-  .stock-amount.low-stock {
-    color: #d97706;
-  }
-
-  .stock-amount.good-stock {
-    color: #059669;
-  }
-
-  /* 재고 컨트롤 */
+  /* 재고 컨트롤 - 크기 증가 */
   .stock-controls {
-    position: absolute;
-    top: 10px;
-    right: 10px;
+    position: static;
     background: rgba(255, 255, 255, 0.95);
-    border-radius: 8px;
-    padding: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    border-radius: 4px;
+    padding: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     border: 1px solid #ddd;
-    min-width: 160px;
+    min-width: 140px; /* 가로 크기 증가 */
+    margin-bottom: 0.2rem;
   }
 
   .stock-adjust-section {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   .stock-adjust-label {
-    font-size: 12px;
-    color: #666;
-    margin-bottom: 5px;
+    font-size: 10px; /* 폰트 크기 증가 */
+    color: #333;
+    margin-bottom: 4px;
     text-align: center;
-    font-weight: 500;
+    font-weight: 600;
   }
 
   .stock-input-group {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
   }
 
   .stock-quantity {
-    width: 80px;
+    width: 65px; /* 입력 필드 크기 증가 */
     padding: 4px;
     border: 1px solid #ddd;
-    border-radius: 4px;
+    border-radius: 2px;
     text-align: center;
-    font-size: 14px;
+    font-size: 12px;
   }
 
   .stock-quantity:focus {
@@ -814,11 +795,11 @@
     background: #28a745;
     color: white;
     border: none;
-    padding: 4px 12px;
-    border-radius: 4px;
+    padding: 4px 10px; /* 버튼 크기 증가 */
+    border-radius: 2px;
     cursor: pointer;
-    font-size: 12px;
-    min-width: 50px;
+    font-size: 10px;
+    min-width: 45px; /* 최소 크기 증가 */
     font-weight: 500;
     transition: all 0.2s ease;
   }
@@ -832,86 +813,69 @@
     cursor: not-allowed;
   }
 
-  /* 단종 처리 버튼 */
+  /* 단종 처리 버튼 - 맨 아래 오른쪽 */
   .product-actions {
     position: absolute;
     bottom: 8px;
     right: 8px;
-    z-index: 5;
   }
 
   .discontinued-btn {
-    background-color: #f3f4f6;
-    color: #374151;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    padding: 0.4rem 0.8rem;
-    font-size: 0.75rem;
-    font-weight: 500;
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
     cursor: pointer;
+    font-size: 0.6rem;
+    font-weight: 500;
     transition: all 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
     white-space: nowrap;
   }
 
   .discontinued-btn:hover {
-    background-color: #e5e7eb;
-    border-color: #9ca3af;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background: #c82333;
   }
 
   .discontinued-btn.active {
-    background-color: #dc3545;
-    color: white;
-    border-color: #c82333;
-    box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+    background: #28a745;
   }
 
   .discontinued-btn.active:hover {
-    background-color: #c82333;
-    border-color: #bd2130;
-    box-shadow: 0 3px 6px rgba(220, 53, 69, 0.4);
+    background: #218838;
   }
 
-  /* 에러 메시지 */
-  .error-message {
-    background-color: #fee;
-    border: 1px solid #fcc;
-    color: #c66;
-    padding: 1rem;
-    border-radius: 8px;
-    margin: 1rem 0;
-  }
-
-  /* 검색 결과 없음 */
+  /* 결과 없음 - 헤더와 동일한 가로 크기 */
   .no-results {
     text-align: center;
-    padding: 2rem;
-    color: #666;
+    padding: 3rem 2rem;
+    color: #6c757d;
+    font-size: 1.1rem;
+    margin: 0 1rem; /* 카드와 동일한 마진 */
     background-color: white;
     border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   }
 
-  /* 로딩 컨테이너 */
+  /* 로딩 */
   .loading-container {
     display: flex;
-    align-items: center;
     justify-content: center;
+    align-items: center;
     min-height: 100vh;
-    background: #f8f8f8;
+    background-color: #f8f9fa;
   }
 
   .loading-content {
     text-align: center;
+    color: #6c757d;
   }
 
-  /* 로딩 스피너 */
   .loading-spinner {
     display: inline-block;
     animation: spin 1s linear infinite;
-    font-size: 20px;
+    font-size: 2rem;
+    margin-bottom: 1rem;
   }
 
   @keyframes spin {
@@ -919,51 +883,306 @@
     100% { transform: rotate(360deg); }
   }
 
-  /* 입력 필드 최적화 */
-  input[type="number"] {
-    -webkit-appearance: none;
-    -moz-appearance: textfield;
-  }
-
-  input[type="number"]::-webkit-outer-spin-button,
-  input[type="number"]::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-
-  /* 모바일 반응형 */
+  /* 모바일 최적화 - 가로 레이아웃 유지 */
   @media (max-width: 768px) {
-    .content {
-      padding: 0.75rem;
+    .stock-container {
+      min-height: calc(100vh - 120px);
     }
 
-    /* 모바일에서도 오른쪽 배치 유지 */
+    .page-title {
+      padding: 0.75rem 0;
+      margin-bottom: 1rem;
+    }
+
+    .page-title h1 {
+      font-size: 1.25rem;
+    }
+
+    .main-content {
+      padding: 0;
+    }
+
+    .search-form {
+      margin: 0 0.5rem 1.5rem 0.5rem; /* 양쪽에 최소 마진 추가 */
+      padding: 1rem;
+    }
+
+    .cards-container {
+      padding: 0 0.5rem; /* 양쪽에 최소 패딩 추가 */
+    }
+
+    .alert {
+      margin: 0 0.5rem 1rem 0.5rem; /* 알림 메시지도 동일한 마진 */
+    }
+
+    .no-results {
+      margin: 0 0.5rem; /* 결과 없음도 동일한 마진 */
+    }
+
+    .radio-options {
+      gap: 1px;
+    }
+
+    .radio-label {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    .search-input-group {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .btn-search {
+      width: 100%;
+    }
+
+    /* 모바일에서도 가로 레이아웃 유지 */
+    .product-card {
+      margin-bottom: 0.5rem;
+    }
+
+    .product-image {
+      width: 80px;
+      height: 100px; /* 높이 조정 */
+    }
+
+    .product-img {
+      width: 80px;
+      height: 100px;
+    }
+
+    .no-image {
+      height: 100px;
+    }
+
+    .product-info {
+      padding: 0.4rem;
+    }
+
+    .product-code {
+      font-size: 0.7rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .product-name {
+      font-size: 0.8rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .product-cost, .product-price {
+      font-size: 0.7rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .stock-info-area {
+      width: 130px; /* 모바일에서 가로 크기 조정 */
+      height: 75px; /* 높이 조정 */
+      padding: 0.3rem;
+    }
+
     .stock-controls {
-      top: 6px;
-      right: 6px;
-      min-width: 140px;
-      padding: 6px;
+      min-width: 120px;
+      padding: 4px;
     }
 
     .stock-adjust-label {
-      font-size: 11px;
+      font-size: 9px;
     }
 
     .stock-quantity {
-      width: 70px;
+      width: 55px;
       padding: 3px;
-      font-size: 13px;
+      font-size: 10px;
     }
 
     .stock-save-btn {
       padding: 3px 8px;
-      font-size: 11px;
-      min-width: 40px;
+      font-size: 9px;
+      min-width: 38px;
     }
 
-    .product-actions {
-      bottom: 6px;
-      right: 6px;
+    .discontinued-btn {
+      padding: 0.15rem 0.3rem;
+      font-size: 0.55rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .page-title {
+      padding: 0.5rem 0;
+    }
+
+    .page-title h1 {
+      font-size: 1.1rem;
+    }
+
+    .main-content {
+      padding: 0;
+    }
+
+    .search-form {
+      margin: 0 0.3rem 1.5rem 0.3rem; /* 더 작은 마진 */
+      padding: 0.75rem;
+    }
+
+    .cards-container {
+      padding: 0 0.3rem; /* 더 작은 패딩 */
+    }
+
+    .alert {
+      margin: 0 0.3rem 1rem 0.3rem; /* 알림 메시지도 동일한 마진 */
+    }
+
+    .no-results {
+      margin: 0 0.3rem; /* 결과 없음도 동일한 마진 */
+    }
+
+    /* 작은 모바일에서도 가로 레이아웃 유지 */
+    .product-image {
+      width: 70px;
+      height: 85px; /* 높이 조정 */
+    }
+
+    .product-img {
+      width: 70px;
+      height: 85px;
+    }
+
+    .no-image {
+      height: 85px;
+    }
+
+    .product-info {
+      padding: 0.3rem;
+    }
+
+    .product-code {
+      font-size: 0.65rem;
+      margin-bottom: 0.15rem;
+    }
+
+    .product-name {
+      font-size: 0.7rem;
+      margin-bottom: 0.15rem;
+    }
+
+    .product-cost, .product-price {
+      font-size: 0.65rem;
+      margin-bottom: 0.15rem;
+    }
+
+    .stock-info-area {
+      width: 110px; /* 작은 화면에서 가로 크기 조정 */
+      height: 65px; /* 높이 조정 */
+      padding: 0.2rem;
+    }
+
+    .stock-controls {
+      min-width: 100px;
+      padding: 3px;
+    }
+
+    .stock-adjust-label {
+      font-size: 8px;
+    }
+
+    .stock-quantity {
+      width: 45px;
+      padding: 2px;
+      font-size: 9px;
+    }
+
+    .stock-save-btn {
+      padding: 2px 6px;
+      font-size: 8px;
+      min-width: 30px;
+    }
+
+    .discontinued-btn {
+      padding: 0.1rem 0.25rem;
+      font-size: 0.5rem;
+    }
+  }
+
+  /* 대형 화면 최적화 - 모바일 기준에서 적당히 확대 */
+  @media (min-width: 1200px) {
+    .main-content {
+      padding: 0;
+    }
+
+    .search-form {
+      margin: 0 2rem 2rem 2rem; /* 양쪽에 적당한 마진 */
+      padding: 2rem;
+    }
+
+    .cards-container {
+      padding: 0 2rem; /* 양쪽에 적당한 패딩 */
+    }
+
+    .product-card {
+      margin-bottom: 1rem;
+    }
+
+    .product-image {
+      width: 120px;
+      height: 140px; /* 높이 증가 */
+    }
+
+    .product-img {
+      width: 120px;
+      height: 140px;
+    }
+
+    .no-image {
+      height: 140px;
+    }
+
+    .product-info {
+      padding: 0.8rem;
+    }
+
+    .product-code {
+      font-size: 0.9rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .product-name {
+      font-size: 1rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .product-cost, .product-price {
+      font-size: 0.9rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .stock-info-area {
+      width: 180px; /* 대형화면에서 가로 크기 증가 */
+      height: 110px; /* 높이 증가 */
+      padding: 0.6rem;
+    }
+
+    .stock-controls {
+      min-width: 160px;
+      padding: 8px;
+    }
+
+    .stock-adjust-label {
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+
+    .stock-quantity {
+      width: 75px;
+      padding: 5px;
+      font-size: 13px;
+    }
+
+    .stock-save-btn {
+      padding: 5px 12px;
+      font-size: 11px;
+      min-width: 55px;
     }
 
     .discontinued-btn {
@@ -972,92 +1191,87 @@
     }
   }
 
-  @media (max-width: 480px) {
-    .search-input-group {
-      flex-direction: column !important;
-      gap: 0.5rem;
+  @media (min-width: 1400px) {
+    .main-content {
+      padding: 0;
     }
 
-    .search-input-group .form-control {
-      width: 100% !important;
+    .search-form {
+      margin: 0 3rem 2rem 3rem; /* 더 큰 마진 */
     }
 
-    .search-input-group .btn-search {
-      width: 100% !important;
+    .cards-container {
+      padding: 0 3rem; /* 더 큰 패딩 */
     }
 
-    .clear-btn {
-      right: 10px;
+    .product-image {
+      width: 130px;
+      height: 150px;
     }
 
-    /* 작은 화면에서도 오른쪽 배치 유지, 더 작게 */
-    .stock-controls {
-      top: 4px;
-      right: 4px;
-      min-width: 120px;
-      padding: 4px;
+    .product-img {
+      width: 130px;
+      height: 150px;
     }
 
-    .stock-adjust-label {
-      font-size: 10px;
+    .no-image {
+      height: 150px;
     }
 
-    .stock-quantity {
-      width: 60px;
-      padding: 2px;
-      font-size: 12px;
-    }
-
-    .stock-save-btn {
-      padding: 2px 6px;
-      font-size: 10px;
-      min-width: 35px;
-    }
-
-    .product-actions {
-      bottom: 4px;
-      right: 4px;
-    }
-
-    .discontinued-btn {
-      padding: 0.25rem 0.5rem;
-      font-size: 0.65rem;
+    .stock-info-area {
+      width: 200px;
+      height: 120px;
     }
   }
 
-  @media (max-width: 320px) {
-    /* 매우 작은 화면에서도 오른쪽 배치, 최소 크기 */
-    .stock-controls {
-      top: 2px;
-      right: 2px;
-      min-width: 100px;
-      padding: 3px;
+  @media (min-width: 1600px) {
+    .main-content {
+      padding: 0;
     }
 
-    .stock-adjust-label {
-      font-size: 9px;
+    .search-form {
+      margin: 0 4rem 2rem 4rem; /* 최대 마진 */
     }
 
-    .stock-quantity {
-      width: 50px;
-      padding: 1px;
-      font-size: 11px;
+    .cards-container {
+      padding: 0 4rem; /* 최대 패딩 */
     }
 
-    .stock-save-btn {
-      padding: 1px 4px;
-      font-size: 9px;
-      min-width: 30px;
+    .product-image {
+      width: 140px;
+      height: 160px;
     }
 
-    .product-actions {
-      bottom: 2px;
-      right: 2px;
+    .product-img {
+      width: 140px;
+      height: 160px;
     }
 
-    .discontinued-btn {
-      padding: 0.2rem 0.4rem;
-      font-size: 0.6rem;
+    .no-image {
+      height: 160px;
+    }
+
+    .stock-info-area {
+      width: 220px;
+      height: 130px;
+    }
+  }
+
+  /* 터치 최적화 */
+  .btn-search,
+  .stock-save-btn,
+  .discontinued-btn,
+  .clear-btn {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* Safe Area 지원 */
+  @supports (padding: max(0px)) {
+    .stock-container {
+      padding-left: max(0px, env(safe-area-inset-left));
+      padding-right: max(0px, env(safe-area-inset-right));
+      padding-bottom: max(10px, env(safe-area-inset-bottom));
     }
   }
 </style>
