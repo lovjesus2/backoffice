@@ -528,12 +528,6 @@
       color: #333;
   }
 
-  /* 메뉴 버튼 크기 조정 */
-  .home-btn {
-      padding: 8px 8px;
-      font-size: 13px;
-  }
-
   /* 모달 합계 부분 세로 사이즈 줄이기 */
   .daily-summary {
       background: #f8f9fa;
@@ -886,7 +880,7 @@
   }
 
   .sales-amount {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
       color: #333;
       word-break: break-all;
@@ -1352,7 +1346,7 @@
       }
       
       .sales-amount {
-          font-size: 12px;
+          font-size: 11px;
       }
       
       .sales-count {

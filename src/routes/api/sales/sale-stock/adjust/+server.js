@@ -1,9 +1,9 @@
-// src/routes/api/sale-stock/adjust/+server.js
+// src/routes/api/sales/sale-stock/adjust/+server.js
 import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/database.js';
 
 // 수불 전표번호 생성 함수
-async function generateMoveSlip(db, date) {
+async function generateMoveSlip(db, date, user) {
     try {
         // 당일 수불 전표 최대 일련번호 조회
         const [rows] = await db.execute(`
@@ -18,8 +18,8 @@ async function generateMoveSlip(db, date) {
         // 수불 전표번호 테이블에 저장
         await db.execute(`
             INSERT INTO BISH_SLIP (SLIP_GUBN, SLIP_DATE, SLIP_SENO, SLIP_SLIP, SLIP_IUSR, SLIP_IDAT) 
-            VALUES ('MV', ?, ?, ?, '김호준', NOW())
-        `, [date, seno, moveSlip]);
+            VALUES ('MV', ?, ?, ?, ?, NOW())
+        `, [date, seno, moveSlip, user]);
         
         return moveSlip;
         
@@ -30,7 +30,7 @@ async function generateMoveSlip(db, date) {
 }
 
 // 수불 저장 함수
-async function addStockMove(db, moveSlip, seno, shop, date, item, qty, reno = '', menu = 'STOCK_ADJ', user = '김호준') {
+async function addStockMove(db, moveSlip, seno, shop, date, item, qty, reno = '', menu = 'STOCK_ADJ', user) {
     try {
         await db.execute(`
             INSERT INTO STOK_MOVE 
@@ -38,7 +38,7 @@ async function addStockMove(db, moveSlip, seno, shop, date, item, qty, reno = ''
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         `, [moveSlip, seno, shop, date, item, qty, reno, menu, user]);
         
-        console.log(`수불 저장: ${item} / 수량: ${qty} / 전표: ${moveSlip}`);
+        console.log(`수불 저장: ${item} / 수량: ${qty} / 전표: ${moveSlip} / 사용자: ${user}`);
         return true;
         
     } catch (error) {
@@ -48,42 +48,39 @@ async function addStockMove(db, moveSlip, seno, shop, date, item, qty, reno = ''
 }
 
 // 현재고 업데이트 함수
-async function updateCurrentStock(db, productCode, quantity) {
+async function updateCurrentStock(db, productCode, quantity, user) {
     try {
-        // 현재고 조회
+        // 현재고 조회 (STOK_HYUN 테이블 사용)
         const [currentRows] = await db.execute(`
-            SELECT COALESCE(SUM(STOK_QTY1), 0) as CURRENT_STOCK
-            FROM STOK_KEEP
-            WHERE STOK_SHOP = '001' AND STOK_ITEM = ?
+            SELECT COALESCE(HYUN_QTY1, 0) as CURRENT_STOCK
+            FROM STOK_HYUN
+            WHERE HYUN_ITEM = ?
         `, [productCode]);
         
-        const currentStock = currentRows[0].CURRENT_STOCK;
+        const currentStock = currentRows.length > 0 ? currentRows[0].CURRENT_STOCK : 0;
         const newStock = currentStock + quantity;
         
-        // STOK_KEEP 테이블 업데이트 또는 삽입
-        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        
-        // 기존 레코드 확인
+        // STOK_HYUN 테이블 업데이트 또는 삽입
         const [existingRows] = await db.execute(`
             SELECT COUNT(*) as count 
-            FROM STOK_KEEP 
-            WHERE STOK_SHOP = '001' AND STOK_ITEM = ?
+            FROM STOK_HYUN 
+            WHERE HYUN_ITEM = ?
         `, [productCode]);
         
         if (existingRows[0].count > 0) {
             // 업데이트
             await db.execute(`
-                UPDATE STOK_KEEP 
-                SET STOK_QTY1 = ?, STOK_IUSR = '김호준', STOK_IDAT = NOW()
-                WHERE STOK_SHOP = '001' AND STOK_ITEM = ?
-            `, [newStock, productCode]);
+                UPDATE STOK_HYUN 
+                SET HYUN_QTY1 = ?, HYUN_IUSR = ?, HYUN_IDAT = NOW()
+                WHERE HYUN_ITEM = ?
+            `, [newStock, user, productCode]);
         } else {
             // 신규 삽입
             await db.execute(`
-                INSERT INTO STOK_KEEP 
-                (STOK_SHOP, STOK_DATE, STOK_ITEM, STOK_QTY1, STOK_IUSR, STOK_IDAT)
-                VALUES ('001', ?, ?, ?, '김호준', NOW())
-            `, [today, productCode, newStock]);
+                INSERT INTO STOK_HYUN 
+                (HYUN_ITEM, HYUN_QTY1, HYUN_IUSR, HYUN_IDAT)
+                VALUES (?, ?, ?, NOW())
+            `, [productCode, newStock, user]);
         }
         
         return newStock;
@@ -94,9 +91,20 @@ async function updateCurrentStock(db, productCode, quantity) {
     }
 }
 
-export async function POST({ request }) {
+export async function POST({ request, locals }) {
     try {
+        console.log('=== Stock Adjust API 호출 시작 ===');
+        
+        // 미들웨어에서 인증된 사용자 확인
+        const user = locals.user;
+        if (!user) {
+            console.log('인증되지 않은 사용자');
+            return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+        }
+
         const { product_code, quantity } = await request.json();
+        
+        console.log('재고 조정 요청:', { product_code, quantity, user: user.username });
         
         // 입력값 검증
         if (!product_code || !quantity || isNaN(quantity) || quantity === 0) {
@@ -111,11 +119,11 @@ export async function POST({ request }) {
         
         const db = getDb();
         
-        // 제품 존재 여부 확인
+        // 제품 존재 여부 확인 (ASSE_PROH 테이블 사용)
         const [productRows] = await db.execute(`
-            SELECT PROH_CODE, PROH_NAME 
-            FROM PROD_HEAD 
-            WHERE PROH_CODE = ?
+            SELECT p.PROH_CODE, p.PROH_NAME 
+            FROM ASSE_PROH p
+            WHERE p.PROH_GUB1 = 'A1' AND p.PROH_GUB2 = 'AK' AND p.PROH_CODE = ?
         `, [product_code]);
         
         if (productRows.length === 0) {
@@ -126,25 +134,34 @@ export async function POST({ request }) {
         }
         
         const product = productRows[0];
+        console.log('제품 정보:', product);
         
         // 트랜잭션 시작
         await db.execute('START TRANSACTION');
+        console.log('트랜잭션 시작');
         
         try {
             // 수불 전표번호 생성
-            const moveSlip = await generateMoveSlip(db, today);
+            const moveSlip = await generateMoveSlip(db, today, user.username);
+            console.log('수불 전표번호 생성:', moveSlip);
             
             // 수불 저장
-            await addStockMove(db, moveSlip, 1, '001', today, product_code, qty);
+            await addStockMove(db, moveSlip, 1, 'A1', today, product_code, qty, '', 'STOCK_ADJ', user.username);
+            console.log('수불 저장 완료');
             
             // 현재고 업데이트
-            const newStock = await updateCurrentStock(db, product_code, qty);
+            const newStock = await updateCurrentStock(db, product_code, qty, user.username);
+            console.log('현재고 업데이트 완료, 새 재고:', newStock);
             
             // 트랜잭션 커밋
             await db.execute('COMMIT');
+            console.log('트랜잭션 커밋 완료');
             
             const action = qty > 0 ? '입고' : '출고';
             const message = `${product.PROH_NAME} 제품의 ${action} 처리가 완료되었습니다. (${Math.abs(qty)}개)`;
+            
+            console.log('재고 조정 성공:', { action, newStock, user: user.username });
+            console.log('=== Stock Adjust API 성공 완료 ===');
             
             return json({
                 success: true,
@@ -156,14 +173,19 @@ export async function POST({ request }) {
         } catch (error) {
             // 트랜잭션 롤백
             await db.execute('ROLLBACK');
+            console.log('트랜잭션 롤백');
             throw error;
         }
         
     } catch (error) {
-        console.error('재고 조정 오류:', error);
+        console.error('=== Stock Adjust API 에러 ===');
+        console.error('에러 메시지:', error.message);
+        console.error('에러 스택:', error.stack);
+        console.error('========================');
+        
         return json({
             success: false,
-            message: '재고 조정 중 오류가 발생했습니다.',
+            message: '재고 조정 중 오류가 발생했습니다: ' + error.message,
             error: error.message
         }, { status: 500 });
     }
