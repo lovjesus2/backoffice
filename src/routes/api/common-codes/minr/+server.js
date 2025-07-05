@@ -1,10 +1,20 @@
 // src/routes/api/common-codes/minr/+server.js
 import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/database.js';
+import { verifyToken } from '$lib/middleware/auth.js';
 
 // BISH_MINR 조회 (GET) - 특정 대분류의 소분류들
-export async function GET({ url }) {
+export async function GET({ url, cookies }) {
   try {
+    // 인증 확인
+    const tokenResult = verifyToken(cookies);
+    if (!tokenResult.success) {
+      return json({
+        success: false,
+        message: '인증이 필요합니다.'
+      }, { status: 401 });
+    }
+
     const db = getDb();
     const majrCode = url.searchParams.get('majr_code');
     const searchTerm = url.searchParams.get('search') || '';
@@ -48,8 +58,18 @@ export async function GET({ url }) {
 }
 
 // BISH_MINR 저장/수정 (POST)
-export async function POST({ request }) {
+export async function POST({ request, cookies }) {
   try {
+    // 인증 확인
+    const tokenResult = verifyToken(cookies);
+    if (!tokenResult.success) {
+      return json({
+        success: false,
+        message: '인증이 필요합니다.'
+      }, { status: 401 });
+    }
+
+    const currentUser = tokenResult.user; // 로그인한 사용자 정보
     const db = getDb();
     const data = await request.json();
     const { MINR_MJCD, MINR_CODE, MINR_NAME, MINR_BIGO, MINR_BIG2, isUpdate, originalCode } = data;
@@ -75,7 +95,7 @@ export async function POST({ request }) {
     }
     
     if (isUpdate) {
-      // 수정
+      // 수정 - 로그인한 사용자로 MINR_UUSR 설정
       const whereCondition = originalCode ? 
         'MINR_MJCD = ? AND MINR_CODE = ?' : 
         'MINR_MJCD = ? AND MINR_CODE = ?';
@@ -86,9 +106,9 @@ export async function POST({ request }) {
       await db.execute(`
         UPDATE BISH_MINR 
         SET MINR_CODE = ?, MINR_NAME = ?, MINR_BIGO = ?, MINR_BIG2 = ?,
-            MINR_UDAT = NOW(), MINR_UUSR = '김호준'
+            MINR_UDAT = NOW(), MINR_UUSR = ?
         WHERE ${whereCondition}
-      `, [MINR_CODE, MINR_NAME, MINR_BIGO || '', MINR_BIG2 || '', ...whereParams]);
+      `, [MINR_CODE, MINR_NAME, MINR_BIGO || '', MINR_BIG2 || '', currentUser.username, ...whereParams]);
       
     } else {
       // 신규 등록 - 중복 체크
@@ -104,10 +124,11 @@ export async function POST({ request }) {
         }, { status: 400 });
       }
       
+      // 신규 등록 - 로그인한 사용자로 MINR_IUSR 설정
       await db.execute(`
         INSERT INTO BISH_MINR (MINR_MJCD, MINR_CODE, MINR_NAME, MINR_BIGO, MINR_BIG2, MINR_IUSR)
-        VALUES (?, ?, ?, ?, ?, '김호준')
-      `, [MINR_MJCD, MINR_CODE, MINR_NAME, MINR_BIGO || '', MINR_BIG2 || '']);
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [MINR_MJCD, MINR_CODE, MINR_NAME, MINR_BIGO || '', MINR_BIG2 || '', currentUser.username]);
     }
     
     return json({
@@ -125,8 +146,17 @@ export async function POST({ request }) {
 }
 
 // BISH_MINR 삭제 (DELETE)
-export async function DELETE({ url }) {
+export async function DELETE({ url, cookies }) {
   try {
+    // 인증 확인
+    const tokenResult = verifyToken(cookies);
+    if (!tokenResult.success) {
+      return json({
+        success: false,
+        message: '인증이 필요합니다.'
+      }, { status: 401 });
+    }
+
     const db = getDb();
     const majrCode = url.searchParams.get('majr_code');
     const minrCode = url.searchParams.get('minr_code');

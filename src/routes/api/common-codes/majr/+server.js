@@ -1,10 +1,20 @@
 // src/routes/api/common-codes/majr/+server.js
 import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/database.js';
+import { verifyToken } from '$lib/middleware/auth.js';
 
 // BISH_MAJR 조회 (GET)
-export async function GET({ url }) {
+export async function GET({ url, cookies }) {
   try {
+    // 인증 확인
+    const tokenResult = verifyToken(cookies);
+    if (!tokenResult.success) {
+      return json({
+        success: false,
+        message: '인증이 필요합니다.'
+      }, { status: 401 });
+    }
+
     const db = getDb();
     const searchTerm = url.searchParams.get('search') || '';
     
@@ -39,8 +49,18 @@ export async function GET({ url }) {
 }
 
 // BISH_MAJR 저장/수정 (POST)
-export async function POST({ request }) {
+export async function POST({ request, cookies }) {
   try {
+    // 인증 확인
+    const tokenResult = verifyToken(cookies);
+    if (!tokenResult.success) {
+      return json({
+        success: false,
+        message: '인증이 필요합니다.'
+      }, { status: 401 });
+    }
+
+    const currentUser = tokenResult.user; // 로그인한 사용자 정보
     const db = getDb();
     const data = await request.json();
     const { MAJR_CODE, MAJR_NAME, MAJR_BIGO, MAJR_BIG2, isUpdate } = data;
@@ -53,13 +73,13 @@ export async function POST({ request }) {
     }
     
     if (isUpdate) {
-      // 수정
+      // 수정 - 로그인한 사용자로 MAJR_UUSR 설정
       await db.execute(`
         UPDATE BISH_MAJR 
         SET MAJR_NAME = ?, MAJR_BIGO = ?, MAJR_BIG2 = ?,
-            MAJR_UDAT = NOW(), MAJR_UUSR = '김호준'
+            MAJR_UDAT = NOW(), MAJR_UUSR = ?
         WHERE MAJR_CODE = ?
-      `, [MAJR_NAME, MAJR_BIGO || '', MAJR_BIG2 || '', MAJR_CODE]);
+      `, [MAJR_NAME, MAJR_BIGO || '', MAJR_BIG2 || '', currentUser.username, MAJR_CODE]);
       
     } else {
       // 신규 등록 - 중복 체크
@@ -75,10 +95,11 @@ export async function POST({ request }) {
         }, { status: 400 });
       }
       
+      // 신규 등록 - 로그인한 사용자로 MAJR_IUSR 설정
       await db.execute(`
         INSERT INTO BISH_MAJR (MAJR_CODE, MAJR_NAME, MAJR_BIGO, MAJR_BIG2, MAJR_IUSR)
-        VALUES (?, ?, ?, ?, '김호준')
-      `, [MAJR_CODE, MAJR_NAME, MAJR_BIGO || '', MAJR_BIG2 || '']);
+        VALUES (?, ?, ?, ?, ?)
+      `, [MAJR_CODE, MAJR_NAME, MAJR_BIGO || '', MAJR_BIG2 || '', currentUser.username]);
     }
     
     return json({
@@ -96,8 +117,17 @@ export async function POST({ request }) {
 }
 
 // BISH_MAJR 삭제 (DELETE)
-export async function DELETE({ url }) {
+export async function DELETE({ url, cookies }) {
   try {
+    // 인증 확인
+    const tokenResult = verifyToken(cookies);
+    if (!tokenResult.success) {
+      return json({
+        success: false,
+        message: '인증이 필요합니다.'
+      }, { status: 401 });
+    }
+
     const db = getDb();
     const majrCode = url.searchParams.get('code');
     
@@ -117,11 +147,14 @@ export async function DELETE({ url }) {
     if (minrRows[0].count > 0) {
       return json({
         success: false,
-        message: '하위 소분류 데이터가 존재하여 삭제할 수 없습니다.'
+        message: '하위 소분류가 존재하여 삭제할 수 없습니다.'
       }, { status: 400 });
     }
     
-    await db.execute('DELETE FROM BISH_MAJR WHERE MAJR_CODE = ?', [majrCode]);
+    await db.execute(
+      'DELETE FROM BISH_MAJR WHERE MAJR_CODE = ?',
+      [majrCode]
+    );
     
     return json({
       success: true,

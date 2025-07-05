@@ -476,7 +476,6 @@
                     <div class="col-name">명칭</div>
                     <div class="col-bigo">비고1</div>
                     <div class="col-big2">비고2</div>
-                    <div class="col-actions">작업</div>
                   </div>
                   
                   <!-- 테이블 바디 -->
@@ -713,7 +712,7 @@
   .right-panel {
     flex: 1; /* 나머지 공간 모두 차지 */
     min-width: 0; /* Flex 오버플로우 방지 */
-    padding: 20px 8px;
+    padding: 0px 8px;
   }
 
   .panel-card {
