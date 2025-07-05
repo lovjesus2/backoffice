@@ -1,0 +1,652 @@
+
+> admin-backoffice@0.0.1 build
+> vite build
+
+NODE_ENV=production is not supported in the .env file. Only NODE_ENV=development is supported to create a development build of your project. If you need to set process.env.NODE_ENV, you can set it in the Vite config instead.
+
+vite v4.5.14 building SSR bundle for production...
+transforming...
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/+layout.svelte:59:4 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+57:   <!-- 오버레이 -->
+58:   {#if isMobileMenuOpen}
+59:     <div class="overlay" on:click={closeMenu}></div>
+        ^
+60:   {/if}
+61: 
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/+layout.svelte:59:4 A11y: <div> with click handler must have an ARIA role
+57:   <!-- 오버레이 -->
+58:   {#if isMobileMenuOpen}
+59:     <div class="overlay" on:click={closeMenu}></div>
+        ^
+60:   {/if}
+61: 
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/menu-management/+page.svelte:535:10 A11y: A form label must be associated with a control.
+533:       <div class="modal-content">
+534:         <div class="form-group">
+535:           <label class="form-label">메뉴 제목 *</label>
+               ^
+536:           <input
+537:             class="form-input"
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/menu-management/+page.svelte:546:10 A11y: A form label must be associated with a control.
+544: 
+545:         <div class="form-group">
+546:           <label class="form-label">아이콘</label>
+               ^
+547:           <div class="icon-selector">
+548:             {#each availableIcons as icon}
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/menu-management/+page.svelte:561:10 A11y: A form label must be associated with a control.
+559: 
+560:         <div class="form-group">
+561:           <label class="form-label">링크 (href)</label>
+               ^
+562:           <input
+563:             class="form-input"
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/menu-management/+page.svelte:571:10 A11y: A form label must be associated with a control.
+569: 
+570:         <div class="form-group">
+571:           <label class="form-label">상위 메뉴</label>
+               ^
+572:           <select class="form-select" bind:value={formData.parent_id}>
+573:             <option value={null}>없음 (최상위 메뉴)</option>
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/menu-management/+page.svelte:581:10 A11y: A form label must be associated with a control.
+579: 
+580:         <div class="form-group">
+581:           <label class="form-label">접근 권한</label>
+               ^
+582:           <div class="role-selector">
+583:             {#each availableRoles as role}
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/profile/+page.svelte:218:10 A11y: A form label must be associated with a control.
+216:         
+217:         <div class="form-group">
+218:           <label>권한</label>
+               ^
+219:           <div class="role-badge role-{user.role}">
+220:             {user.role === 'admin' ? '👑 관리자' : '👤 사용자'}
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/profile/+page.svelte:225:10 A11y: A form label must be associated with a control.
+223:         
+224:         <div class="form-group">
+225:           <label>가입일</label>
+               ^
+226:           <div class="date-info">
+227:             {user.created_at ? new Date(user.created_at).toLocaleDateString('ko-KR') : '정보 없음'}
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:274:8 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+272:       <button class="nav-btn" id="prevMonthBtn" on:click={goToPreviousMonth}>이전달</button>
+273:       <div class="current-month" id="currentMonth">
+274:         <span class="month-year" id="monthYearSpan" on:click={() => { selectedYear = currentYear; selectedMonth = currentMonth; showDateSelector = true; }}>
+             ^
+275:           {currentYear}년 {currentMonth}월
+276:         </span>
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:274:8 A11y: <span> with click handler must have an ARIA role
+272:       <button class="nav-btn" id="prevMonthBtn" on:click={goToPreviousMonth}>이전달</button>
+273:       <div class="current-month" id="currentMonth">
+274:         <span class="month-year" id="monthYearSpan" on:click={() => { selectedYear = currentYear; selectedMonth = currentMonth; showDateSelector = true; }}>
+             ^
+275:           {currentYear}년 {currentMonth}월
+276:         </span>
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:306:12 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+304:         <div class="calendar-grid" id="calendarGrid">
+305:           {#each calendarDays as dayData}
+306:             <div 
+                 ^
+307:               class="calendar-day {dayData.isOtherMonth ? 'other-month' : ''} {dayData.hasSales ? 'has-sales' : ''}"
+308:               on:click={() => onDayClick(dayData)}
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:337:10 A11y: A form label must be associated with a control.
+335:       <div class="date-selector-body">
+336:         <div class="year-selector">
+337:           <label>년도</label>
+               ^
+338:           <select id="yearSelect" bind:value={selectedYear}>
+339:             {#each yearOptions as year}
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:345:10 A11y: A form label must be associated with a control.
+343:         </div>
+344:         <div class="month-selector">
+345:           <label>월</label>
+               ^
+346:           <select id="monthSelect" bind:value={selectedMonth}>
+347:             {#each monthNames as monthName, index}
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:329:2 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+327: <!-- 년/월 선택 모달 -->
+328: {#if showDateSelector}
+329:   <div class="date-selector-modal" id="dateSelectorModal" on:click={handleDateSelectorClick}>
+       ^
+330:     <div class="date-selector-content">
+331:       <div class="date-selector-header">
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:329:2 A11y: <div> with click handler must have an ARIA role
+327: <!-- 년/월 선택 모달 -->
+328: {#if showDateSelector}
+329:   <div class="date-selector-modal" id="dateSelectorModal" on:click={handleDateSelectorClick}>
+       ^
+330:     <div class="date-selector-content">
+331:       <div class="date-selector-header">
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:363:2 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+361: <!-- 일자별 상세 모달 -->
+362: {#if showDailyDetail}
+363:   <div class="modal-overlay" id="dailyDetailModal" on:click={handleModalClick}>
+       ^
+364:     <div class="modal-content">
+365:       <div class="modal-header">
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:363:2 A11y: <div> with click handler must have an ARIA role
+361: <!-- 일자별 상세 모달 -->
+362: {#if showDailyDetail}
+363:   <div class="modal-overlay" id="dailyDetailModal" on:click={handleModalClick}>
+       ^
+364:     <div class="modal-content">
+365:       <div class="modal-header">
+4:16:22 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:500:2 Unused CSS selector "body"
+498:   }
+499: 
+500:   body {
+       ^
+501:       font-family: 'Malgun Gothic', sans-serif;
+502:       background-color: #f8f9fa;
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/settings/+page.svelte:279:24 A11y: A form label must be associated with a control.
+277:                     {:else if setting.setting_type === 'number'}
+278:                       <div class="input-wrapper">
+279:                         <label class="input-label">숫자 값</label>
+                             ^
+280:                         <input 
+281:                           type="number"
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/settings/+page.svelte:290:24 A11y: A form label must be associated with a control.
+288:                     {:else if setting.setting_type === 'json'}
+289:                       <div class="input-wrapper">
+290:                         <label class="input-label">JSON 데이터</label>
+                             ^
+291:                         <textarea 
+292:                           bind:value={setting.setting_value}
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/settings/+page.svelte:301:24 A11y: A form label must be associated with a control.
+299:                     {:else}
+300:                       <div class="input-wrapper">
+301:                         <label class="input-label">텍스트 값</label>
+                             ^
+302:                         <input 
+303:                           type="text"
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:377:10 A11y: A form label must be associated with a control.
+375:       <form on:submit|preventDefault={createUser}>
+376:         <div class="form-group">
+377:           <label>사용자명 *</label>
+               ^
+378:           <input type="text" bind:value={newUser.username} required placeholder="사용자명을 입력하세요">
+379:         </div>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:382:10 A11y: A form label must be associated with a control.
+380:         
+381:         <div class="form-group">
+382:           <label>이메일</label>
+               ^
+383:           <input type="email" bind:value={newUser.email} placeholder="이메일을 입력하세요 (선택사항)">
+384:         </div>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:387:10 A11y: A form label must be associated with a control.
+385:         
+386:         <div class="form-group">
+387:           <label>비밀번호 *</label>
+               ^
+388:           <input type="password" bind:value={newUser.password} required placeholder="비밀번호를 입력하세요">
+389:         </div>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:392:10 A11y: A form label must be associated with a control.
+390:         
+391:         <div class="form-group">
+392:           <label>역할</label>
+               ^
+393:           <select bind:value={newUser.role}>
+394:             <option value="user">사용자</option>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:365:4 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+363: {#if showCreateModal}
+364:   <div class="modal-overlay" on:click={() => showCreateModal = false}>
+365:     <div class="modal" on:click|stopPropagation>
+         ^
+366:       <div class="modal-header">
+367:         <h2>🆕 새 사용자 생성</h2>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:365:4 A11y: <div> with click handler must have an ARIA role
+363: {#if showCreateModal}
+364:   <div class="modal-overlay" on:click={() => showCreateModal = false}>
+365:     <div class="modal" on:click|stopPropagation>
+         ^
+366:       <div class="modal-header">
+367:         <h2>🆕 새 사용자 생성</h2>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:364:2 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+362: <!-- 새 사용자 생성 모달 -->
+363: {#if showCreateModal}
+364:   <div class="modal-overlay" on:click={() => showCreateModal = false}>
+       ^
+365:     <div class="modal" on:click|stopPropagation>
+366:       <div class="modal-header">
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:364:2 A11y: <div> with click handler must have an ARIA role
+362: <!-- 새 사용자 생성 모달 -->
+363: {#if showCreateModal}
+364:   <div class="modal-overlay" on:click={() => showCreateModal = false}>
+       ^
+365:     <div class="modal" on:click|stopPropagation>
+366:       <div class="modal-header">
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:423:10 A11y: A form label must be associated with a control.
+421:       <form on:submit|preventDefault={updateUser}>
+422:         <div class="form-group">
+423:           <label>사용자명 *</label>
+               ^
+424:           <input type="text" bind:value={editUser.username} required placeholder="사용자명을 입력하세요">
+425:         </div>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:428:10 A11y: A form label must be associated with a control.
+426:         
+427:         <div class="form-group">
+428:           <label>이메일</label>
+               ^
+429:           <input type="email" bind:value={editUser.email} placeholder="이메일을 입력하세요">
+430:         </div>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:433:10 A11y: A form label must be associated with a control.
+431:         
+432:         <div class="form-group">
+433:           <label>역할 *</label>
+               ^
+434:           <select bind:value={editUser.role} required>
+435:             <option value="user">사용자</option>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:441:10 A11y: A form label must be associated with a control.
+439:         
+440:         <div class="form-group">
+441:           <label>새 비밀번호</label>
+               ^
+442:           <input type="password" bind:value={editUser.password} placeholder="변경하려면 새 비밀번호를 입력하세요 (선택사항)">
+443:           <small class="form-hint">비밀번호를 변경하지 않으려면 빈 칸으로 두세요</small>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:411:4 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+409: {#if showEditModal}
+410:   <div class="modal-overlay" on:click={() => showEditModal = false}>
+411:     <div class="modal" on:click|stopPropagation>
+         ^
+412:       <div class="modal-header">
+413:         <h2>✏️ 사용자 편집</h2>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:411:4 A11y: <div> with click handler must have an ARIA role
+409: {#if showEditModal}
+410:   <div class="modal-overlay" on:click={() => showEditModal = false}>
+411:     <div class="modal" on:click|stopPropagation>
+         ^
+412:       <div class="modal-header">
+413:         <h2>✏️ 사용자 편집</h2>
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:410:2 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+408: <!-- 사용자 편집 모달 -->
+409: {#if showEditModal}
+410:   <div class="modal-overlay" on:click={() => showEditModal = false}>
+       ^
+411:     <div class="modal" on:click|stopPropagation>
+412:       <div class="modal-header">
+4:16:23 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:410:2 A11y: <div> with click handler must have an ARIA role
+408: <!-- 사용자 편집 모달 -->
+409: {#if showEditModal}
+410:   <div class="modal-overlay" on:click={() => showEditModal = false}>
+       ^
+411:     <div class="modal" on:click|stopPropagation>
+412:       <div class="modal-header">
+✓ 128 modules transformed.
+Generated an empty chunk: "entries/endpoints/api/sales/sale-stock/_server".
+rendering chunks...
+
+vite v4.5.14 building for production...
+transforming...
+4:16:25 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/+layout.svelte:59:4 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+57:   <!-- 오버레이 -->
+58:   {#if isMobileMenuOpen}
+59:     <div class="overlay" on:click={closeMenu}></div>
+        ^
+60:   {/if}
+61: 
+4:16:25 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/+layout.svelte:59:4 A11y: <div> with click handler must have an ARIA role
+57:   <!-- 오버레이 -->
+58:   {#if isMobileMenuOpen}
+59:     <div class="overlay" on:click={closeMenu}></div>
+        ^
+60:   {/if}
+61: 
+4:16:26 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/menu-management/+page.svelte:535:10 A11y: A form label must be associated with a control.
+533:       <div class="modal-content">
+534:         <div class="form-group">
+535:           <label class="form-label">메뉴 제목 *</label>
+               ^
+536:           <input
+537:             class="form-input"
+4:16:26 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/menu-management/+page.svelte:546:10 A11y: A form label must be associated with a control.
+544: 
+545:         <div class="form-group">
+546:           <label class="form-label">아이콘</label>
+               ^
+547:           <div class="icon-selector">
+548:             {#each availableIcons as icon}
+4:16:26 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/menu-management/+page.svelte:561:10 A11y: A form label must be associated with a control.
+559: 
+560:         <div class="form-group">
+561:           <label class="form-label">링크 (href)</label>
+               ^
+562:           <input
+563:             class="form-input"
+4:16:26 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/menu-management/+page.svelte:571:10 A11y: A form label must be associated with a control.
+569: 
+570:         <div class="form-group">
+571:           <label class="form-label">상위 메뉴</label>
+               ^
+572:           <select class="form-select" bind:value={formData.parent_id}>
+573:             <option value={null}>없음 (최상위 메뉴)</option>
+4:16:26 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/menu-management/+page.svelte:581:10 A11y: A form label must be associated with a control.
+579: 
+580:         <div class="form-group">
+581:           <label class="form-label">접근 권한</label>
+               ^
+582:           <div class="role-selector">
+583:             {#each availableRoles as role}
+4:16:26 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/profile/+page.svelte:218:10 A11y: A form label must be associated with a control.
+216:         
+217:         <div class="form-group">
+218:           <label>권한</label>
+               ^
+219:           <div class="role-badge role-{user.role}">
+220:             {user.role === 'admin' ? '👑 관리자' : '👤 사용자'}
+4:16:26 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/profile/+page.svelte:225:10 A11y: A form label must be associated with a control.
+223:         
+224:         <div class="form-group">
+225:           <label>가입일</label>
+               ^
+226:           <div class="date-info">
+227:             {user.created_at ? new Date(user.created_at).toLocaleDateString('ko-KR') : '정보 없음'}
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:274:8 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+272:       <button class="nav-btn" id="prevMonthBtn" on:click={goToPreviousMonth}>이전달</button>
+273:       <div class="current-month" id="currentMonth">
+274:         <span class="month-year" id="monthYearSpan" on:click={() => { selectedYear = currentYear; selectedMonth = currentMonth; showDateSelector = true; }}>
+             ^
+275:           {currentYear}년 {currentMonth}월
+276:         </span>
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:274:8 A11y: <span> with click handler must have an ARIA role
+272:       <button class="nav-btn" id="prevMonthBtn" on:click={goToPreviousMonth}>이전달</button>
+273:       <div class="current-month" id="currentMonth">
+274:         <span class="month-year" id="monthYearSpan" on:click={() => { selectedYear = currentYear; selectedMonth = currentMonth; showDateSelector = true; }}>
+             ^
+275:           {currentYear}년 {currentMonth}월
+276:         </span>
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:306:12 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+304:         <div class="calendar-grid" id="calendarGrid">
+305:           {#each calendarDays as dayData}
+306:             <div 
+                 ^
+307:               class="calendar-day {dayData.isOtherMonth ? 'other-month' : ''} {dayData.hasSales ? 'has-sales' : ''}"
+308:               on:click={() => onDayClick(dayData)}
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:337:10 A11y: A form label must be associated with a control.
+335:       <div class="date-selector-body">
+336:         <div class="year-selector">
+337:           <label>년도</label>
+               ^
+338:           <select id="yearSelect" bind:value={selectedYear}>
+339:             {#each yearOptions as year}
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:345:10 A11y: A form label must be associated with a control.
+343:         </div>
+344:         <div class="month-selector">
+345:           <label>월</label>
+               ^
+346:           <select id="monthSelect" bind:value={selectedMonth}>
+347:             {#each monthNames as monthName, index}
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:329:2 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+327: <!-- 년/월 선택 모달 -->
+328: {#if showDateSelector}
+329:   <div class="date-selector-modal" id="dateSelectorModal" on:click={handleDateSelectorClick}>
+       ^
+330:     <div class="date-selector-content">
+331:       <div class="date-selector-header">
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:329:2 A11y: <div> with click handler must have an ARIA role
+327: <!-- 년/월 선택 모달 -->
+328: {#if showDateSelector}
+329:   <div class="date-selector-modal" id="dateSelectorModal" on:click={handleDateSelectorClick}>
+       ^
+330:     <div class="date-selector-content">
+331:       <div class="date-selector-header">
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:363:2 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+361: <!-- 일자별 상세 모달 -->
+362: {#if showDailyDetail}
+363:   <div class="modal-overlay" id="dailyDetailModal" on:click={handleModalClick}>
+       ^
+364:     <div class="modal-content">
+365:       <div class="modal-header">
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:363:2 A11y: <div> with click handler must have an ARIA role
+361: <!-- 일자별 상세 모달 -->
+362: {#if showDailyDetail}
+363:   <div class="modal-overlay" id="dailyDetailModal" on:click={handleModalClick}>
+       ^
+364:     <div class="modal-content">
+365:       <div class="modal-header">
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/sales/calendar/+page.svelte:500:2 Unused CSS selector "body"
+498:   }
+499: 
+500:   body {
+       ^
+501:       font-family: 'Malgun Gothic', sans-serif;
+502:       background-color: #f8f9fa;
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/settings/+page.svelte:279:24 A11y: A form label must be associated with a control.
+277:                     {:else if setting.setting_type === 'number'}
+278:                       <div class="input-wrapper">
+279:                         <label class="input-label">숫자 값</label>
+                             ^
+280:                         <input 
+281:                           type="number"
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/settings/+page.svelte:290:24 A11y: A form label must be associated with a control.
+288:                     {:else if setting.setting_type === 'json'}
+289:                       <div class="input-wrapper">
+290:                         <label class="input-label">JSON 데이터</label>
+                             ^
+291:                         <textarea 
+292:                           bind:value={setting.setting_value}
+4:16:27 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/settings/+page.svelte:301:24 A11y: A form label must be associated with a control.
+299:                     {:else}
+300:                       <div class="input-wrapper">
+301:                         <label class="input-label">텍스트 값</label>
+                             ^
+302:                         <input 
+303:                           type="text"
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:377:10 A11y: A form label must be associated with a control.
+375:       <form on:submit|preventDefault={createUser}>
+376:         <div class="form-group">
+377:           <label>사용자명 *</label>
+               ^
+378:           <input type="text" bind:value={newUser.username} required placeholder="사용자명을 입력하세요">
+379:         </div>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:382:10 A11y: A form label must be associated with a control.
+380:         
+381:         <div class="form-group">
+382:           <label>이메일</label>
+               ^
+383:           <input type="email" bind:value={newUser.email} placeholder="이메일을 입력하세요 (선택사항)">
+384:         </div>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:387:10 A11y: A form label must be associated with a control.
+385:         
+386:         <div class="form-group">
+387:           <label>비밀번호 *</label>
+               ^
+388:           <input type="password" bind:value={newUser.password} required placeholder="비밀번호를 입력하세요">
+389:         </div>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:392:10 A11y: A form label must be associated with a control.
+390:         
+391:         <div class="form-group">
+392:           <label>역할</label>
+               ^
+393:           <select bind:value={newUser.role}>
+394:             <option value="user">사용자</option>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:365:4 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+363: {#if showCreateModal}
+364:   <div class="modal-overlay" on:click={() => showCreateModal = false}>
+365:     <div class="modal" on:click|stopPropagation>
+         ^
+366:       <div class="modal-header">
+367:         <h2>🆕 새 사용자 생성</h2>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:365:4 A11y: <div> with click handler must have an ARIA role
+363: {#if showCreateModal}
+364:   <div class="modal-overlay" on:click={() => showCreateModal = false}>
+365:     <div class="modal" on:click|stopPropagation>
+         ^
+366:       <div class="modal-header">
+367:         <h2>🆕 새 사용자 생성</h2>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:364:2 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+362: <!-- 새 사용자 생성 모달 -->
+363: {#if showCreateModal}
+364:   <div class="modal-overlay" on:click={() => showCreateModal = false}>
+       ^
+365:     <div class="modal" on:click|stopPropagation>
+366:       <div class="modal-header">
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:364:2 A11y: <div> with click handler must have an ARIA role
+362: <!-- 새 사용자 생성 모달 -->
+363: {#if showCreateModal}
+364:   <div class="modal-overlay" on:click={() => showCreateModal = false}>
+       ^
+365:     <div class="modal" on:click|stopPropagation>
+366:       <div class="modal-header">
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:423:10 A11y: A form label must be associated with a control.
+421:       <form on:submit|preventDefault={updateUser}>
+422:         <div class="form-group">
+423:           <label>사용자명 *</label>
+               ^
+424:           <input type="text" bind:value={editUser.username} required placeholder="사용자명을 입력하세요">
+425:         </div>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:428:10 A11y: A form label must be associated with a control.
+426:         
+427:         <div class="form-group">
+428:           <label>이메일</label>
+               ^
+429:           <input type="email" bind:value={editUser.email} placeholder="이메일을 입력하세요">
+430:         </div>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:433:10 A11y: A form label must be associated with a control.
+431:         
+432:         <div class="form-group">
+433:           <label>역할 *</label>
+               ^
+434:           <select bind:value={editUser.role} required>
+435:             <option value="user">사용자</option>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:441:10 A11y: A form label must be associated with a control.
+439:         
+440:         <div class="form-group">
+441:           <label>새 비밀번호</label>
+               ^
+442:           <input type="password" bind:value={editUser.password} placeholder="변경하려면 새 비밀번호를 입력하세요 (선택사항)">
+443:           <small class="form-hint">비밀번호를 변경하지 않으려면 빈 칸으로 두세요</small>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:411:4 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+409: {#if showEditModal}
+410:   <div class="modal-overlay" on:click={() => showEditModal = false}>
+411:     <div class="modal" on:click|stopPropagation>
+         ^
+412:       <div class="modal-header">
+413:         <h2>✏️ 사용자 편집</h2>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:411:4 A11y: <div> with click handler must have an ARIA role
+409: {#if showEditModal}
+410:   <div class="modal-overlay" on:click={() => showEditModal = false}>
+411:     <div class="modal" on:click|stopPropagation>
+         ^
+412:       <div class="modal-header">
+413:         <h2>✏️ 사용자 편집</h2>
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:410:2 A11y: visible, non-interactive elements with an on:click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as <button type="button"> or <a> might be more appropriate. See https://svelte.dev/docs/accessibility-warnings#a11y-click-events-have-key-events for more details.
+408: <!-- 사용자 편집 모달 -->
+409: {#if showEditModal}
+410:   <div class="modal-overlay" on:click={() => showEditModal = false}>
+       ^
+411:     <div class="modal" on:click|stopPropagation>
+412:       <div class="modal-header">
+4:16:28 PM [vite-plugin-svelte] /volume1/web/backoffice/src/routes/admin/users/+page.svelte:410:2 A11y: <div> with click handler must have an ARIA role
+408: <!-- 사용자 편집 모달 -->
+409: {#if showEditModal}
+410:   <div class="modal-overlay" on:click={() => showEditModal = false}>
+       ^
+411:     <div class="modal" on:click|stopPropagation>
+412:       <div class="modal-header">
+✓ 105 modules transformed.
+rendering chunks...
+computing gzip size...
+.svelte-kit/output/client/_app/version.json                              0.03 kB │ gzip:  0.05 kB
+.svelte-kit/output/client/.vite/manifest.json                            9.47 kB │ gzip:  1.00 kB
+.svelte-kit/output/client/_app/immutable/assets/4.32fff8da.css           3.97 kB │ gzip:  0.92 kB
+.svelte-kit/output/client/_app/immutable/assets/3.dd29888c.css           4.46 kB │ gzip:  1.15 kB
+.svelte-kit/output/client/_app/immutable/assets/6.de5c46b5.css           4.79 kB │ gzip:  1.24 kB
+.svelte-kit/output/client/_app/immutable/assets/2.7216f324.css           6.72 kB │ gzip:  1.52 kB
+.svelte-kit/output/client/_app/immutable/assets/7.6ae433b2.css           6.88 kB │ gzip:  1.55 kB
+.svelte-kit/output/client/_app/immutable/assets/10.e1af2f91.css          8.72 kB │ gzip:  1.96 kB
+.svelte-kit/output/client/_app/immutable/assets/9.cf997ef1.css           8.99 kB │ gzip:  1.74 kB
+.svelte-kit/output/client/_app/immutable/assets/11.accd3435.css          9.52 kB │ gzip:  1.95 kB
+.svelte-kit/output/client/_app/immutable/assets/5.1cdc1387.css          12.92 kB │ gzip:  2.62 kB
+.svelte-kit/output/client/_app/immutable/assets/8.2a1c0377.css          14.95 kB │ gzip:  2.57 kB
+.svelte-kit/output/client/_app/immutable/chunks/navigation.69f77b93.js   0.08 kB │ gzip:  0.09 kB
+.svelte-kit/output/client/_app/immutable/chunks/globals.7f7f1b26.js      0.09 kB │ gzip:  0.08 kB
+.svelte-kit/output/client/_app/immutable/chunks/index.c6708bed.js        0.12 kB │ gzip:  0.13 kB
+.svelte-kit/output/client/_app/immutable/chunks/paths.6a02e8ae.js        0.17 kB │ gzip:  0.13 kB
+.svelte-kit/output/client/_app/immutable/chunks/stores.133044c1.js       0.24 kB │ gzip:  0.17 kB
+.svelte-kit/output/client/_app/immutable/chunks/control.c2cf8273.js      0.35 kB │ gzip:  0.22 kB
+.svelte-kit/output/client/_app/immutable/nodes/0.c68622de.js             0.60 kB │ gzip:  0.39 kB
+.svelte-kit/output/client/_app/immutable/nodes/1.1102d59d.js             0.84 kB │ gzip:  0.52 kB
+.svelte-kit/output/client/_app/immutable/chunks/each.353c898c.js         0.86 kB │ gzip:  0.53 kB
+.svelte-kit/output/client/_app/immutable/chunks/index.1377619d.js        2.31 kB │ gzip:  1.21 kB
+.svelte-kit/output/client/_app/immutable/chunks/singletons.112920a8.js   2.80 kB │ gzip:  1.45 kB
+.svelte-kit/output/client/_app/immutable/nodes/3.e6aadcb0.js             4.76 kB │ gzip:  2.28 kB
+.svelte-kit/output/client/_app/immutable/chunks/scheduler.427f61a9.js    7.09 kB │ gzip:  2.84 kB
+.svelte-kit/output/client/_app/immutable/nodes/4.1824e6da.js             9.65 kB │ gzip:  3.50 kB
+.svelte-kit/output/client/_app/immutable/entry/app.8df5aa3f.js          10.75 kB │ gzip:  3.01 kB
+.svelte-kit/output/client/_app/immutable/nodes/6.a59f1e8a.js            12.20 kB │ gzip:  4.60 kB
+.svelte-kit/output/client/_app/immutable/nodes/2.bb450141.js            12.70 kB │ gzip:  4.59 kB
+.svelte-kit/output/client/_app/immutable/nodes/7.509ba94d.js            12.82 kB │ gzip:  4.51 kB
+.svelte-kit/output/client/_app/immutable/nodes/9.8c57be6f.js            16.73 kB │ gzip:  6.20 kB
+.svelte-kit/output/client/_app/immutable/nodes/10.53d71f19.js           17.54 kB │ gzip:  6.11 kB
+.svelte-kit/output/client/_app/immutable/entry/start.7a23705d.js        25.09 kB │ gzip:  9.91 kB
+.svelte-kit/output/client/_app/immutable/nodes/11.ed1c66f4.js           28.51 kB │ gzip:  8.70 kB
+.svelte-kit/output/client/_app/immutable/nodes/5.64c864a0.js            30.68 kB │ gzip: 10.13 kB
+.svelte-kit/output/client/_app/immutable/nodes/8.4c7248e6.js            30.84 kB │ gzip: 10.31 kB
+✓ built in 4.60s
+.svelte-kit/output/server/.vite/manifest.json                                             12.42 kB
+.svelte-kit/output/server/_app/immutable/assets/_page.32fff8da.css                         3.97 kB
+.svelte-kit/output/server/_app/immutable/assets/_page.dd29888c.css                         4.46 kB
+.svelte-kit/output/server/_app/immutable/assets/_page.de5c46b5.css                         4.79 kB
+.svelte-kit/output/server/_app/immutable/assets/_layout.ea896f87.css                       6.70 kB
+.svelte-kit/output/server/_app/immutable/assets/_page.e24186d9.css                         6.85 kB
+.svelte-kit/output/server/_app/immutable/assets/_page.e1af2f91.css                         8.72 kB
+.svelte-kit/output/server/_app/immutable/assets/_page.cf997ef1.css                         8.99 kB
+.svelte-kit/output/server/_app/immutable/assets/_page.07052eb1.css                         9.46 kB
+.svelte-kit/output/server/_app/immutable/assets/_page.b2284aa3.css                        12.88 kB
+.svelte-kit/output/server/_app/immutable/assets/_page.2a1c0377.css                        14.95 kB
+.svelte-kit/output/server/entries/endpoints/api/sales/sale-stock/_server.js                0.00 kB
+.svelte-kit/output/server/internal.js                                                      0.19 kB
+.svelte-kit/output/server/entries/fallbacks/layout.svelte.js                               0.24 kB
+.svelte-kit/output/server/entries/pages/admin/profile/_page.js                             0.24 kB
+.svelte-kit/output/server/entries/pages/admin/menu-management/_page.js                     0.34 kB
+.svelte-kit/output/server/entries/pages/admin/sales/sale-stock/_page.js                    0.44 kB
+.svelte-kit/output/server/entries/fallbacks/error.svelte.js                                0.47 kB
+.svelte-kit/output/server/chunks/stores.js                                                 0.52 kB
+.svelte-kit/output/server/entries/pages/admin/users/_page.js                               0.54 kB
+.svelte-kit/output/server/entries/pages/admin/sales/_page.js                               0.54 kB
+.svelte-kit/output/server/entries/pages/admin/settings/_page.js                            0.54 kB
+.svelte-kit/output/server/entries/pages/admin/sales/calendar/_page.js                      0.54 kB
+.svelte-kit/output/server/entries/pages/admin/_page.js                                     0.59 kB
+.svelte-kit/output/server/entries/endpoints/api/auth/logout/_server.js                     0.64 kB
+.svelte-kit/output/server/entries/pages/admin/_layout.server.js                            0.74 kB
+.svelte-kit/output/server/entries/endpoints/api/auth/me/_server.js                         0.76 kB
+.svelte-kit/output/server/chunks/database.js                                               0.90 kB
+.svelte-kit/output/server/entries/endpoints/api/auth/login/_server.js                      1.30 kB
+.svelte-kit/output/server/chunks/systemSettings.js                                         1.46 kB
+.svelte-kit/output/server/entries/endpoints/api/user-menus/_server.js                      1.57 kB
+.svelte-kit/output/server/entries/endpoints/api/profile/_server.js                         1.74 kB
+.svelte-kit/output/server/entries/endpoints/api/system/info/_server.js                     1.82 kB
+.svelte-kit/output/server/entries/endpoints/api/profile/password/_server.js                1.84 kB
+.svelte-kit/output/server/chunks/index.js                                                  2.41 kB
+.svelte-kit/output/server/entries/endpoints/api/users/_server.js                           2.45 kB
+.svelte-kit/output/server/entries/endpoints/api/users/_id_/_server.js                      2.66 kB
+.svelte-kit/output/server/entries/endpoints/api/sales/sale-stock/discontinued/_server.js   2.82 kB
+.svelte-kit/output/server/entries/endpoints/api/sales/sale-stock/search/_server.js         3.35 kB
+.svelte-kit/output/server/entries/endpoints/api/settings/_server.js                        3.74 kB
+.svelte-kit/output/server/entries/endpoints/api/menus/_id_/_server.js                      4.38 kB
+.svelte-kit/output/server/chunks/ssr.js                                                    4.71 kB
+.svelte-kit/output/server/entries/endpoints/api/sales/calendar/_server.js                  5.04 kB
+.svelte-kit/output/server/entries/endpoints/api/sales/sale-stock/adjust/_server.js         5.18 kB
+.svelte-kit/output/server/entries/endpoints/api/menus/_server.js                           5.46 kB
+.svelte-kit/output/server/entries/endpoints/api/system/_server.js                          5.73 kB
+.svelte-kit/output/server/entries/pages/admin/profile/_page.svelte.js                      5.73 kB
+.svelte-kit/output/server/chunks/hooks.server.js                                           5.87 kB
+.svelte-kit/output/server/entries/pages/_page.svelte.js                                    6.30 kB
+.svelte-kit/output/server/chunks/internal.js                                               6.84 kB
+.svelte-kit/output/server/entries/pages/admin/_page.svelte.js                              8.40 kB
+.svelte-kit/output/server/entries/pages/admin/_layout.svelte.js                            9.17 kB
+.svelte-kit/output/server/entries/pages/admin/sales/sale-stock/_page.svelte.js            10.12 kB
+.svelte-kit/output/server/entries/pages/admin/settings/_page.svelte.js                    11.65 kB
+.svelte-kit/output/server/entries/pages/admin/sales/_page.svelte.js                       13.20 kB
+.svelte-kit/output/server/entries/pages/admin/users/_page.svelte.js                       13.42 kB
+.svelte-kit/output/server/entries/pages/admin/menu-management/_page.svelte.js             14.42 kB
+.svelte-kit/output/server/entries/pages/admin/sales/calendar/_page.svelte.js              19.91 kB
+.svelte-kit/output/server/index.js                                                        91.20 kB
+
+Run npm run preview to preview your production build locally.
+
+> Using @sveltejs/adapter-node
+Generated an empty chunk: "_server".
+  ✔ done
+✓ built in 10.24s

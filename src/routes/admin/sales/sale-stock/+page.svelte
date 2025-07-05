@@ -403,9 +403,9 @@
   /* 검색 폼 */
   .search-form {
     background: white;
-    margin: 0.5rem;
+    margin: 0.2rem; /* 0.5rem에서 0.2rem로 줄임 */
     border-radius: 8px;
-    padding: 1rem;
+    padding: 0.8rem; /* 1rem에서 0.8rem로 줄임 */
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   }
 
@@ -535,9 +535,9 @@
     border: 1px solid #f5c6cb;
   }
 
-  /* 카드 컨테이너 */
+  /* 카드 컨테이너 - 패딩 최소화 */
   .cards-container {
-    padding: 0 0.5rem 1rem 0.5rem;
+    padding: 0 0.2rem 1rem 0.2rem; /* 0.5rem에서 0.2rem로 줄임 */
   }
 
   /* 제품 카드 */
@@ -714,7 +714,7 @@
   }
 
   .discontinued-btn {
-    background: #6c757d;
+    background: #adb5bd; /* 연한 회색으로 변경 */
     color: white;
     border: none;
     padding: 0.25rem 0.5rem;
@@ -726,7 +726,7 @@
   }
 
   .discontinued-btn:hover {
-    background: #5a6268;
+    background: #9ca3af; /* 호버 시 조금 더 진한 회색 */
   }
 
   .discontinued-btn.active {
@@ -784,12 +784,12 @@
   /* 모바일 최적화 */
   @media (max-width: 480px) {
     .search-form {
-      margin: 0.3rem;
-      padding: 0.8rem;
+      margin: 0.1rem; /* 0.3rem에서 0.1rem로 줄임 */
+      padding: 0.6rem; /* 0.8rem에서 0.6rem로 줄임 */
     }
 
     .cards-container {
-      padding: 0 0.3rem 1rem 0.3rem;
+      padding: 0 0.1rem 1rem 0.1rem; /* 0.3rem에서 0.1rem로 줄임 */
     }
 
     .product-card {
@@ -824,12 +824,12 @@
   /* 태블릿 */
   @media (min-width: 768px) {
     .search-form {
-      margin: 1rem;
-      padding: 1.5rem;
+      margin: 0.3rem; /* 1rem에서 0.3rem로 줄임 */
+      padding: 1rem; /* 1.5rem에서 1rem로 줄임 */
     }
 
     .cards-container {
-      padding: 0 1rem 1rem 1rem;
+      padding: 0 0.3rem 1rem 0.3rem; /* 1rem에서 0.3rem로 줄임 */
     }
 
     .product-card {
@@ -850,12 +850,12 @@
   /* 데스크톱 */
   @media (min-width: 1024px) {
     .search-form {
-      margin: 1.5rem 2rem;
-      padding: 2rem;
+      margin: 0.5rem; /* 1.5rem 2rem에서 0.5rem로 줄임 */
+      padding: 1.2rem; /* 2rem에서 1.2rem로 줄임 */
     }
 
     .cards-container {
-      padding: 0 2rem 1rem 2rem;
+      padding: 0 0.5rem 1rem 0.5rem; /* 2rem에서 0.5rem로 줄임 */
     }
 
     .product-card {

@@ -1,7 +1,9 @@
 <script>
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onMount, createEventDispatcher } from 'svelte';
   import { browser } from '$app/environment';
+  
+  const dispatch = createEventDispatcher();
   
   let menus = [];
   let expandedMenus = {};
@@ -21,9 +23,7 @@
       const data = await response.json();
       
       if (data.success) {
-        // 계층 구조로 변환
         menus = buildMenuTree(data.data);
-        console.log('메뉴 트리 구조:', menus);
       } else {
         console.error('메뉴 로드 실패:', data.message);
         error = data.message;
@@ -36,17 +36,28 @@
     }
   }
 
-  // 평면 메뉴 배열을 계층 구조로 변환
+  function autoExpandActiveParents() {
+    const newExpanded = {};
+    
+    menus.forEach(menu => {
+      if (hasActiveChild(menu)) {
+        newExpanded[menu.title] = true;
+      } else if (expandedMenus[menu.title]) {
+        newExpanded[menu.title] = true;
+      }
+    });
+    
+    expandedMenus = newExpanded;
+  }
+
   function buildMenuTree(flatMenus) {
     const menuMap = new Map();
     const rootMenus = [];
 
-    // 먼저 모든 메뉴를 맵에 저장
     flatMenus.forEach(menu => {
       menuMap.set(menu.id, { ...menu, children: [] });
     });
 
-    // 부모-자식 관계 설정
     flatMenus.forEach(menu => {
       const menuItem = menuMap.get(menu.id);
       if (menu.parent_id) {
@@ -55,7 +66,7 @@
           parent.children.push(menuItem);
         } else {
           console.warn(`부모 메뉴를 찾을 수 없음: ${menu.parent_id} for ${menu.title}`);
-          rootMenus.push(menuItem); // 부모를 찾을 수 없으면 루트로
+          rootMenus.push(menuItem);
         }
       } else {
         rootMenus.push(menuItem);
@@ -66,30 +77,29 @@
   }
 
   function isActive(href) {
+    // $page를 명시적으로 사용해서 반응성 확보
     return $page.url.pathname === href;
   }
 
+  // $page 변경 시 강제로 상태 업데이트
+  $: currentPath = $page.url.pathname;
+
   function isParentActive(menu) {
-    if (menu.children && menu.children.length > 0) {
-      return menu.children.some(child => isActive(child.href)) || (menu.href && isActive(menu.href));
+    // 부모 메뉴는 자신이 active이거나 하위 메뉴 중 하나가 active일 때 active 표시
+    if (menu.href && isActive(menu.href)) {
+      return true;
     }
-    return menu.href && isActive(menu.href);
+    return hasActiveChild(menu);
+  }
+
+  function hasActiveChild(menu) {
+    // 하위 메뉴 중 활성화된 것이 있는지만 체크
+    return menu.children && menu.children.some(child => isActive(child.href));
   }
 
   function toggleMenu(menuTitle) {
     expandedMenus[menuTitle] = !expandedMenus[menuTitle];
     expandedMenus = { ...expandedMenus };
-  }
-
-  // 현재 활성 메뉴의 부모를 자동으로 펼치기
-  $: {
-    if (menus.length > 0) {
-      menus.forEach(menu => {
-        if (menu.children && menu.children.length > 0 && isParentActive(menu)) {
-          expandedMenus[menu.title] = true;
-        }
-      });
-    }
   }
 </script>
 
@@ -108,14 +118,15 @@
       {#each menus as menu}
         <li class="menu-item">
           {#if menu.children && menu.children.length > 0}
-            <!-- 하위 메뉴가 있는 경우 -->
-            <div class="menu-parent">
+            <!-- 하위 메뉴가 있는 부모 메뉴 -->
+            <div class="parent-menu-container">
               <button 
-                class="menu-link parent-link"
-                class:active={isParentActive(menu)}
+                class="parent-menu-button"
+                class:active={currentPath === menu.href}
+                class:has-active-child={menu.children && menu.children.some(child => currentPath === child.href)}
                 on:click={() => toggleMenu(menu.title)}
               >
-                <div class="parent-content">
+                <div class="parent-menu-content">
                   <span class="menu-icon">{menu.icon}</span>
                   <span class="menu-title">{menu.title}</span>
                 </div>
@@ -130,11 +141,17 @@
                     <li class="submenu-item">
                       <a 
                         href={child.href}
-                        class="menu-link submenu-link"
-                        class:active={isActive(child.href)}
+                        class="child-menu-link"
+                        class:active={currentPath === child.href}
+                        on:click={() => {
+                          expandedMenus[menu.title] = true;
+                          // 모바일에서만 햄버거 메뉴 닫기
+                          if (window.innerWidth <= 768) {
+                            dispatch('click');
+                          }
+                        }}
                       >
-                        <!-- 하위 메뉴는 아이콘 없이 텍스트만 -->
-                        <span class="menu-title">{child.title}</span>
+                        <span class="child-menu-title">{child.title}</span>
                       </a>
                     </li>
                   {/each}
@@ -142,11 +159,17 @@
               {/if}
             </div>
           {:else}
-            <!-- 단일 메뉴인 경우 -->
+            <!-- 단독 메뉴 -->
             <a 
               href={menu.href}
-              class="menu-link"
-              class:active={isActive(menu.href)}
+              class="single-menu-link"
+              class:active={currentPath === menu.href}
+              on:click={() => {
+                // 모바일에서만 햄버거 메뉴 닫기
+                if (window.innerWidth <= 768) {
+                  dispatch('click');
+                }
+              }}
             >
               <span class="menu-icon">{menu.icon}</span>
               <span class="menu-title">{menu.title}</span>
@@ -174,12 +197,20 @@
   .menu-item {
     margin-bottom: 0.5rem;
   }
-  
-  .menu-parent {
-    width: 100%;
+
+  /* 공통 스타일 */
+  .menu-icon {
+    margin-right: 0.5rem;
+    font-size: 1.2rem;
   }
-  
-  .menu-link {
+
+  .menu-title,
+  .child-menu-title {
+    font-weight: 500;
+  }
+
+  /* ========== 단독 메뉴 스타일 ========== */
+  .single-menu-link {
     display: flex;
     align-items: center;
     padding: 0.75rem 1rem;
@@ -187,85 +218,113 @@
     text-decoration: none;
     border-radius: 6px;
     transition: all 0.2s;
-    font-weight: 500;
-    width: 100%;
-    border: none;
-    background: none;
-    cursor: pointer;
-    text-align: left;
     font-size: 1rem;
   }
-  
-  /* 호버 효과만 */
-  .menu-link:hover {
+
+  .single-menu-link:hover {
     background: #e3f2fd;
     color: #1976d2;
   }
-  
-  /* 활성 상태 - 더 부드러운 스타일 */
-  .menu-link.active {
+
+  .single-menu-link.active {
     background: #1976d2;
     color: white;
     border-left: 4px solid #0d47a1;
     font-weight: 600;
   }
-  
-  .parent-link {
-    justify-content: space-between;
+
+  /* ========== 부모 메뉴 스타일 ========== */
+  .parent-menu-container {
+    width: 100%;
   }
-  
-  .parent-content {
+
+  .parent-menu-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    color: #333;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    transition: all 0.2s;
+    font-size: 1rem;
+    width: 100%;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .parent-menu-button:hover {
+    background: #e3f2fd;
+    color: #1976d2;
+  }
+
+  .parent-menu-button.active {
+    background: #1976d2;
+    color: white;
+    border-left: 4px solid #0d47a1;
+    font-weight: 600;
+  }
+
+  .parent-menu-button.has-active-child {
+    background: #f0f9ff;
+    color: #1976d2;
+    border-left: 3px solid #93c5fd;
+  }
+
+  .parent-menu-content {
     display: flex;
     align-items: center;
   }
-  
-  .menu-icon {
-    margin-right: 0.5rem;
-    font-size: 1.2rem;
-  }
-  
+
   .expand-icon {
     font-size: 0.8rem;
     transition: transform 0.2s;
     flex-shrink: 0;
   }
-  
+
   .expand-icon.expanded {
     transform: rotate(180deg);
   }
-  
+
+  /* ========== 하위 메뉴 스타일 ========== */
   .submenu-list {
     list-style: none;
     margin: 0.5rem 0 0 0;
     padding: 0;
     padding-left: 1rem;
   }
-  
+
   .submenu-item {
     margin-bottom: 0.25rem;
   }
-  
-  .submenu-link {
+
+  .child-menu-link {
+    display: flex;
+    align-items: center;
     padding: 0.5rem 1rem;
+    padding-left: 1.5rem;
+    color: #555;
+    text-decoration: none;
+    border-radius: 6px;
+    transition: all 0.2s;
     font-size: 1rem;
     font-weight: 400;
-    padding-left: 1.5rem;
   }
-  
-  /* 하위 메뉴 호버 */
-  .submenu-link:hover {
+
+  .child-menu-link:hover {
     background: #f3e5f5;
     color: #7b1fa2;
   }
-  
-  /* 하위 메뉴 활성화 */
-  .submenu-link.active {
-    background: #7b1fa2;
-    color: white;
-    border-left: 4px solid #4a148c;
+
+  .child-menu-link.active {
+    background: #f3e5f5;
+    color: #7b1fa2;
+    border-left: 3px solid #ba68c8;
     font-weight: 500;
   }
 
+  /* ========== 상태 표시 ========== */
   .loading,
   .no-menus {
     padding: 1rem;

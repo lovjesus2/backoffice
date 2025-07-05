@@ -248,8 +248,8 @@
   }
 
   .main {
-    padding: 2rem;
-    max-width: 1200px;
+    padding: 0.5rem;
+    max-width: none;
     margin: 0 auto;
   }
 
@@ -303,7 +303,9 @@
 
     .main {
       grid-area: main;
-      padding: 2rem;
+      padding: 1rem;
+      max-width: none;
+      margin: 0;
     }
   }
 
@@ -332,7 +334,7 @@
     }
     
     .main {
-      padding: 0.8rem;
+      padding: 0.1rem;
     }
 
     .sidebar {
