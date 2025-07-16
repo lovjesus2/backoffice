@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>오프라인 - 갤러리 PWA</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        
+        .offline-container {
+            max-width: 400px;
+            padding: 2rem;
+        }
+        
+        .offline-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.8;
+        }
+        
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            font-weight: 300;
+        }
+        
+        p {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            opacity: 0.9;
+            margin-bottom: 2rem;
+        }
+        
+        .retry-btn {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .retry-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-2px);
+        }
+        
+        .cached-content {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .cached-images {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 10px;
+            margin-top: 1rem;
+        }
+        
+        .cached-image {
+            width: 80px;
+            height: 80px;
+            border-radius: 8px;
+            object-fit: cover;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        
+        .cached-image:hover {
+            transform: scale(1.05);
+        }
+        
+        @media (max-width: 480px) {
+            .offline-container {
+                padding: 1rem;
+            }
+            
+            h1 {
+                font-size: 1.5rem;
+            }
+            
+            .cached-images {
+                grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+            }
+            
+            .cached-image {
+                width: 60px;
+                height: 60px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon">📱</div>
+        <h1>오프라인 상태</h1>
+        <p>인터넷 연결을 확인하고 다시 시도해주세요.<br>
+        캐시된 이미지는 아래에서 볼 수 있습니다.</p>
+        
+        <button class="retry-btn" onclick="window.location.reload()">
+            다시 시도
+        </button>
+        
+        <div class="cached-content">
+            <h3>캐시된 이미지</h3>
+            <div class="cached-images" id="cachedImages">
+                <!-- 캐시된 이미지들이 여기에 표시됩니다 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 캐시된 이미지 목록 표시
+        async function loadCachedImages() {
+            try {
+                const db = await openIndexedDB();
+                const transaction = db.transaction(['imageCache'], 'readonly');
+                const store = transaction.objectStore('imageCache');
+                
+                const getAllRequest = store.getAll();
+                getAllRequest.onsuccess = () => {
+                    const images = getAllRequest.result;
+                    const container = document.getElementById('cachedImages');
+                    
+                    if (images.length === 0) {
+                        container.innerHTML = '<p style="opacity: 0.7;">캐시된 이미지가 없습니다.</p>';
+                        return;
+                    }
+                    
+                    images.slice(0, 12).forEach(imageData => {
+                        const img = document.createElement('img');
+                        img.className = 'cached-image';
+                        img.src = URL.createObjectURL(imageData.blob);
+                        img.alt = '캐시된 이미지';
+                        img.onclick = () => openImageModal(imageData);
+                        container.appendChild(img);
+                    });
+                };
+            } catch (error) {
+                console.log('캐시된 이미지 로드 실패:', error);
+                document.getElementById('cachedImages').innerHTML = 
+                    '<p style="opacity: 0.7;">캐시된 이미지를 불러올 수 없습니다.</p>';
+            }
+        }
+        
+        function openIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('GalleryPWA', 1);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+        
+        function openImageModal(imageData) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.9);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+                cursor: pointer;
+            `;
+            
+            const img = document.createElement('img');
+            img.src = URL.createObjectURL(imageData.blob);
+            img.style.cssText = `
+                max-width: 90%;
+                max-height: 90%;
+                object-fit: contain;
+                border-radius: 8px;
+            `;
+            
+            modal.appendChild(img);
+            modal.onclick = () => document.body.removeChild(modal);
+            document.body.appendChild(modal);
+        }
+        
+        // 온라인 상태 감지
+        window.addEventListener('online', () => {
+            window.location.reload();
+        });
+        
+        // 페이지 로드 시 캐시된 이미지 표시
+        loadCachedImages();
+    </script>
+</body>
+</html>
