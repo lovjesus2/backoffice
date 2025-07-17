@@ -33,8 +33,8 @@
   
   //이미지 캐싱
   async function cacheImage(event) {
-  await simpleCache.handleImage(event.target);
-}
+    await simpleCache.handleImage(event.target);
+  }
 
   // 검색 실행
   async function handleSearch() {
