@@ -2,7 +2,7 @@
 import { redirect } from '@sveltejs/kit';
 
 // SALE_01 매출 조회 페이지는 관리자만 접근 가능
-export async function load({ parent }) {
+export async function load({ parent, url }) {
   const { user } = await parent();
   
   console.log('SALE_01 페이지 접근 시도, user:', user?.username, user?.role);
@@ -20,5 +20,8 @@ export async function load({ parent }) {
   }
   
   console.log('✅ 관리자 접근 허용 - SALE_01 매출 조회');
-  return {};
+  
+  return {
+    user
+  };
 }
