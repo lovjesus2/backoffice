@@ -1,9 +1,10 @@
+<!-- src/routes/admin/+layout.svelte -->
 <script>
   import { initPWA } from '$lib/pwa.js';
   import TreeMenu from '$lib/components/TreeMenu.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  
+  import { browser } from '$app/environment';
 
   export let data;
   $: ({ user } = data);
@@ -11,14 +12,22 @@
   let isMobileMenuOpen = false;
 
   onMount(() => {
+    if (!browser) return;
+    
     const handleResize = () => {
-      if (window.innerWidth > 768) {
+      if (browser && window.innerWidth > 768) {
         isMobileMenuOpen = false;
       }
     };
+    
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-    initPWA();  // ← 이 줄만 추가 (await 없어도 됨)
+    
+    // PWA 초기화
+    initPWA();
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
   });
 
   function toggleMenu() {
@@ -59,31 +68,36 @@
 
   <!-- 오버레이 -->
   {#if isMobileMenuOpen}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="overlay" on:click={closeMenu}></div>
   {/if}
 
   <!-- 사이드바 -->
   <aside class="sidebar" class:open={isMobileMenuOpen}>
-    <div class="sidebar-header">
-      <h2>메뉴</h2>
-      <button class="close-btn" on:click={closeMenu}>✕</button>
+    <div class="sidebar-content">
+      <TreeMenu />
     </div>
-    <TreeMenu userRole={user?.role || 'user'} on:click={closeMenu} />
   </aside>
 
-  <!-- 메인 -->
-  <main class="main">
-    {#if data.errorMessage}
-      <div class="error-banner">⚠️ {data.errorMessage}</div>
-    {/if}
+  <!-- 메인 컨텐츠 -->
+  <main class="main-content">
     <slot />
   </main>
 </div>
 
+<!-- 나머지 스타일은 기존과 동일 -->
+
 <style>
+  /* PWA 노치 대응 CSS 변수 */
+  :root {
+    --safe-area-top: env(safe-area-inset-top, 0px);
+  }
+
   .layout {
     min-height: 100vh;
     background: #f5f5f5;
+    padding-top: var(--safe-area-top);
   }
 
   /* ========== 헤더 ========== */
@@ -91,6 +105,7 @@
     background: #007bff;
     color: white;
     padding: 1rem;
+    padding-top: calc(1rem + var(--safe-area-top)); /* ← 이 줄 추가 */
     display: flex;
     align-items: center;
     gap: 1rem;
@@ -198,10 +213,10 @@
   /* ========== 사이드바 ========== */
   .sidebar {
     position: fixed;
-    top: 0;
+    top: var(--safe-area-top); /* ← 이 줄 수정 */
     left: -300px;
     width: 300px;
-    height: 100vh;
+    height: calc(100vh - var(--safe-area-top)); /* ← 이 줄 수정 */
     background: white;
     z-index: 100;
     transition: left 0.3s ease;
