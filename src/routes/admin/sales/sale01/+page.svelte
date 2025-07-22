@@ -115,7 +115,7 @@
     <h1>매출 조회</h1>
   </header>
 
-  <main class="content">
+  <main class="main-content">
     <!-- 검색 폼 -->
     <form on:submit|preventDefault={handleSearch}>
       <div class="search-field">
@@ -330,20 +330,25 @@
     background-color: #f8f9fa;
   }
 
+  /* 헤더 스타일 */
   .header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 1rem;
-    text-align: center;
+      background: white;
+      padding: 15px 5px;
+      margin-bottom: 5px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      text-align: center;
   }
 
   .header h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+      color: #333;
   }
 
-  .content {
+  /* 메인 컨텐츠 */
+  .main-content {
     padding: 0;
   }
 
@@ -519,10 +524,14 @@
 
   /* Calendar daily-summary 스타일 정확히 100% 복사 */
   .daily-summary {
-    background: #f8f9fa;
     padding: 10px 15px;
     border-radius: 6px;
     margin-bottom: 15px;
+      /* 기존 스타일에 추가 */
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    border: 1px solid #e0e0e0;
+    background: white; /* 기존 #f8f9fa에서 변경 */
+
   }
 
   .daily-summary h4 {
@@ -545,8 +554,10 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 0;
     font-size: 14px;
+    /* 기존 스타일에 추가 */
+    border-bottom: 1px solid #e9ecef;
+    padding: 8px 0; /* 기존 4px에서 늘림 */
   }
 
   .daily-summary-row div:first-child {

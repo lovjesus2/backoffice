@@ -1,5 +1,6 @@
+<!-- src/routes/admin/flea-market/+page.svelte -->
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { simpleCache } from '$lib/utils/simpleImageCache.js';
   
@@ -51,6 +52,12 @@
     }
   });
   
+  onDestroy(() => {
+    if (browser && isScanning) {
+      stopScanning();
+    }
+  });
+  
   async function loadExternalScripts() {
     // QuaggaJS 로드
     if (!window.Quagga) {
@@ -97,7 +104,7 @@
         // 이미지가 있는 상품들에 대해 IndexedDB 캐시 적용
         setTimeout(() => {
           products.forEach(product => {
-            const img = document.querySelector(`img[data-product-code="${product.code}"]`);
+            const img = document.querySelector(`img[data-product-code="${product.PROH_CODE}"]`);
             if (img) {
               simpleCache.handleImage(img);
             }
@@ -161,6 +168,16 @@
       
       if (result.success) {
         searchResults = result.data;
+        
+        // 검색 결과 이미지에도 캐시 적용
+        setTimeout(() => {
+          searchResults.forEach(product => {
+            const img = document.querySelector(`img[data-search-code="${product.code}"]`);
+            if (img) {
+              simpleCache.handleImage(img);
+            }
+          });
+        }, 100);
       } else {
         alert('검색 오류: ' + result.error);
       }
@@ -179,699 +196,605 @@
       return;
     }
     
+    showBarcodeScanner = true;
+    
     try {
-      showBarcodeScanner = true;
-      updateScannerStatus('카메라를 시작하는 중...');
-      
-      const config = {
+      window.Quagga.init({
         inputStream: {
           name: "Live",
           type: "LiveStream",
           target: document.querySelector('#reader'),
           constraints: {
-            width: { ideal: 1920, min: 1280, max: 1920 },
-            height: { ideal: 1080, min: 720, max: 1080 },
-            facingMode: "environment",
-            frameRate: { ideal: 30, min: 20 },
-            aspectRatio: { ideal: 1.77 }
-          },
-          area: { top: "20%", right: "10%", left: "10%", bottom: "20%" }
+            width: 400,
+            height: 200,
+            facingMode: "environment"
+          }
         },
-        locator: {
-          patchSize: "large",
-          halfSample: false,
-          willReadFrequently: true
-        },
-        numOfWorkers: navigator.hardwareConcurrency || 4,
-        frequency: 20,
         decoder: {
           readers: [
             "code_128_reader",
-            "ean_reader",
-            "ean_8_reader", 
-            "code_39_reader",
-            "codabar_reader",
-            "upc_reader",
-            "upc_e_reader",
-            "i2of5_reader",
-            "2of5_reader",
-            "code_93_reader"
-          ],
-          debug: {
-            drawBoundingBox: true,
-            showFrequency: false,
-            drawScanline: true,
-            drawPatches: false
-          },
-          multiple: false
-        },
-        locate: true
-      };
-      
-      window.Quagga.init(config, (err) => {
+            "ean_reader", 
+            "ean_8_reader",
+            "code_39_reader"
+          ]
+        }
+      }, function(err) {
         if (err) {
           console.error('QuaggaJS 초기화 실패:', err);
-          handleScanError(err);
+          scannerStatus = '스캐너 초기화 실패';
           return;
         }
         
-        console.log('QuaggaJS 초기화 성공');
-        
-        window.Quagga.onDetected((result) => {
-          const code = result.codeResult.code;
-          const format = result.codeResult.format;
-          onScanSuccess(code, format);
-        });
-        
         window.Quagga.start();
-        
         isScanning = true;
-        updateScannerStatus('QuaggaJS로 바코드 스캔 중...');
+        scannerStatus = 'QuaggaJS로 바코드 스캔 중...';
+      });
+      
+      // 바코드 감지 이벤트
+      window.Quagga.onDetected(function(result) {
+        if (isPaused) return;
+        
+        const code = result.codeResult.code;
+        handleBarcodeDetected(code);
       });
       
     } catch (error) {
-      console.error('스캔 시작 실패:', error);
-      handleScanError(error);
+      console.error('스캔 시작 오류:', error);
+      scannerStatus = '스캔 시작 실패';
     }
   }
   
   function stopScanning() {
-    try {
-      if (isScanning && window.Quagga) {
-        window.Quagga.stop();
-        window.Quagga.offDetected();
-        window.Quagga.offProcessed();
-      }
-      
+    if (window.Quagga && isScanning) {
+      window.Quagga.stop();
       isScanning = false;
-      isPaused = false;
-      showBarcodeScanner = false;
-      flashEnabled = false;
-      updateScannerStatus('스캔을 시작하려면 "시작" 버튼을 눌러주세요');
-      
-    } catch (error) {
-      console.error('스캔 중지 실패:', error);
+      scannerStatus = 'QuaggaJS 스캔 중지됨';
     }
+    showBarcodeScanner = false;
   }
   
-  async function onScanSuccess(barcodeData, format = 'BARCODE') {
+  async function handleBarcodeDetected(code) {
     if (isPaused) return;
     
     isPaused = true;
-    updateScannerStatus(`${format} 스캔 중... 제품 정보 조회 중`);
+    scannerStatus = `바코드 감지: ${code} - 처리 중...`;
     
     try {
-      const response = await fetch('/api/sales/flea-market', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'get_product_info',
-          barcode: barcodeData
-        })
-      });
-      
+      const response = await fetch(`/api/sales/flea-market?action=lookup_product&barcode=${code}`);
       const result = await response.json();
       
-      if (result.success) {
+      if (result.success && result.data) {
         addSaleItem(result.data);
-        updateScannerStatus('제품이 추가되었습니다! (1초 후 다시 스캔 가능)');
-        provideFeedback('success');
+        scannerStatus = `상품 추가됨: ${result.data.name} (1초 후 다시 스캔 가능)`;
       } else {
-        updateScannerStatus(result.message || '제품을 찾을 수 없습니다 (1초 후 다시 스캔 가능)');
-        provideFeedback('error');
+        scannerStatus = '제품을 찾을 수 없습니다 (1초 후 다시 스캔 가능)';
       }
     } catch (error) {
-      updateScannerStatus('제품 정보 조회 실패 (1초 후 다시 스캔 가능)');
-      provideFeedback('error');
+      scannerStatus = '제품 정보 조회 실패 (1초 후 다시 스캔 가능)';
     }
     
+    // 1초 후 스캔 재개
     setTimeout(() => {
       isPaused = false;
       if (isScanning) {
-        updateScannerStatus('QuaggaJS로 바코드 스캔 중...');
+        scannerStatus = 'QuaggaJS로 바코드 스캔 중...';
       }
     }, 1000);
   }
   
+  // 판매 아이템 관리
   function addSaleItem(productData) {
+    // 기존 항목 찾기
     const existingItem = saleItems.find(item => item.code === productData.code);
     if (existingItem) {
+      // 수량 증가
       existingItem.quantity += 1;
-      provideFeedback('quantity');
+      existingItem.totalAmount = existingItem.unitPrice * existingItem.quantity;
+      saleItems = saleItems; // 반응성 트리거
       return;
     }
     
     const itemId = ++itemCounter;
     const saleItem = {
       id: itemId,
-      code: productData.code,
-      name: productData.name,
-      price: productData.price,
-      cost: productData.cost,
-      imageUrl: productData.image_url,
+      code: productData.code || productData.PROH_CODE,
+      name: productData.name || productData.PROH_NAME,
+      price: productData.price || parseInt(productData.DPRC_SOPR || 0),
+      cost: productData.cost || parseInt(productData.DPRC_BAPR || 0),
+      imageUrl: `https://image.kungkungne.synology.me/${productData.code || productData.PROH_CODE}.jpg`,
       quantity: 1,
-      unitPrice: productData.price,
-      totalAmount: productData.price,
-      isCash: true
+      unitPrice: productData.price || parseInt(productData.DPRC_SOPR || 0),
+      totalAmount: productData.price || parseInt(productData.DPRC_SOPR || 0),
+      isCash: true // 기본값을 현금으로 설정
     };
     
+    // 새 항목을 배열 맨 앞에 추가
     saleItems = [saleItem, ...saleItems];
   }
   
-  function provideFeedback(type) {
-    // 햅틱 피드백
-    if ('vibrate' in navigator) {
-      switch (type) {
-        case 'success':
-          navigator.vibrate(200);
-          break;
-        case 'error':
-          navigator.vibrate([100, 50, 100, 50, 100]);
-          break;
-        case 'quantity':
-          navigator.vibrate(100);
-          break;
-        case 'save':
-          navigator.vibrate(300);
-          break;
-        default:
-          navigator.vibrate(200);
+  function updateQuantity(itemId, newQuantity) {
+    const quantity = parseInt(newQuantity) || 1;
+    if (quantity < 1) return;
+    
+    saleItems = saleItems.map(item => {
+      if (item.id === itemId) {
+        return {
+          ...item,
+          quantity: quantity,
+          totalAmount: item.unitPrice * quantity
+        };
       }
-    }
-    
-    // 소리 피드백 (가능한 경우)
-    if (type === 'success') {
-      try {
-        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUZrTp66hVFApGn+DyvmGCBj2Z3PLEcyYEK4TO8tiJOQcZZ7zp46FQFM=');
-        audio.play();
-      } catch (e) {}
-    }
+      return item;
+    });
   }
   
-  function handleScanError(error) {
-    isScanning = false;
-    isPaused = false;
+  function updateTotalAmount(itemId, newTotal) {
+    const total = parseInt(newTotal) || 0;
+    if (total < 0) return;
     
-    let message = '';
-    if (error.name === 'NotAllowedError' || error.code === 'PERMISSION_DENIED') {
-      message = '카메라 권한을 허용해주세요!';
-    } else if (error.name === 'NotFoundError' || error.code === 'NOT_FOUND_ERR') {
-      message = '카메라를 찾을 수 없습니다';
-    } else {
-      message = 'QuaggaJS 시작 실패. 새로고침 후 재시도하세요';
-    }
-    
-    updateScannerStatus(message);
-  }
-  
-  function updateScannerStatus(message) {
-    scannerStatus = message;
-  }
-  
-  function toggleFlash() {
-    if (!isScanning) return;
-    
-    try {
-      const track = window.Quagga.CameraAccess.getActiveTrack();
-      if (track && 'torch' in track.getCapabilities()) {
-        flashEnabled = !flashEnabled;
-        track.applyConstraints({
-          advanced: [{ torch: flashEnabled }]
-        });
-      } else {
-        alert('이 기기에서는 손전등을 지원하지 않습니다');
+    saleItems = saleItems.map(item => {
+      if (item.id === itemId) {
+        return {
+          ...item,
+          totalAmount: total
+        };
       }
-    } catch (error) {
-      alert('손전등 제어에 실패했습니다');
-    }
+      return item;
+    });
   }
   
-  function toggleSidebar() {
-    showSidebar = !showSidebar;
-  }
-  
-  function closeSidebar() {
-    showSidebar = false;
-  }
-  
-  function toggleProductSelector() {
-    showProductSelector = !showProductSelector;
-  }
-  
-  function openSijeModal() {
-    showSijeModal = true;
-  }
-  
-  function closeSijeModal() {
-    showSijeModal = false;
-    sijeAmount = '';
-  }
-  
-  function openSearchModal() {
-    showSearchModal = true;
-  }
-  
-  function closeSearchModal() {
-    showSearchModal = false;
-    searchTerm = '';
-    searchResults = [];
-  }
-  
-  function selectProduct(product) {
-    const existingItem = saleItems.find(item => item.code === product.code);
-    if (existingItem) {
-      existingItem.quantity += 1;
-    } else {
-      saleItems = [...saleItems, {
-        id: Date.now(),
-        code: product.code,
-        name: product.name,
-        price: product.price,
-        quantity: 1,
-        isCash: true,
-        imageUrl: product.image_url
-      }];
-    }
-    
-    toggleProductSelector();
-  }
-  
-  function selectSearchResult(product) {
-    selectProduct(product);
-    closeSearchModal();
+  function togglePaymentMethod(itemId) {
+    saleItems = saleItems.map(item => {
+      if (item.id === itemId) {
+        return {
+          ...item,
+          isCash: !item.isCash
+        };
+      }
+      return item;
+    });
   }
   
   function removeItem(itemId) {
     saleItems = saleItems.filter(item => item.id !== itemId);
   }
   
-  function updateQuantity(itemId, newQuantity) {
-    if (newQuantity <= 0) {
-      removeItem(itemId);
-      return;
+  function clearAllItems() {
+    if (saleItems.length === 0) return;
+    if (confirm('모든 항목을 삭제하시겠습니까?')) {
+      saleItems = [];
     }
-    
-    saleItems = saleItems.map(item => 
-      item.id === itemId ? { ...item, quantity: newQuantity } : item
-    );
   }
   
-  function togglePaymentType(itemId) {
-    saleItems = saleItems.map(item => 
-      item.id === itemId ? { ...item, isCash: !item.isCash } : item
-    );
-  }
-  
-  async function saveSale() {
+  // 판매 완료 처리
+  async function completeSale() {
     if (saleItems.length === 0) {
-      alert('매출 항목을 추가해주세요.');
+      alert('판매할 상품이 없습니다.');
+      return;
+    }
+    
+    const totalAmount = saleItems.reduce((sum, item) => sum + item.totalAmount, 0);
+    
+    if (!confirm(`총 ${formatPrice(totalAmount)}원을 결제하시겠습니까?`)) {
       return;
     }
     
     try {
       loading = true;
       
+      const saleData = {
+        action: 'save_sales',
+        items: saleItems.map(item => ({
+          code: item.code,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.unitPrice,
+          saleAmount: item.totalAmount,
+          isCash: item.isCash
+        }))
+      };
+      
       const response = await fetch('/api/sales/flea-market', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'save_sales',
-          date: selectedDate.replace(/-/g, ''),
-          items: saleItems.map(item => ({
-            code: item.code,
-            name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-            isCash: item.isCash
-          }))
-        })
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(saleData)
       });
       
       const result = await response.json();
+      
       if (result.success) {
-        alert('매출이 저장되었습니다.');
+        alert(`판매가 완료되었습니다!\n매출번호: ${result.slipNo}`);
+        
+        // 영수증 출력 옵션
+        if (confirm('영수증을 출력하시겠습니까?')) {
+          const receiptUrl = `/receipt.php?slip=${result.slipNo}&rand=${result.rand}`;
+          window.open(receiptUrl, '_blank', 'width=400,height=600,scrollbars=yes');
+        }
+        
+        // 판매 목록 초기화
         saleItems = [];
-        loadSijeAmount();
-        provideFeedback('save');
+        
+        // 매출 목록 새로고침
+        loadSalesList();
       } else {
-        alert('저장 오류: ' + result.error);
+        alert('판매 저장 실패: ' + result.error);
       }
     } catch (error) {
-      console.error('저장 오류:', error);
-      alert('저장 중 오류가 발생했습니다.');
+      console.error('판매 완료 오류:', error);
+      alert('판매 처리 중 오류가 발생했습니다.');
     } finally {
       loading = false;
     }
   }
   
-  async function registerSije() {
-    if (!sijeAmount || sijeAmount <= 0) {
-      alert('시제 금액을 입력해주세요.');
-      return;
-    }
-    
-    try {
-      loading = true;
-      
-      const response = await fetch('/api/sales/flea-market', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'register_sije',
-          date: selectedDate.replace(/-/g, ''),
-          sijeAmount: parseInt(sijeAmount)
-        })
-      });
-      
-      const result = await response.json();
-      if (result.success) {
-        alert('시제가 등록되었습니다.');
-        closeSijeModal();
-        loadSijeAmount();
-      } else {
-        alert('등록 오류: ' + result.error);
-      }
-    } catch (error) {
-      console.error('시제 등록 오류:', error);
-      alert('시제 등록 중 오류가 발생했습니다.');
-    } finally {
-      loading = false;
-    }
-  }
-  
+  // 매출 삭제
   async function deleteSale(slipNo) {
-    if (!confirm('이 매출을 삭제하시겠습니까?')) {
+    if (!confirm('정말로 이 매출을 삭제하시겠습니까?')) {
       return;
     }
     
     try {
       loading = true;
-      
       const response = await fetch(`/api/sales/flea-market?sSlip=${slipNo}`, {
         method: 'DELETE'
       });
       
       const result = await response.json();
+      
       if (result.success) {
         alert('매출이 삭제되었습니다.');
         loadSalesList();
-        loadSijeAmount();
       } else {
-        alert('삭제 오류: ' + result.error);
+        alert('삭제 실패: ' + result.error);
       }
     } catch (error) {
-      console.error('삭제 오류:', error);
+      console.error('매출 삭제 오류:', error);
       alert('삭제 중 오류가 발생했습니다.');
     } finally {
       loading = false;
     }
   }
   
-  function formatCurrency(amount) {
-    return new Intl.NumberFormat('ko-KR').format(amount) + '원';
+  function formatPrice(price) {
+    return price.toLocaleString();
   }
   
-  $: totalAmount = saleItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  function formatDate(dateStr) {
+    if (!dateStr || dateStr.length !== 8) return dateStr;
+    return `${dateStr.substring(0,4)}-${dateStr.substring(4,6)}-${dateStr.substring(6,8)}`;
+  }
+  
+  // 반응형 계산
+  $: totalQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+  $: totalAmount = saleItems.reduce((sum, item) => sum + item.totalAmount, 0);
+  $: cashTotal = saleItems.filter(item => item.isCash).reduce((sum, item) => sum + item.totalAmount, 0);
+  $: cardTotal = saleItems.filter(item => !item.isCash).reduce((sum, item) => sum + item.totalAmount, 0);
 </script>
 
 <svelte:head>
-  <title>프리마켓 매출 등록</title>
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-touch-fullscreen" content="yes">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>프리마켓 판매 - 백오피스</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 </svelte:head>
 
-<div class="ui-page">
-  <!-- 사이드바 메뉴 -->
-  <div class="sidebar" class:active={showSidebar}>
-    <div class="sidebar-header">
-      <h3>매출 목록</h3>
-      <button class="close-sidebar" on:click={closeSidebar}>×</button>
+<div class="flea-market-container">
+  <!-- 상단 헤더 -->
+  <div class="header">
+    <div class="header-left">
+      <button class="sidebar-toggle" on:click={() => showSidebar = !showSidebar}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+      <h1>🛒 프리마켓 판매</h1>
     </div>
     
-    <div class="sidebar-content">
-      <div class="date-filter">
-        <label>조회 날짜:</label>
-        <input type="date" bind:value={selectedDate}>
-        <button class="search-btn" on:click={loadSalesList}>조회</button>
+    <div class="header-right">
+      <button class="header-btn" on:click={() => showSearchModal = true}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.35-4.35"></path>
+        </svg>
+        검색
+      </button>
+      <button class="header-btn" on:click={startScanning}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        스캔
+      </button>
+    </div>
+  </div>
+
+  <!-- 메인 콘텐츠 -->
+  <div class="main-content">
+    <!-- 판매 목록 -->
+    <div class="sale-section">
+      <div class="section-header">
+        <h3>판매 목록 ({totalQuantity}개)</h3>
+        <button class="clear-btn" on:click={clearAllItems} disabled={saleItems.length === 0}>
+          전체 삭제
+        </button>
+      </div>
+      
+      <div class="sale-items">
+        {#if saleItems.length === 0}
+          <div class="empty-state">
+            상품을 검색하거나 바코드를 스캔하여 추가하세요
+          </div>
+        {:else}
+          {#each saleItems as item (item.id)}
+            <div class="sale-item">
+              <div class="item-image">
+                <img 
+                  src={item.imageUrl} 
+                  alt={item.name}
+                  data-sale-code={item.code}
+                  on:load={(e) => simpleCache.handleImage(e.target)}
+                  on:error={(e) => e.target.src = 'https://via.placeholder.com/60x60?text=No+Image'}
+                />
+              </div>
+              
+              <div class="item-info">
+                <div class="item-name">{item.name}</div>
+                <div class="item-code">{item.code}</div>
+                <div class="item-price">단가: {formatPrice(item.unitPrice)}원</div>
+              </div>
+              
+              <div class="item-controls">
+                <div class="quantity-control">
+                  <button class="qty-btn" on:click={() => updateQuantity(item.id, item.quantity - 1)}>-</button>
+                  <input 
+                    type="number" 
+                    class="qty-input" 
+                    value={item.quantity}
+                    on:change={(e) => updateQuantity(item.id, e.target.value)}
+                    min="1"
+                  />
+                  <button class="qty-btn" on:click={() => updateQuantity(item.id, item.quantity + 1)}>+</button>
+                </div>
+                
+                <input 
+                  type="number" 
+                  class="amount-input" 
+                  value={item.totalAmount}
+                  on:change={(e) => updateTotalAmount(item.id, e.target.value)}
+                />
+                
+                <button 
+                  class="payment-btn" 
+                  class:cash={item.isCash}
+                  class:card={!item.isCash}
+                  on:click={() => togglePaymentMethod(item.id)}
+                >
+                  {item.isCash ? '💰' : '💳'}
+                </button>
+                
+                <button class="remove-btn" on:click={() => removeItem(item.id)}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          {/each}
+        {/if}
+      </div>
+    </div>
+
+    <!-- 결제 요약 -->
+    <div class="payment-summary">
+      <div class="summary-row">
+        <span>현금 결제:</span>
+        <span>{formatPrice(cashTotal)}원</span>
+      </div>
+      <div class="summary-row">
+        <span>카드 결제:</span>
+        <span>{formatPrice(cardTotal)}원</span>
+      </div>
+      <div class="summary-row total">
+        <span>총 금액:</span>
+        <span>{formatPrice(totalAmount)}원</span>
+      </div>
+      
+      <button 
+        class="complete-btn" 
+        on:click={completeSale}
+        disabled={saleItems.length === 0 || loading}
+      >
+        {#if loading}
+          <div class="spinner"></div>
+          처리 중...
+        {:else}
+          💳 결제 완료
+        {/if}
+      </button>
+    </div>
+
+    <!-- 당일 매출 목록 -->
+    <div class="sales-history">
+      <div class="section-header">
+        <h3>매출 내역</h3>
+        <div class="date-controls">
+          <input 
+            type="date" 
+            bind:value={selectedDate}
+            class="date-input"
+          />
+          <button class="load-btn" on:click={loadSalesList}>조회</button>
+        </div>
       </div>
       
       <div class="sales-list">
         {#if salesList.length === 0}
-          <div class="no-data">날짜를 선택하고 조회 버튼을 눌러주세요</div>
+          <div class="empty-state">
+            매출 내역이 없습니다
+          </div>
         {:else}
           {#each salesList as sale}
-            <div class="sale-item">
-              <div class="sale-info">
-                <div class="sale-slip">{sale.slipNo}</div>
-                <div class="sale-amount">{formatCurrency(sale.amount)}</div>
-                <div class="sale-time">{sale.regTime}</div>
+            <div class="sales-item">
+              <div class="sales-info">
+                <div class="sales-slip">{sale.slipNo}</div>
+                <div class="sales-date">{formatDate(sale.date)} {sale.regTime}</div>
+                <div class="sales-amount">{formatPrice(sale.amount)}원 ({sale.qty}개)</div>
               </div>
-              <button class="delete-btn" on:click={() => deleteSale(sale.slipNo)}>삭제</button>
+              <div class="sales-actions">
+                <button class="receipt-btn" on:click={() => window.open(`/receipt.php?slip=${sale.slipNo}&rand=${sale.rand}`, '_blank')}>
+                  영수증
+                </button>
+                <button class="delete-btn" on:click={() => deleteSale(sale.slipNo)}>
+                  삭제
+                </button>
+              </div>
             </div>
           {/each}
         {/if}
       </div>
     </div>
   </div>
-  
-  <!-- 사이드바 오버레이 -->
+
+  <!-- 사이드바 - 상품 선택 -->
   {#if showSidebar}
-    <div class="sidebar-overlay" on:click={closeSidebar}></div>
-  {/if}
-  
-  <!-- 헤더 -->
-  <div class="ui-header">
-    <a href="/admin" class="ui-btn-left">🏠</a>
-    <button class="toggle-btn" on:click={toggleSidebar}>››</button>
-    <div class="header-title-group">
-      <h1>매출 등록 (FLEA)</h1>
-      <span class="sije-amount-display">{formatCurrency(totalAmount)}</span>
-    </div>
-    <button class="ui-btn-right" on:click={openSijeModal}>시제등록</button>
-  </div>
-  
-  <!-- 상품 선택 토글 버튼 -->
-  <button 
-    class="product-toggle-btn" 
-    class:collapsed={!showProductSelector}
-    on:click={toggleProductSelector}
-  >
-    <span class="toggle-arrow">{showProductSelector ? '▼' : '▲'}</span>
-  </button>
-  
-  <!-- 상품 선택 오버레이 -->
-  {#if showProductSelector}
-    <div class="product-selector-overlay" on:click={toggleProductSelector}></div>
-  {/if}
-  
-  <!-- 상품 선택 섹션 -->
-  <div class="product-selector-section" class:active={showProductSelector}>
-    <div class="selector-header">
-      <div class="selector-title">
-        <h3>📦 상품 선택</h3>
+    <div class="sidebar-overlay" on:click={() => showSidebar = false}></div>
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h3>상품 선택</h3>
+        <button class="close-btn" on:click={() => showSidebar = false}>×</button>
       </div>
-      <button class="close-selector-btn" on:click={toggleProductSelector}>×</button>
-    </div>
-    
-    <!-- 카테고리 탭 -->
-    <div class="category-tabs-container">
+      
       <div class="category-tabs">
         {#each categories as category}
-          <div 
+          <button 
             class="category-tab"
             class:active={selectedCategory === category.code}
             on:click={() => { selectedCategory = category.code; loadProducts(); }}
           >
             {category.name}
-          </div>
+          </button>
         {/each}
       </div>
-    </div>
-    
-    <!-- 상품 그리드 -->
-    <div class="product-grid">
-      {#each products as product}
-        <div class="product-item" on:click={() => selectProduct(product)}>
-          <img 
-            src={product.image_url} 
-            alt={product.name}
-            data-product-code={product.code}
-            class="product-image"
-            loading="lazy"
-          >
-          <div class="product-info">
-            <div class="product-name">{product.name}</div>
-            <div class="product-price">{formatCurrency(product.price)}</div>
-          </div>
-        </div>
-      {/each}
-    </div>
-  </div>
-  
-  <!-- 메인 컨텐츠 -->
-  <div class="ui-content">
-    <!-- 바코드 스캔 섹션 -->
-    <div class="barcode-scanner-section" class:active={showBarcodeScanner}>
-      <div class="scanner-container">
-        <div id="reader"></div>
-        <div class="scan-overlay"></div>
-      </div>
       
-      <div class="scanner-status">
-        <div class="scanner-status-text">{scannerStatus}</div>
-        <div class="scanner-controls-mini">
-          {#if !isScanning}
-            <button class="scanner-btn-mini start" on:click={startScanning}>시작</button>
-          {:else}
-            <button class="scanner-btn-mini stop" on:click={stopScanning}>중지</button>
-            <button class="scanner-btn-mini flash" on:click={toggleFlash}>
-              {flashEnabled ? '끄기' : '손전등'}
-            </button>
-          {/if}
-        </div>
-      </div>
-    </div>
-    
-    <!-- 매출 항목 섹션 -->
-    <div class="sale-items-section">
-      <h3 class="sales-header-mini">
-        <span class="sales-title-text">🛍️ 매출 항목</span>
-        <div class="sales-actions-mini">
-          <button class="action-btn-mini search" on:click={openSearchModal}>🔍 검색</button>
-          <button class="action-btn-mini save" on:click={saveSale} disabled={loading}>💾 저장</button>
-        </div>
-      </h3>
-      
-      <div class="sale-items-list">
-        {#if saleItems.length === 0}
-          <div class="empty-list">
-            바코드를 스캔하거나 상품을 선택하여 제품을 추가하세요
-          </div>
+      <div class="products-grid">
+        {#if loading}
+          <div class="loading">상품 로딩 중...</div>
         {:else}
-          {#each saleItems as item (item.id)}
-            <div class="sale-item-row" class:cash-item={item.isCash} class:card-item={!item.isCash}>
-              <img src={item.imageUrl} alt={item.name} class="item-image" loading="lazy">
-              
-              <div class="item-info">
-                <div class="item-name">{item.name}</div>
-                <div class="item-code">{item.code}</div>
-                <div class="item-price">{formatCurrency(item.price)}</div>
+          {#each products as product}
+            <div class="product-card" on:click={() => addSaleItem(product)}>
+              <div class="product-image">
+                <img 
+                  src={`https://image.kungkungne.synology.me/${product.PROH_CODE}.jpg`}
+                  alt={product.PROH_NAME}
+                  data-product-code={product.PROH_CODE}
+                  on:load={(e) => simpleCache.handleImage(e.target)}
+                  on:error={(e) => e.target.src = 'https://via.placeholder.com/100x100?text=No+Image'}
+                />
               </div>
-              
-              <div class="item-controls">
-                <button class="qty-btn minus" on:click={() => updateQuantity(item.id, item.quantity - 1)}>-</button>
-                <span class="qty-display">{item.quantity}</span>
-                <button class="qty-btn plus" on:click={() => updateQuantity(item.id, item.quantity + 1)}>+</button>
-              </div>
-              
-              <div class="payment-controls">
-                <button 
-                  class="payment-btn"
-                  class:cash={item.isCash}
-                  class:card={!item.isCash}
-                  on:click={() => togglePaymentType(item.id)}
-                >
-                  {item.isCash ? '현금' : '카드'}
-                </button>
-                <div class="item-total">{formatCurrency(item.price * item.quantity)}</div>
-              </div>
-              
-              <button class="remove-btn" on:click={() => removeItem(item.id)}>×</button>
+              <div class="product-name">{product.PROH_NAME}</div>
+              <div class="product-price">{formatPrice(parseInt(product.DPRC_SOPR))}원</div>
             </div>
           {/each}
         {/if}
       </div>
     </div>
-  </div>
-  
+  {/if}
+
   <!-- 검색 모달 -->
   {#if showSearchModal}
-    <div class="modal-overlay" on:click={closeSearchModal}>
-      <div class="modal-content search-modal" on:click|stopPropagation>
+    <div class="modal-overlay" on:click={() => showSearchModal = false}>
+      <div class="modal" on:click|stopPropagation>
         <div class="modal-header">
           <h3>상품 검색</h3>
-          <button class="modal-close-btn" on:click={closeSearchModal}>×</button>
+          <button class="close-btn" on:click={() => showSearchModal = false}>×</button>
         </div>
-        <div class="modal-body">
-          <div class="search-filters">
-            <div class="filter-row">
-              <select bind:value={searchType}>
-                <option value="name">제품명</option>
-                <option value="code">제품코드</option>
-              </select>
-              
-              <select bind:value={productFilter}>
-                <option value="all">전체</option>
-                <option value="flea">프리마켓만</option>
-                <option value="normal">일반상품만</option>
-              </select>
-              
-              <select bind:value={discontinuedFilter}>
-                <option value="normal">정상품목</option>
-                <option value="all">전체</option>
-                <option value="discontinued">단종품목</option>
-              </select>
-            </div>
-          </div>
-          
-          <div class="search-input-group">
+        
+        <div class="search-form">
+          <div class="form-row">
             <input 
               type="text" 
               bind:value={searchTerm}
-              placeholder="검색어를 입력하세요"
-              on:keydown={(e) => e.key === 'Enter' && searchProducts()}
-            >
-            <button class="search-btn" on:click={searchProducts} disabled={loading}>검색</button>
+              placeholder="상품명 또는 바코드 입력"
+              class="search-input"
+              on:keypress={(e) => e.key === 'Enter' && searchProducts()}
+            />
+            <button class="search-btn" on:click={searchProducts}>검색</button>
           </div>
           
-          <div class="search-results">
+          <div class="form-row">
+            <select bind:value={searchType} class="form-select">
+              <option value="name">상품명</option>
+              <option value="code">바코드</option>
+            </select>
+            
+            <select bind:value={productFilter} class="form-select">
+              <option value="flea">프리마켓</option>
+              <option value="all">전체상품</option>
+              <option value="normal">일반상품</option>
+            </select>
+            
+            <select bind:value={discontinuedFilter} class="form-select">
+              <option value="normal">정상판매</option>
+              <option value="all">전체</option>
+              <option value="discontinued">단종상품</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="search-results">
+          {#if loading}
+            <div class="loading">검색 중...</div>
+          {:else if searchResults.length === 0}
+            <div class="empty-state">검색 결과가 없습니다</div>
+          {:else}
             {#each searchResults as product}
-              <div class="search-result-item" on:click={() => selectSearchResult(product)}>
-                <img src={product.image_url} alt={product.name} class="result-image" loading="lazy">
+              <div class="search-result-item" on:click={() => { addSaleItem(product); showSearchModal = false; }}>
+                <img 
+                  src={product.image_url}
+                  alt={product.name}
+                  data-search-code={product.code}
+                  on:load={(e) => simpleCache.handleImage(e.target)}
+                  on:error={(e) => e.target.src = 'https://via.placeholder.com/50x50?text=No+Image'}
+                />
                 <div class="result-info">
                   <div class="result-name">{product.name}</div>
                   <div class="result-code">{product.code}</div>
-                  <div class="result-price">{formatCurrency(product.price)}</div>
-                </div>
-                <div class="result-badges">
-                  {#if product.is_flea}
-                    <span class="badge flea">프리마켓</span>
-                  {/if}
-                  {#if product.discontinued === '1'}
-                    <span class="badge discontinued">단종</span>
-                  {/if}
+                  <div class="result-price">{formatPrice(product.price)}원</div>
                 </div>
               </div>
             {/each}
-          </div>
+          {/if}
         </div>
       </div>
     </div>
   {/if}
-  
-  <!-- 시제 등록 모달 -->
-  {#if showSijeModal}
-    <div class="modal-overlay" on:click={closeSijeModal}>
-      <div class="modal-content" on:click|stopPropagation>
-        <div class="modal-header">
-          <h3>시제 등록</h3>
-          <button class="modal-close-btn" on:click={closeSijeModal}>×</button>
+
+  <!-- 바코드 스캐너 모달 -->
+  {#if showBarcodeScanner}
+    <div class="modal-overlay" on:click={stopScanning}>
+      <div class="scanner-modal" on:click|stopPropagation>
+        <div class="scanner-header">
+          <h3>바코드 스캔</h3>
+          <button class="close-btn" on:click={stopScanning}>×</button>
         </div>
-        <div class="modal-body">
-          <div class="sije-input-group">
-            <label>시제 금액</label>
-            <input 
-              type="number" 
-              bind:value={sijeAmount}
-              placeholder="금액을 입력하세요"
-            >
-          </div>
+        
+        <div class="scanner-container">
+          <div id="reader"></div>
+          <div class="scanner-overlay"></div>
         </div>
-        <div class="modal-footer">
-          <button class="cancel-btn" on:click={closeSijeModal}>취소</button>
-          <button class="confirm-btn" on:click={registerSije} disabled={loading}>등록</button>
+        
+        <div class="scanner-status">
+          {scannerStatus}
+        </div>
+        
+        <div class="scanner-controls">
+          {#if !isScanning}
+            <button class="scanner-btn start" on:click={startScanning}>스캔 시작</button>
+          {:else}
+            <button class="scanner-btn stop" on:click={stopScanning}>스캔 중지</button>
+          {/if}
         </div>
       </div>
     </div>
@@ -879,180 +802,358 @@
 </div>
 
 <style>
-  /* Safe Area 대응 */
-  .ui-page {
-    position: relative;
-    min-height: 100vh;
-    padding-top: env(safe-area-inset-top, 60px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    background-color: #f5f5f5;
-    font-family: 'Malgun Gothic', Arial, sans-serif;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-  
-  /* 헤더 - Safe Area 대응 */
-  .ui-header {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: calc(60px + env(safe-area-inset-top, 0px));
-    padding-top: env(safe-area-inset-top, 0px);
-    background: linear-gradient(135deg, #2a69ac 0%, #4a90e2 100%);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-left: max(1rem, env(safe-area-inset-left, 1rem));
-    padding-right: max(1rem, env(safe-area-inset-right, 1rem));
-    z-index: 1000;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-  }
-  
-  .ui-btn-left, .ui-btn-right {
-    background: rgba(255,255,255,0.2);
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
-    text-decoration: none;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-    min-width: 50px;
-    text-align: center;
-  }
-  
-  .toggle-btn {
-    background: rgba(255,255,255,0.2);
-    color: white;
-    border: none;
-    padding: 0.5rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 1rem;
-    margin-right: 1rem;
-  }
-  
-  .header-title-group {
-    flex: 1;
-    text-align: center;
+  .flea-market-container {
+    height: 100vh;
     display: flex;
     flex-direction: column;
-    align-items: center;
+    background: #f5f5f5;
   }
-  
-  .header-title-group h1 {
-    font-size: 1.2rem;
-    font-weight: bold;
-    margin: 0;
-  }
-  
-  .sije-amount-display {
-    font-size: 0.9rem;
-    font-weight: bold;
-    color: #ffeb3b;
-    margin-top: 0.2rem;
-  }
-  
-  /* 사이드바 */
-  .sidebar {
-    position: fixed;
-    left: -100%;
-    top: 0;
-    width: 80%;
-    max-width: 300px;
-    height: 100vh;
-    background: white;
-    z-index: 1001;
-    transition: left 0.3s ease;
-    box-shadow: 2px 0 10px rgba(0,0,0,0.1);
-    overflow-y: auto;
-    padding-top: env(safe-area-inset-top, 0px);
-  }
-  
-  .sidebar.active {
-    left: 0;
-  }
-  
-  .sidebar-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    z-index: 1000;
-  }
-  
-  .sidebar-header {
-    background: #2a69ac;
+
+  /* 헤더 */
+  .header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     padding: 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
   }
-  
-  .close-sidebar {
-    background: none;
-    border: none;
-    color: white;
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .header-left h1 {
+    margin: 0;
     font-size: 1.5rem;
-    cursor: pointer;
+    font-weight: 600;
   }
-  
-  .sidebar-content {
-    padding: 1rem;
-  }
-  
-  .date-filter label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: bold;
-  }
-  
-  .date-filter input {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    margin-bottom: 0.5rem;
-  }
-  
-  .search-btn {
-    width: 100%;
-    background: #4CAF50;
-    color: white;
+
+  .sidebar-toggle, .header-btn {
+    background: rgba(255,255,255,0.2);
     border: none;
-    padding: 0.7rem;
-    border-radius: 4px;
+    color: white;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
     cursor: pointer;
-    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background 0.3s;
   }
-  
-  /* 상품 선택 토글 버튼 */
-  .product-toggle-btn {
-    position: fixed;
-    top: calc(60px + env(safe-area-inset-top, 0px));
-    left: 50%;
-    transform: translateX(-50%);
-    background: #2a69ac;
+
+  .sidebar-toggle:hover, .header-btn:hover {
+    background: rgba(255,255,255,0.3);
+  }
+
+  .header-right {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  /* 메인 콘텐츠 */
+  .main-content {
+    flex: 1;
+    padding: 1rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  /* 판매 섹션 */
+  .sale-section {
+    background: white;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .section-header h3 {
+    margin: 0;
+    color: #2d3748;
+  }
+
+  .clear-btn {
+    background: #f56565;
     color: white;
     border: none;
     padding: 0.5rem 1rem;
-    border-radius: 0 0 20px 20px;
+    border-radius: 0.25rem;
     cursor: pointer;
-    z-index: 999;
-    transition: all 0.3s ease;
+    font-size: 0.875rem;
   }
-  
-  .product-selector-overlay {
+
+  .clear-btn:disabled {
+    background: #cbd5e0;
+    cursor: not-allowed;
+  }
+
+  /* 판매 아이템 */
+  .sale-items {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .sale-item {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: #f7fafc;
+  }
+
+  .item-image img {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 0.25rem;
+    margin-right: 1rem;
+  }
+
+  .item-info {
+    flex: 1;
+    margin-right: 1rem;
+  }
+
+  .item-name {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+
+  .item-code {
+    font-size: 0.75rem;
+    color: #666;
+    margin-bottom: 0.25rem;
+  }
+
+  .item-price {
+    font-size: 0.875rem;
+    color: #e53e3e;
+  }
+
+  .item-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .quantity-control {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .qty-btn {
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid #cbd5e0;
+    background: white;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .qty-input {
+    width: 3rem;
+    text-align: center;
+    border: 1px solid #cbd5e0;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+  }
+
+  .amount-input {
+    width: 5rem;
+    text-align: right;
+    border: 1px solid #cbd5e0;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+  }
+
+  .payment-btn {
+    width: 2.5rem;
+    height: 2rem;
+    border: 2px solid #cbd5e0;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
+  }
+
+  .payment-btn.cash {
+    background: #48bb78;
+    border-color: #38a169;
+    color: white;
+  }
+
+  .payment-btn.card {
+    background: #3182ce;
+    border-color: #2c5aa0;
+    color: white;
+  }
+
+  .remove-btn {
+    width: 2rem;
+    height: 2rem;
+    background: #f56565;
+    color: white;
+    border: none;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 결제 요약 */
+  .payment-summary {
+    background: #2d3748;
+    color: white;
+    padding: 1rem;
+    border-radius: 0.5rem;
+  }
+
+  .summary-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+
+  .summary-row.total {
+    font-size: 1.25rem;
+    font-weight: bold;
+    border-top: 1px solid #4a5568;
+    padding-top: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .complete-btn {
+    width: 100%;
+    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+    color: white;
+    border: none;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .complete-btn:disabled {
+    background: #718096;
+    cursor: not-allowed;
+  }
+
+  /* 매출 내역 */
+  .sales-history {
+    background: white;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  }
+
+  .date-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .date-input {
+    border: 1px solid #cbd5e0;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+  }
+
+  .load-btn {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+  }
+
+  .sales-list {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .sales-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .sales-info {
+    flex: 1;
+  }
+
+  .sales-slip {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+
+  .sales-date {
+    font-size: 0.75rem;
+    color: #666;
+    margin-bottom: 0.25rem;
+  }
+
+  .sales-amount {
+    color: #e53e3e;
+    font-weight: 500;
+  }
+
+  .sales-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .receipt-btn, .delete-btn {
+    padding: 0.25rem 0.5rem;
+    border: none;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+  }
+
+  .receipt-btn {
+    background: #667eea;
+    color: white;
+  }
+
+  .delete-btn {
+    background: #f56565;
+    color: white;
+  }
+
+  /* 사이드바 */
+  .sidebar-overlay {
     position: fixed;
     top: 0;
     left: 0;
@@ -1061,485 +1162,102 @@
     background: rgba(0,0,0,0.5);
     z-index: 998;
   }
-  
-  .product-selector-section {
+
+  .sidebar {
     position: fixed;
-    top: calc(110px + env(safe-area-inset-top, 0px));
-    left: 0;
+    top: 0;
     right: 0;
-    height: 60%;
+    width: 400px;
+    height: 100%;
     background: white;
     z-index: 999;
-    transform: translateY(-100%);
-    transition: transform 0.3s ease;
-    border-radius: 20px 20px 0 0;
-    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.1);
   }
-  
-  .product-selector-section.active {
-    transform: translateY(0);
-  }
-  
-  .selector-header {
-    background: #f8f9fa;
-    padding: 1rem;
+
+  .sidebar-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #e9ecef;
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
   }
-  
-  .close-selector-btn {
+
+  .sidebar-header h3 {
+    margin: 0;
+  }
+
+  .close-btn {
     background: none;
     border: none;
     font-size: 1.5rem;
-    color: #666;
     cursor: pointer;
   }
-  
+
   .category-tabs {
     display: flex;
-    overflow-x: auto;
-    padding: 0 1rem;
+    border-bottom: 1px solid #e2e8f0;
   }
-  
+
   .category-tab {
-    padding: 0.7rem 1rem;
+    flex: 1;
+    padding: 0.75rem;
+    border: none;
+    background: white;
     cursor: pointer;
     border-bottom: 2px solid transparent;
-    white-space: nowrap;
-    font-size: 0.9rem;
-    color: #666;
-    transition: all 0.3s ease;
   }
-  
+
   .category-tab.active {
-    color: #2a69ac;
-    border-bottom-color: #2a69ac;
-    font-weight: bold;
+    border-bottom-color: #667eea;
+    color: #667eea;
+    font-weight: 500;
   }
-  
-  .product-grid {
+
+  .products-grid {
+    flex: 1;
+    padding: 1rem;
+    overflow-y: auto;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 0.8rem;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+  }
+
+  .product-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
     padding: 1rem;
-    height: calc(100% - 140px);
-    overflow-y: auto;
-  }
-  
-  .product-item {
-    background: white;
-    border-radius: 8px;
-    padding: 0.8rem;
-    cursor: pointer;
-    transition: transform 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     text-align: center;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
   }
-  
-  .product-item:hover {
+
+  .product-card:hover {
     transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
   }
-  
-  .product-image {
-    width: 100%;
-    height: 80px;
-    object-fit: cover;
-    border-radius: 4px;
-    margin-bottom: 0.5rem;
-  }
-  
-  .product-name {
-    font-size: 0.8rem;
-    font-weight: bold;
-    margin-bottom: 0.3rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  
-  .product-price {
-    color: #2a69ac;
-    font-weight: bold;
-    font-size: 0.8rem;
-  }
-  
-  /* 메인 컨텐츠 */
-  .ui-content {
-    padding: 1rem;
-    margin-top: 50px;
-  }
-  
-  /* 바코드 스캐너 */
-  .barcode-scanner-section {
-    background: white;
-    border-radius: 8px;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  }
-  
-  .barcode-scanner-section.active .scanner-container {
-    display: block;
-  }
-  
-  .scanner-container {
-    position: relative;
-    display: none;
-    background: #000;
-    border-radius: 8px;
-    overflow: hidden;
-    margin-bottom: 1rem;
-  }
-  
-  #reader {
-    width: 100%;
-    height: 300px;
-  }
-  
-  .scan-overlay {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 200px;
+
+  .product-image img {
+    width: 100px;
     height: 100px;
-    border: 2px solid #00ff00;
-    border-radius: 8px;
-    pointer-events: none;
-  }
-  
-  .scanner-status {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem;
-    background: #f8f9fa;
-    border-radius: 4px;
-  }
-  
-  .scanner-status-text {
-    flex: 1;
-    font-size: 0.9rem;
-    color: #333;
-  }
-  
-  .scanner-controls-mini {
-    display: flex;
-    gap: 0.5rem;
-  }
-  
-  .scanner-btn-mini {
-    background: #2a69ac;
-    color: white;
-    border: none;
-    padding: 0.3rem 0.6rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    cursor: pointer;
-  }
-  
-  .scanner-btn-mini.stop {
-    background: #f44336;
-  }
-  
-  .scanner-btn-mini.flash {
-    background: #ff9800;
-  }
-  
-  /* 매출 항목 */
-  .sale-items-section {
-    background: white;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  }
-  
-  .sales-header-mini {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem 1rem;
-    background: #f8f9fa;
-    border-bottom: 1px solid #e9ecef;
-    margin: 0;
-    font-size: 1rem;
-    font-weight: bold;
-    color: #2a69ac;
-  }
-  
-  .sales-actions-mini {
-    display: flex;
-    gap: 0.3rem;
-  }
-  
-  .action-btn-mini {
-    background: #4CAF50;
-    color: white;
-    border: none;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-  }
-  
-  .action-btn-mini:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  
-  .sale-items-list {
-    padding: 1rem;
-  }
-  
-  .sale-item-row {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem;
-    border-radius: 8px;
+    object-fit: cover;
+    border-radius: 0.25rem;
     margin-bottom: 0.5rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    border-left: 4px solid transparent;
   }
-  
-  .sale-item-row.cash-item {
-    background: #e8f5e8;
-    border-left-color: #4CAF50;
-  }
-  
-  .sale-item-row.card-item {
-    background: #e3f2fd;
-    border-left-color: #2196F3;
-  }
-  
-  .item-image {
-    width: 50px;
-    height: 50px;
-    border-radius: 4px;
-    object-fit: cover;
-  }
-  
-  .item-info {
-    flex: 1;
-  }
-  
-  .item-name {
-    font-weight: bold;
+
+  .product-name {
+    font-size: 0.875rem;
     margin-bottom: 0.25rem;
-    font-size: 0.9rem;
+    font-weight: 500;
   }
-  
-  .item-code {
-    color: #666;
-    font-size: 0.8rem;
-    margin-bottom: 0.2rem;
+
+  .product-price {
+    color: #e53e3e;
+    font-weight: 600;
   }
-  
-  .item-price {
-    color: #999;
-    font-size: 0.8rem;
-  }
-  
-  .item-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  
-  .qty-btn {
-    width: 30px;
-    height: 30px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    background: white;
-    cursor: pointer;
-    font-weight: bold;
-    font-size: 1rem;
-  }
-  
-  .qty-btn.minus {
-    background: #ffebee;
-    color: #d32f2f;
-  }
-  
-  .qty-btn.plus {
-    background: #e8f5e8;
-    color: #4CAF50;
-  }
-  
-  .qty-display {
-    min-width: 30px;
-    text-align: center;
-    font-weight: bold;
-    font-size: 1.1rem;
-  }
-  
-  .payment-controls {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  
-  .payment-btn {
-    padding: 0.3rem 0.6rem;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: bold;
-    transition: background-color 0.3s ease;
-    min-width: 50px;
-  }
-  
-  .payment-btn.cash {
-    background: #4CAF50;
-    color: white;
-  }
-  
-  .payment-btn.card {
-    background: #2196F3;
-    color: white;
-  }
-  
-  .item-total {
-    font-weight: bold;
-    color: #2a69ac;
-    font-size: 0.9rem;
-    text-align: center;
-  }
-  
-  .remove-btn {
-    width: 30px;
-    height: 30px;
-    border: none;
-    border-radius: 50%;
-    background: #f44336;
-    color: white;
-    cursor: pointer;
-    font-size: 1.2rem;
-  }
-  
-  .empty-list {
-    text-align: center;
-    padding: 2rem;
-    color: #666;
-    font-style: italic;
-  }
-  
-  /* 검색 모달 */
-  .search-modal {
-    max-width: 600px;
-    width: 95%;
-    max-height: 80vh;
-    overflow-y: auto;
-  }
-  
-  .search-filters {
-    margin-bottom: 1rem;
-  }
-  
-  .filter-row {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-  }
-  
-  .filter-row select {
-    flex: 1;
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 0.9rem;
-  }
-  
-  .search-input-group {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-  }
-  
-  .search-input-group input {
-    flex: 1;
-    padding: 0.7rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-  }
-  
-  .search-results {
-    max-height: 300px;
-    overflow-y: auto;
-  }
-  
-  .search-result-item {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.8rem;
-    border-bottom: 1px solid #eee;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-  }
-  
-  .search-result-item:hover {
-    background: #f8f9fa;
-  }
-  
-  .result-image {
-    width: 40px;
-    height: 40px;
-    object-fit: cover;
-    border-radius: 4px;
-  }
-  
-  .result-info {
-    flex: 1;
-  }
-  
-  .result-name {
-    font-weight: bold;
-    margin-bottom: 0.2rem;
-  }
-  
-  .result-code {
-    color: #666;
-    font-size: 0.8rem;
-  }
-  
-  .result-price {
-    color: #2a69ac;
-    font-weight: bold;
-    font-size: 0.9rem;
-  }
-  
-  .result-badges {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-  }
-  
-  .badge {
-    padding: 0.2rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: bold;
-    text-align: center;
-  }
-  
-  .badge.flea {
-    background: #4CAF50;
-    color: white;
-  }
-  
-  .badge.discontinued {
-    background: #f44336;
-    color: white;
-  }
-  
-  /* 모달 공통 스타일 */
+
+  /* 모달 */
   .modal-overlay {
     position: fixed;
     top: 0;
@@ -1547,123 +1265,243 @@
     width: 100%;
     height: 100%;
     background: rgba(0,0,0,0.5);
-    z-index: 1000;
     display: flex;
-    justify-content: center;
     align-items: center;
-    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    justify-content: center;
+    z-index: 1000;
   }
-  
-  .modal-content {
+
+  .modal {
     background: white;
-    border-radius: 12px;
-    max-width: 400px;
+    border-radius: 0.5rem;
     width: 90%;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    max-width: 600px;
+    max-height: 80%;
+    display: flex;
+    flex-direction: column;
   }
-  
+
   .modal-header {
-    padding: 1.5rem 1.5rem 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #e9ecef;
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
   }
-  
+
   .modal-header h3 {
     margin: 0;
-    color: #2a69ac;
   }
-  
-  .modal-close-btn {
-    background: none;
+
+  .search-form {
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .search-input {
+    flex: 1;
+    padding: 0.5rem;
+    border: 1px solid #cbd5e0;
+    border-radius: 0.25rem;
+  }
+
+  .search-btn {
+    background: #667eea;
+    color: white;
     border: none;
-    font-size: 1.5rem;
-    color: #666;
-    cursor: pointer;
-  }
-  
-  .modal-body {
-    padding: 1.5rem;
-  }
-  
-  .sije-input-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  
-  .sije-input-group label {
-    font-weight: bold;
-    color: #333;
-  }
-  
-  .sije-input-group input {
-    padding: 0.7rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 1rem;
-  }
-  
-  .modal-footer {
-    padding: 1rem 1.5rem 1.5rem;
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-  
-  .cancel-btn, .confirm-btn {
     padding: 0.5rem 1rem;
-    border: none;
-    border-radius: 4px;
+    border-radius: 0.25rem;
     cursor: pointer;
-    font-weight: bold;
   }
-  
-  .cancel-btn {
-    background: #e9ecef;
+
+  .form-select {
+    flex: 1;
+    padding: 0.5rem;
+    border: 1px solid #cbd5e0;
+    border-radius: 0.25rem;
+  }
+
+  .search-results {
+    flex: 1;
+    padding: 1rem;
+    overflow-y: auto;
+  }
+
+  .search-result-item {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.25rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .search-result-item:hover {
+    background: #f7fafc;
+  }
+
+  .search-result-item img {
+    width: 50px;
+    height: 50px;
+    object-fit: cover;
+    border-radius: 0.25rem;
+    margin-right: 1rem;
+  }
+
+  .result-info {
+    flex: 1;
+  }
+
+  .result-name {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+
+  .result-code {
+    font-size: 0.75rem;
     color: #666;
+    margin-bottom: 0.25rem;
   }
-  
-  .confirm-btn {
-    background: #2a69ac;
+
+  .result-price {
+    color: #e53e3e;
+    font-weight: 500;
+  }
+
+  /* 바코드 스캐너 */
+  .scanner-modal {
+    background: white;
+    border-radius: 0.5rem;
+    width: 90%;
+    max-width: 500px;
+    padding: 1rem;
+  }
+
+  .scanner-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .scanner-header h3 {
+    margin: 0;
+  }
+
+  .scanner-container {
+    width: 100%;
+    height: 200px;
+    background: #f0f0f0;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #reader {
+    width: 100%;
+    height: 100%;
+  }
+
+  .scanner-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 200px;
+    height: 100px;
+    border: 3px solid #667eea;
+    border-radius: 0.5rem;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.3);
+    pointer-events: none;
+  }
+
+  .scanner-status {
+    text-align: center;
+    padding: 0.5rem;
+    background: #f0f4f8;
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+    color: #2d3748;
+  }
+
+  .scanner-controls {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .scanner-btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    font-weight: 500;
+  }
+
+  .scanner-btn.start {
+    background: #48bb78;
     color: white;
   }
-  
-  .confirm-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+
+  .scanner-btn.stop {
+    background: #f56565;
+    color: white;
   }
-  
-  .no-data {
+
+  /* 공통 */
+  .empty-state {
     text-align: center;
-    padding: 2rem 1rem;
+    padding: 2rem;
     color: #666;
-    font-style: italic;
   }
-  
-  /* 반응형 디자인 */
-  @media (max-width: 480px) {
-    .sale-item-row {
-      flex-wrap: wrap;
+
+  .loading {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+  }
+
+  .spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* 반응형 */
+  @media (max-width: 768px) {
+    .sidebar {
+      width: 100%;
+    }
+
+    .products-grid {
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    }
+
+    .sale-item {
+      flex-direction: column;
+      align-items: stretch;
       gap: 0.5rem;
     }
-    
-    .item-info {
-      order: 1;
-      flex: 1 1 100%;
-    }
-    
+
     .item-controls {
-      order: 2;
-    }
-    
-    .payment-controls {
-      order: 3;
-    }
-    
-    .remove-btn {
-      order: 4;
+      justify-content: space-between;
     }
   }
 </style>

@@ -1,6 +1,9 @@
 <script>
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
+  import { goto } from '$app/navigation';
+  import { simpleCache } from '$lib/utils/simpleImageCache';  // ← 이것만 추가
+
 
   // 상태 변수들
   let currentYear = new Date().getFullYear();
@@ -39,6 +42,11 @@
   function formatNumber(num) {
     if (num === 0 || num === null || num === undefined) return '0';
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+  
+  // 이미지 캐싱 함수  ← 여기에 추가!
+  async function cacheImage(event) {
+    await simpleCache.handleImage(event.target);
   }
 
   // 캘린더 그리드 생성

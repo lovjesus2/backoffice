@@ -1,8 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { simpleCache } from '$lib/utils/simpleImageCache.js';
-  
+  import { simpleCache } from '$lib/utils/simpleImageCache';
+
   // 상태 관리
   let searchTerm = '';
   let searchType = 'name';
@@ -201,7 +201,7 @@
 {#if authenticated}
 <div class="stock-container">
   <!-- 페이지 타이틀 -->
-  <div class="page-title">
+  <div class="header">
     <h1>제품검색 & 재고관리</h1>
   </div>
 
@@ -386,20 +386,20 @@
   }
 
   /* 헤더 타이틀 - 매출조회 캘린더와 동일 */
-  .page-title {
-    background: white;
-    padding: 15px 5px;
-    margin-bottom: 5px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    text-align: center;
+  .header {
+      background: white;
+      padding: 15px 5px;
+      margin-bottom: 5px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      text-align: center;
   }
 
-  .page-title h1 {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 600;
-    color: #333;
+  .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+      color: #333;
   }
 
   /* 메인 컨텐츠 */
@@ -795,6 +795,14 @@
       padding: 0.6rem; /* 0.8rem에서 0.6rem로 줄임 */
     }
 
+    .header {
+        padding: 10px 2px;
+        margin-bottom: 5px;
+    }
+    
+    .header h1 {
+        font-size: 20px;
+    }
     .cards-container {
       padding: 0 0.1rem 1rem 0.1rem; /* 0.3rem에서 0.1rem로 줄임 */
     }
