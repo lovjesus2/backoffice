@@ -1,34 +1,105 @@
-<!-- src/routes/admin/+layout.svelte -->
 <script>
   import { initPWA } from '$lib/pwa.js';
+  import { stateManager } from '$lib/utils/stateManager.js';
   import TreeMenu from '$lib/components/TreeMenu.svelte';
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import { browser } from '$app/environment';
+  import { onMount } from 'svelte';
+  import '../../app.postcss';  // 👈 이 한 줄만 추가
 
   export let data;
   $: ({ user } = data);
 
   let isMobileMenuOpen = false;
+  
+  // 디바운스용 타이머
+  let saveTimeout;
 
-  onMount(() => {
-    if (!browser) return;
-    
+  // 디바운스된 상태 저장 (너무 자주 저장하지 않도록)
+  function debouncedSave(path) {
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(async () => {
+      await stateManager.saveState(path);
+    }, 1000); // 1초 후 저장
+  }
+
+  // 페이지 변경 시마다 상태 저장
+  $: if (browser && $page.url.pathname && $page.url.pathname !== '/') {
+    debouncedSave($page.url.pathname);
+  }
+
+  onMount(async () => {
+    // 화면 크기 변경 감지
     const handleResize = () => {
-      if (browser && window.innerWidth > 768) {
+      if (window.innerWidth > 768) {
         isMobileMenuOpen = false;
       }
     };
-    
     window.addEventListener('resize', handleResize);
     
     // PWA 초기화
     initPWA();
     
+    // 초기 로드 시 상태 복원
+    const restoredPath = await stateManager.restoreState();
+    if (restoredPath && restoredPath !== $page.url.pathname && restoredPath !== '/admin') {
+      console.log('초기 상태 복원:', restoredPath);
+      goto(restoredPath);
+    }
+    
+    // 백그라운드 복원 감지
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pageshow', handlePageShow);
+    
+    // 앱 종료 시 저장
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    // 디버깅용 (개발 시에만)
+    if (import.meta.env.DEV) {
+      window.getStorageInfo = () => stateManager.getStorageInfo();
+      window.clearPWAState = () => stateManager.clearAll();
+    }
+    
+    // 정리 함수
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('resize', handleResize);
+      clearTimeout(saveTimeout);
     };
   });
+
+  // 백그라운드에서 포그라운드로 복원
+  async function handleVisibilityChange() {
+    if (document.visibilityState === 'visible') {
+      console.log('PWA 포그라운드 복원');
+      const restoredPath = await stateManager.restoreState();
+      if (restoredPath && restoredPath !== $page.url.pathname && restoredPath !== '/admin') {
+        console.log('백그라운드 복원:', restoredPath);
+        goto(restoredPath);
+      }
+    }
+  }
+
+  // iOS PWA 전용: 페이지 복원 감지
+  async function handlePageShow(event) {
+    if (event.persisted) {
+      console.log('iOS PWA 캐시 복원');
+      const restoredPath = await stateManager.restoreState();
+      if (restoredPath && restoredPath !== $page.url.pathname) {
+        goto(restoredPath);
+      }
+    }
+  }
+
+  // 앱 종료 시 현재 상태 저장
+  async function handleBeforeUnload() {
+    if ($page.url.pathname && $page.url.pathname !== '/') {
+      await stateManager.saveState($page.url.pathname);
+    }
+  }
 
   function toggleMenu() {
     isMobileMenuOpen = !isMobileMenuOpen;
@@ -38,10 +109,13 @@
     isMobileMenuOpen = false;
   }
 
+  // 로그아웃 시 상태 정리
   async function handleLogout() {
     try {
       const response = await fetch('/api/auth/logout', { method: 'POST' });
       if (response.ok) {
+        // 저장된 상태 모두 정리
+        await stateManager.clearAll();
         await goto('/');
       }
     } catch (error) {
@@ -68,89 +142,96 @@
 
   <!-- 오버레이 -->
   {#if isMobileMenuOpen}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="overlay" on:click={closeMenu}></div>
+    <div class="overlay" on:click={closeMenu} role="button" tabindex="0" aria-label="메뉴 닫기"></div>
   {/if}
 
   <!-- 사이드바 -->
-  <aside class="sidebar" class:open={isMobileMenuOpen}>
-    <div class="sidebar-content">
-      <TreeMenu />
+  <nav class="sidebar" class:open={isMobileMenuOpen}>
+    <div class="sidebar-header">
+      <h2>메뉴</h2>
+      <button class="close-btn" on:click={closeMenu} aria-label="메뉴 닫기">✕</button>
     </div>
-  </aside>
+    <TreeMenu on:navigate={closeMenu} />
+  </nav>
 
-  <!-- 메인 컨텐츠 -->
-  <main class="main-content">
+  <!-- 메인 콘텐츠 -->
+  <main class="main">
     <slot />
   </main>
 </div>
 
-<!-- 나머지 스타일은 기존과 동일 -->
-
 <style>
-  /* PWA 노치 대응 CSS 변수 */
-  :root {
-    --safe-area-top: env(safe-area-inset-top, 0px);
+  * {
+    box-sizing: border-box;
   }
 
   .layout {
     min-height: 100vh;
-    background: #f5f5f5;
-    padding-top: var(--safe-area-top);
+    background: #f8f9fa;
   }
 
   /* ========== 헤더 ========== */
   .header {
-    background: #007bff;
-    color: white;
-    padding: 1rem;
-    padding-top: calc(1rem + var(--safe-area-top)); /* ← 이 줄 추가 */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 70px;
+    background: white;
+    border-bottom: 1px solid #dee2e6;
     display: flex;
     align-items: center;
-    gap: 1rem;
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    transition: z-index 0.3s;
+    justify-content: space-between;
+    padding: 0 1rem;
+    z-index: 100;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
-  /* 모바일 메뉴가 열렸을 때 헤더 z-index 낮추기 */
-  .header.menu-open {
-    z-index: 98;
+  /* PC: 백오피스 헤더 피하기 */
+  @media (min-width: 769px) {
+    .header {
+      /* top: 60px; 이 줄 삭제 */
+      position: relative; /* fixed에서 relative로 변경 */
+      top: auto;
+    }
+    
+    .main {
+      margin-top: 0; /* 130px에서 0으로 변경 */
+    }
   }
 
-  /* ========== 햄버거 버튼 ========== */
+  /* iOS: 노치 처리 */
+  @supports (padding: max(0px)) {
+    @media (max-width: 768px) {
+      .header {
+        top: env(safe-area-inset-top, 0px);
+      }
+    }
+  }
+
   .menu-btn {
-    background: none;
-    border: none;
-    color: white;
-    cursor: pointer;
-    padding: 0.5rem;
-    border-radius: 4px;
-    width: 40px;
-    height: 40px;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .menu-btn:hover {
-    background: rgba(255,255,255,0.1);
+    justify-content: space-around;
+    width: 30px;
+    height: 30px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
   }
 
   .bar {
-    width: 20px;
-    height: 2px;
-    background: white;
-    transition: all 0.3s;
-    border-radius: 1px;
+    width: 25px;
+    height: 3px;
+    background: #333;
+    border-radius: 2px;
+    transition: all 0.3s ease;
+    transform-origin: center;
   }
 
   .bar.open:nth-child(1) {
-    transform: rotate(45deg) translate(5px, 5px);
+    transform: rotate(45deg) translate(7px, 7px);
   }
 
   .bar.open:nth-child(2) {
@@ -158,70 +239,92 @@
   }
 
   .bar.open:nth-child(3) {
-    transform: rotate(-45deg) translate(7px, -6px);
+    transform: rotate(-45deg) translate(7px, -7px);
   }
 
   h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #333;
     margin: 0;
-    font-size: 1.2rem;
     flex: 1;
+    text-align: center;
   }
 
   .user-info {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
   }
 
   .user-name {
     font-weight: 600;
+    color: #333;
   }
 
   .user-role {
-    color: #cce7ff;
-    font-size: 0.8rem;
+    color: #666;
   }
 
   .logout-btn {
-    background: rgba(255,255,255,0.2);
+    padding: 0.5rem 1rem;
+    background: #dc3545;
     color: white;
-    border: 1px solid rgba(255,255,255,0.3);
-    padding: 0.4rem 0.8rem;
+    border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 0.8rem;
-    transition: all 0.2s;
+    font-size: 0.875rem;
+    transition: background-color 0.2s;
   }
 
   .logout-btn:hover {
-    background: rgba(255,255,255,0.3);
+    background: #c82333;
   }
 
   /* ========== 오버레이 ========== */
   .overlay {
     position: fixed;
-    top: 0;
+    top: 70px;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.5);
-    z-index: 99;
-    display: none;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 90;
+    backdrop-filter: blur(2px);
+  }
+
+  /* iOS: 오버레이 노치 처리 */
+  @supports (padding: max(0px)) {
+    @media (max-width: 768px) {
+      .overlay {
+        top: calc(70px + env(safe-area-inset-top, 0px));
+      }
+    }
   }
 
   /* ========== 사이드바 ========== */
   .sidebar {
     position: fixed;
-    top: var(--safe-area-top); /* ← 이 줄 수정 */
-    left: -300px;
-    width: 300px;
-    height: calc(100vh - var(--safe-area-top)); /* ← 이 줄 수정 */
+    top: 70px;
+    left: -280px;
+    width: 280px;
+    height: calc(100vh - 70px);
     background: white;
-    z-index: 100;
-    transition: left 0.3s ease;
-    box-shadow: 2px 0 20px rgba(0,0,0,0.1);
     overflow-y: auto;
+    transition: left 0.3s ease;
+    z-index: 95;
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+  }
+
+  /* iOS: 사이드바 노치 처리 */
+  @supports (padding: max(0px)) {
+    @media (max-width: 768px) {
+      .sidebar {
+        top: calc(70px + env(safe-area-inset-top, 0px));
+        height: calc(100vh - 70px - env(safe-area-inset-top, 0px));
+      }
+    }
   }
 
   .sidebar.open {
@@ -229,31 +332,27 @@
   }
 
   .sidebar-header {
-    background: #f8f9fa;
-    padding: 1rem;
-    border-bottom: 1px solid #dee2e6;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    position: sticky;
-    top: 0;
-    z-index: 1;
+    padding: 1rem;
+    border-bottom: 1px solid #dee2e6;
+    background: #f8f9fa;
   }
 
   .sidebar-header h2 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1.125rem;
+    font-weight: 600;
     color: #333;
   }
 
   .close-btn {
     background: none;
     border: none;
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     cursor: pointer;
     color: #666;
-    padding: 0.5rem;
-    border-radius: 4px;
     width: 35px;
     height: 35px;
     display: flex;
@@ -269,6 +368,23 @@
     padding: 0.5rem;
     max-width: none;
     margin: 0 auto;
+    margin-top: 70px;
+  }
+
+  /* PC: 메인 영역 */
+  @media (min-width: 769px) {
+    .main {
+      margin-top: 130px; /* 백오피스 헤더(60px) + 메뉴 헤더(70px) */
+    }
+  }
+
+  /* iOS: 메인 영역 노치 처리 */
+  @supports (padding: max(0px)) {
+    @media (max-width: 768px) {
+      .main {
+        margin-top: calc(70px + env(safe-area-inset-top, 0px));
+      }
+    }
   }
 
   .error-banner {
@@ -307,8 +423,8 @@
     .sidebar {
       grid-area: sidebar;
       position: sticky;
-      top: 70px;
-      height: calc(100vh - 70px);
+      top: 130px; /* 백오피스 헤더(60px) + 메뉴 헤더(70px) */
+      height: calc(100vh - 130px);
       left: 0;
       z-index: 10;
       box-shadow: none;
@@ -324,6 +440,7 @@
       padding: 1rem;
       max-width: none;
       margin: 0;
+      margin-top: 0;
     }
   }
 
