@@ -1,21 +1,33 @@
-import { browser } from '$app/environment';
+// src/routes/admin/sales/flea-market/+page.js
 import { redirect } from '@sveltejs/kit';
 
-export const load = async ({ parent }) => {
-  // 부모 레이아웃에서 사용자 정보 가져오기
-  const { user } = await parent();
-  
-  // 사용자가 로그인되어 있지 않으면 로그인 페이지로 리디렉션
-  if (!user) {
+export async function load({ fetch, url }) {
+  try {
+    // 사용자 인증 상태 확인
+    const response = await fetch('/api/auth/me');
+    
+    if (!response.ok) {
+      throw redirect(302, '/');
+    }
+
+    const { user } = await response.json();
+    
+    if (!user) {
+      throw redirect(302, '/');
+    }
+
+    // 프리마켓 페이지는 로그인한 사용자라면 접근 가능
+    // (관리자/일반 사용자 모두 접근 가능)
+    
+    return {
+      user
+    };
+  } catch (error) {
+    if (error.status === 302) {
+      throw error;
+    }
+    
+    console.error('프리마켓 페이지 로드 오류:', error);
     throw redirect(302, '/');
   }
-  
-  // 프리마켓 접근 권한 체크 (admin 또는 user 모두 접근 가능)
-  if (user.role !== 'admin' && user.role !== 'user') {
-    throw redirect(302, '/admin');
-  }
-  
-  return {
-    user
-  };
-};
+}
