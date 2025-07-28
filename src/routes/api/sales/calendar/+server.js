@@ -95,7 +95,7 @@ async function getDailySalesDetail(db, date) {
 
     const [rows] = await db.execute(`
       SELECT 
-        DNHD_DATE, DNDT_SLIP, DNDT_ITEM, 
+        DNHD_DATE, DNDT_SLIP, DNDT_ITEM, DNHD_BIGO,
         PROH_NAME, DNDT_QTY1, DNDT_TAMT, 
         DATE_FORMAT(DNHD_UDAT, '%Y-%m-%d %H:%i:%s') as DNHD_UDAT, 
         DNDT_HYGB, DNDT_SENO, DNHD_RAND, PROH_QRCD,
@@ -134,7 +134,8 @@ async function getDailySalesDetail(db, date) {
         qrCode: row.PROH_QRCD,
         isStockManaged: (row.STOCK_MANAGEMENT_FLAG == '1'),
         postSlip: row.POST_SLIP,
-        rand: row.DNHD_RAND
+        rand: row.DNHD_RAND,
+        bigo: row.DNHD_BIGO || '' // 이 줄 추가
       });
 
       totalAmount += amount;
