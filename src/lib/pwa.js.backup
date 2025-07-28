@@ -322,35 +322,6 @@ export async function initPWA() {
     await registerServiceWorker();
     setupInstallPrompt();
     
-    // 여기에 이 코드만 추가 ↓↓↓
-    // iPhone PWA 새로고침 버튼 추가
-    if (window.navigator.standalone && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
-      const refreshBtn = document.createElement('button');
-      refreshBtn.innerHTML = '↻';
-      refreshBtn.style.cssText = `
-        position: fixed;
-        top: 80px;
-        right: 15px;
-        color: #ff6b35;
-        border: none;
-        border-radius: 25px;
-        font-size: 20px;
-        z-index: 9999;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        cursor: pointer;
-      `;
-      
-      refreshBtn.onclick = () => {
-        refreshBtn.innerHTML = '⟳';
-        refreshBtn.style.background = 'rgba(0,0,0,0.3)';
-        setTimeout(() => window.location.reload(), 200);
-      };
-      
-      document.body.appendChild(refreshBtn);
-      console.log('iPhone PWA 새로고침 버튼 추가됨');
-    }
-    // 여기까지만 추가 ↑↑↑
-
     // 인증 상태 확인
     await checkAuth();
     
