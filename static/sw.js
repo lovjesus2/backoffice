@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stock-pwa-v1';
+const CACHE_NAME = 'stock-pwa-v2';
 const IMAGE_CACHE_NAME = 'images-v1'; // 이미지 전용 캐시
 
 const STATIC_FILES = [

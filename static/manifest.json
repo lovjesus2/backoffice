@@ -1,13 +1,16 @@
 {
-  "name": "이미지 갤러리 PWA",
-  "short_name": "갤러리",
-  "description": "오프라인 지원 이미지 갤러리 앱",
-  "start_url": "/",
+  "name": "관리자 시스템",
+  "short_name": "관리자",
+  "description": "모바일 최적화된 관리자 백오피스 시스템",
+  "start_url": "/admin",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "theme_color": "#1f2937",
   "orientation": "portrait-primary",
   "scope": "/",
+  "categories": ["business", "productivity", "utilities"],
+  "lang": "ko",
+  "dir": "ltr",
   "icons": [
     {
       "src": "/icon-72x72.png",
@@ -58,13 +61,24 @@
       "purpose": "maskable any"
     }
   ],
-  "categories": ["photo", "entertainment"],
   "shortcuts": [
     {
-      "name": "최근 이미지",
-      "short_name": "최근",
-      "description": "최근 업로드된 이미지 보기",
-      "url": "/recent",
+      "name": "사용자 관리",
+      "short_name": "사용자",
+      "description": "사용자 계정 관리",
+      "url": "/admin/users",
+      "icons": [
+        {
+          "src": "/icon-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "메뉴 관리",
+      "short_name": "메뉴",
+      "description": "시스템 메뉴 관리",
+      "url": "/admin/menu-management",
       "icons": [
         {
           "src": "/icon-96x96.png",

@@ -1,0 +1,80 @@
+const CACHE_NAME = 'stock-pwa-v1';
+const IMAGE_CACHE_NAME = 'images-v1'; // 이미지 전용 캐시
+
+const STATIC_FILES = [
+  '/',
+  '/manifest.json'
+];
+
+self.addEventListener('install', (event) => {
+  console.log('Service Worker 설치 중...');
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.addAll(STATIC_FILES);
+    })
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  console.log('Service Worker 활성화됨');
+  event.waitUntil(
+    Promise.all([
+      caches.keys().then(cacheNames => {
+        return Promise.all(
+          cacheNames.map(cacheName => {
+            if (cacheName !== CACHE_NAME && cacheName !== IMAGE_CACHE_NAME) {
+              return caches.delete(cacheName);
+            }
+          })
+        );
+      }),
+      self.clients.claim()
+    ])
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+  
+  // SvelteKit 페이지는 건드리지 않음
+  if (request.destination === 'document') {
+    return;
+  }
+  
+  // 🖼️ 이미지 캐싱 강화 (새로 추가)
+  if (request.destination === 'image') {
+    event.respondWith(
+      caches.open(IMAGE_CACHE_NAME).then(cache => {
+        return cache.match(request).then(response => {
+          if (response) {
+            console.log('🖼️ 이미지 캐시에서 제공:', url.pathname);
+            return response;
+          }
+          
+          return fetch(request).then(fetchResponse => {
+            // 이미지 요청 성공 시에만 캐시 저장
+            if (fetchResponse && fetchResponse.ok) {
+              console.log('🖼️ 새 이미지 캐시 저장:', url.pathname);
+              cache.put(request, fetchResponse.clone());
+            }
+            return fetchResponse;
+          });
+        });
+      })
+    );
+    return;
+  }
+  
+  // 기존 정적 파일 캐싱 (그대로 유지)
+  if (request.destination === 'script' || request.destination === 'style') {
+    event.respondWith(
+      caches.match(request).then(response => {
+        return response || fetch(request);
+      })
+    );
+  } else {
+    event.respondWith(fetch(request));
+  }
+});
