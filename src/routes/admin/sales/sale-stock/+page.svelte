@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { simpleCache } from '$lib/utils/simpleImageCache';
+  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
 
   // 상태 관리
   let searchTerm = '';
@@ -13,58 +14,9 @@
   let adjustingStock = new Set();
   let authenticated = false;
   
-  // 이미지 모달 상태
-  let showImageModal = false;
-  let modalImageSrc = '';
-  let modalImageAlt = '';
-  let modalImageLoading = false;
-  let modalImageError = false;
-  
-  // 이미지 모달 열기
-  function openImageModal(imageSrc, imageAlt) {
-    // 캐시 활용을 위해 원본 URL 그대로 사용
-    modalImageSrc = imageSrc;
-    modalImageAlt = imageAlt;
-    modalImageLoading = true;
-    modalImageError = false;
-    showImageModal = true;
-    
-    // 모바일에서 스크롤 방지
-    const isMobile = window.innerWidth <= 768;
-    if (isMobile) {
-      document.body.style.overflow = 'hidden';
-    }
-  }
-  
-  // 이미지 모달 닫기
-  function closeImageModal() {
-    showImageModal = false;
-    modalImageSrc = '';
-    modalImageAlt = '';
-    modalImageLoading = false;
-    modalImageError = false;
-    
-    // 모바일에서 스크롤 복원
-    document.body.style.overflow = '';
-  }
-  
-  // 모달 이미지 로드 완료
-  function handleModalImageLoad(event) {
-    modalImageLoading = false;
-    cacheImage(event);
-  }
-  
-  // 모달 이미지 로드 실패
-  function handleModalImageError() {
-    modalImageLoading = false;
-    modalImageError = true;
-  }
-  
-  // ESC 키로 모달 닫기
+  // ESC 키로 검색, Enter 키로 검색
   function handleKeydown(event) {
-    if (event.key === 'Escape' && showImageModal) {
-      closeImageModal();
-    } else if (event.key === 'Enter' && !showImageModal) {
+    if (event.key === 'Enter') {
       handleSearch();
     }
   }
@@ -325,7 +277,7 @@
         {#each products as product}
           <div class="bg-white rounded-lg border relative overflow-hidden {product.discontinued ? 'border-red-300 bg-red-50 opacity-70 border-l-4 border-l-red-500' : 'border-gray-200'}" style="box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; min-height: 120px;">
             <!-- 제품 이미지 -->
-            <div class="flex-shrink-0 relative overflow-hidden cursor-pointer" style="width: 80px; height: 80px;" on:click={() => openImageModal(`/proxy-images/${product.code}_1.jpg`, product.name)}>
+            <div class="flex-shrink-0 relative overflow-hidden cursor-pointer" style="width: 80px; height: 80px;" on:click={() => openImageModal(getProxyImageUrl(product.code), product.name)}>
               <img 
                 src="/proxy-images/{product.code}_1.jpg"
                 alt={product.name}
@@ -400,73 +352,6 @@
     {/if}
   </main>
 </div>
-
-<!-- 이미지 확대 모달 -->
-{#if showImageModal}
-  <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50" style="touch-action: none;" on:click={closeImageModal}>
-    <div class="relative w-full h-full max-w-4xl max-h-screen p-4 flex items-center justify-center" on:click|stopPropagation>
-      
-      <!-- 로딩 상태 -->
-      {#if modalImageLoading}
-        <div class="flex items-center justify-center min-h-64 min-w-64">
-          <div class="text-white text-center">
-            <div class="text-4xl mb-3 animate-spin">🔄</div>
-            <p>이미지 로딩 중...</p>
-          </div>
-        </div>
-      {/if}
-      
-      <!-- 에러 상태 -->
-      {#if modalImageError}
-        <div class="flex items-center justify-center min-h-64 min-w-64">
-          <div class="text-white text-center">
-            <div class="text-4xl mb-3">❌</div>
-            <p>이미지를 불러올 수 없습니다</p>
-            <button 
-              class="mt-3 px-4 py-2 bg-white text-black rounded hover:bg-gray-200 transition-colors duration-200"
-              style="touch-action: manipulation;"
-              on:click={() => {
-                modalImageLoading = true;
-                modalImageError = false;
-                // 캐시 활용을 위해 원본 URL 그대로 재시도
-                const tempSrc = modalImageSrc.split('?')[0]; // 혹시 있을 타임스탬프 제거
-                modalImageSrc = '';
-                setTimeout(() => {
-                  modalImageSrc = tempSrc;
-                }, 10);
-              }}
-            >
-              다시 시도
-            </button>
-          </div>
-        </div>
-      {/if}
-      
-      <!-- 확대된 이미지 -->
-      {#if modalImageSrc && !modalImageError}
-        <div class="relative">
-          <!-- 닫기 버튼 - 이미지 위에 배치 -->
-          <button 
-            class="absolute top-2 right-2 text-white bg-black bg-opacity-70 rounded-full w-8 h-8 flex items-center justify-center hover:bg-opacity-90 transition-all duration-200 z-10"
-            style="touch-action: manipulation;"
-            on:click={closeImageModal}
-          >
-            ✕
-          </button>
-          
-          <img 
-            src={modalImageSrc}
-            alt={modalImageAlt}
-            class="max-w-full max-h-full object-contain rounded-lg shadow-2xl {modalImageLoading ? 'hidden' : 'block'}"
-            style="user-select: none; -webkit-user-select: none; pointer-events: none;"
-            on:load={handleModalImageLoad}
-            on:error={handleModalImageError}
-          />
-        </div>
-      {/if}
-    </div>
-  </div>
-{/if}
 {:else}
   <div class="min-h-screen flex items-center justify-center bg-gray-50">
     <div class="text-center">
