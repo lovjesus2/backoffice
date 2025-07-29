@@ -35,22 +35,30 @@ export async function GET({ url }) {
     const startDate = date1.replace(/-/g, '');
     const endDate = date2.replace(/-/g, '');
 
-    // 기본 WHERE 절
-    let whereClause = `WHERE h.DNHD_DATE BETWEEN '${startDate}' AND '${endDate}'`;
-    let params = [];
+    // ✅ 파라미터 바인딩으로 WHERE 절 구성
+    let whereClause = `WHERE h.DNHD_DATE BETWEEN ? AND ?`;
+    let params = [startDate, endDate];
 
     // 엽서 상태 필터
     if (postcardStatus === 'sent') {
       whereClause += ` AND sp.POST_SLIP IS NOT NULL`;
-    } else if (postcardStatus === 'not_sent') {
+    } else if (postcardStatus === 'not-sent') {
       whereClause += ` AND sp.POST_SLIP IS NULL`;
     }
 
-    // 검색 조건
+    // 검색 조건 - 제품검색과 동일한 문자별 분리 검색 적용
     if (text1.trim()) {
       if (searchType === 'name') {
-        whereClause += ` AND p.PROH_NAME LIKE ?`;
-        params.push(`%${text1.trim()}%`);
+        // ✅ 제품명 검색 - 각 문자를 분리하여 모두 포함되어야 함
+        const searchChars = text1.trim().replace(/\s/g, '').split('');
+        const nameSearchConditions = [];
+        
+        searchChars.forEach((char) => {
+          nameSearchConditions.push("p.PROH_NAME LIKE ?");
+          params.push(`%${char}%`);
+        });
+        
+        whereClause += ` AND (${nameSearchConditions.join(' AND ')})`;
       } else if (searchType === 'code') {
         whereClause += ` AND d.DNDT_ITEM LIKE ?`;
         params.push(`%${text1.trim()}%`);
@@ -132,8 +140,8 @@ export async function GET({ url }) {
           rand: row.DNHD_RAND,
           postSlip: row.POST_SLIP,
           totalAmount: 0,
-          cashAmount: 0,
-          cardAmount: 0,
+          cashTotal: 0,
+          cardTotal: 0,
           totalQty: 0,
           items: []
         });
@@ -146,9 +154,9 @@ export async function GET({ url }) {
       group.totalQty += qty;
       
       if (row.DNDT_HYGB === '1') {
-        group.cashAmount += amount;
+        group.cashTotal += amount;
       } else {
-        group.cardAmount += amount;
+        group.cardTotal += amount;
       }
 
       // 상품 아이템 추가
@@ -170,8 +178,8 @@ export async function GET({ url }) {
     });
 
     const grandTotal = {
-      cashAmount: totalCash,
-      cardAmount: totalCard,
+      cashTotal: totalCash,
+      cardTotal: totalCard,
       totalAmount: totalAmount,
       totalQty: totalQty
     };

@@ -138,27 +138,6 @@
       </div>
 
       <div class="search-field">
-        <fieldset class="radio-group">
-          <legend>엽서상태</legend>
-          <div class="radio-options">
-            <div class="radio-option">
-              <input type="radio" id="all" name="postcardStatus" value="all" bind:group={postcardStatus} />
-              <label for="all">전체</label>
-            </div>
-            <div class="radio-option">
-              <input type="radio" id="sent" name="postcardStatus" value="sent" bind:group={postcardStatus} />
-              <label for="sent">발송</label>
-            </div>
-            <div class="radio-option">
-              <input type="radio" id="not-sent" name="postcardStatus" value="not-sent" bind:group={postcardStatus} />
-              <label for="not-sent">미발송</label>
-            </div>
-          </div>
-        </fieldset>
-      </div>
-
-      <div class="search-field">
-        <label>검색</label>
         <div class="search-input-group">
           <select bind:value={searchType} class="form-control">
             <option value="name">상품명</option>

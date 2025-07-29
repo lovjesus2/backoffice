@@ -493,7 +493,7 @@
                   </div>
                   <div class="flex-shrink-0">
                     <a 
-                      href="/admin/sales/flea-market/postcard?slip={group.slipNo}&rand={group.rand}" 
+                      href="https://postcard.akojeju.com/receipt.php?sale_id={group.slipNo}_{group.rand}" 
                       class="inline-block px-2.5 py-1.5 border border-gray-500 rounded text-gray-700 text-xs font-bold whitespace-nowrap hover:bg-gray-600 hover:text-white transition-all {group.postSlip ? 'bg-green-600 text-white border-green-600' : ''} md:px-2 md:py-1 md:text-[11px]"
                       target="_blank"
                     >

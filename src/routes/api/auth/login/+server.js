@@ -31,7 +31,7 @@ export async function POST({ request, cookies }) {
                 role: user.role 
             },
             JWT_SECRET,
-            { expiresIn: '24h' }
+            { expiresIn: '7d' }
         );
         
         // 쿠키에 토큰 설정
@@ -40,7 +40,7 @@ export async function POST({ request, cookies }) {
             httpOnly: true,
             secure: false,
             sameSite: 'lax',
-            maxAge: 60 * 60 * 24
+            maxAge: 60 * 60 * 24 * 7
         });
         
         return json({

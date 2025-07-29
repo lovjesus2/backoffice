@@ -6,7 +6,7 @@
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
   import { onMount } from 'svelte';
-  import '../../app.postcss';  // 👈 이 한 줄만 추가
+  import '../../app.postcss';  // Tailwind
 
   export let data;
   $: ({ user } = data);
@@ -124,356 +124,86 @@
   }
 </script>
 
-<div class="layout">
+<div class="min-h-screen bg-gray-50">
   <!-- 헤더 -->
-  <header class="header" class:menu-open={isMobileMenuOpen}>
-    <button class="menu-btn" on:click={toggleMenu}>
-      <span class="bar" class:open={isMobileMenuOpen}></span>
-      <span class="bar" class:open={isMobileMenuOpen}></span>
-      <span class="bar" class:open={isMobileMenuOpen}></span>
+  <header class="fixed left-0 right-0 h-[70px] bg-white border-b border-gray-200 flex items-center justify-between px-4 z-[100] shadow-sm
+                 top-[env(safe-area-inset-top,0px)]
+                 md:relative md:top-auto">
+    
+    <!-- 햄버거 버튼 -->
+    <button class="flex flex-col justify-around w-9 h-9 bg-none border-none cursor-pointer p-1.5 rounded-md transition-colors hover:bg-gray-50
+                   md:hidden
+                   max-[480px]:w-8 max-[480px]:h-8 max-[480px]:p-1"
+            on:click={toggleMenu}>
+      <span class="w-5 h-0.5 bg-gray-800 rounded-sm transition-all duration-300 transform origin-center
+                   max-[480px]:w-[18px] max-[480px]:h-0.5
+                   {isMobileMenuOpen ? 'rotate-45 translate-y-[8px] max-[480px]:translate-y-[6px]' : ''}"></span>
+      <span class="w-5 h-0.5 bg-gray-800 rounded-sm transition-all duration-300
+                   max-[480px]:w-[18px] max-[480px]:h-0.5
+                   {isMobileMenuOpen ? 'opacity-0' : ''}"></span>
+      <span class="w-5 h-0.5 bg-gray-800 rounded-sm transition-all duration-300 transform origin-center
+                   max-[480px]:w-[18px] max-[480px]:h-0.5
+                   {isMobileMenuOpen ? '-rotate-45 -translate-y-[8px] max-[480px]:-translate-y-[6px]' : ''}"></span>
     </button>
-    <h1>백오피스</h1>
-    <div class="user-info">
-      <span class="user-name">{user?.username}</span>
-      <span class="user-role">({user?.role})</span>
-      <button class="logout-btn" on:click={handleLogout}>로그아웃</button>
+    
+    <!-- 제목과 로그아웃 버튼 -->
+    <div class="flex items-center gap-3 flex-1 justify-center">
+      <h1 class="m-0 text-xl font-semibold text-gray-800 max-[768px]:text-lg">백오피스</h1>
+      <button class="bg-red-50 text-red-600 border border-red-200 rounded-lg px-2 py-1.5 text-sm cursor-pointer transition-all duration-200 flex items-center justify-center min-w-9 h-9 select-none
+                     hover:bg-red-100 hover:border-red-300 hover:scale-105
+                     active:scale-95
+                     max-[768px]:min-w-8 max-[768px]:h-8 max-[768px]:text-xs"
+              on:click={handleLogout} 
+              title="로그아웃">⏻</button>
+    </div>
+    
+    <!-- 사용자 정보 -->
+    <div class="flex items-center gap-2 mr-[60px]
+                max-[768px]:mr-[45px] max-[768px]:[&>span]:hidden
+                max-[480px]:mr-[40px]">
+      <span class="font-semibold text-gray-800">{user?.username}</span>
+      <span class="text-gray-600">({user?.role})</span>
     </div>
   </header>
 
   <!-- 오버레이 -->
   {#if isMobileMenuOpen}
-    <div class="overlay" on:click={closeMenu} role="button" tabindex="0" aria-label="메뉴 닫기"></div>
+    <div class="fixed top-[calc(env(safe-area-inset-top,0px)+70px)] left-0 right-0 bottom-0 bg-black/50 z-[90] backdrop-blur-sm
+                md:hidden" 
+         on:click={closeMenu} 
+         role="button" 
+         tabindex="0" 
+         aria-label="메뉴 닫기"></div>
   {/if}
 
   <!-- 사이드바 -->
-  <nav class="sidebar" class:open={isMobileMenuOpen}>
-    <div class="sidebar-header">
-      <h2>메뉴</h2>
-      <button class="close-btn" on:click={closeMenu} aria-label="메뉴 닫기">✕</button>
+  <nav class="fixed top-[calc(env(safe-area-inset-top,0px)+70px)] -left-[280px] w-[280px] h-[calc(100vh-env(safe-area-inset-top,0px)-70px)] bg-white overflow-y-auto transition-all duration-300 z-[95] shadow-xl
+             md:static md:top-auto md:left-0 md:shadow-none md:border-r md:border-gray-200 md:h-[calc(100vh-70px)]
+             {isMobileMenuOpen ? 'left-0' : ''}">
+    
+    <!-- 사이드바 헤더 (모바일만) -->
+    <div class="flex justify-between items-center p-4 border-b border-gray-200 bg-gray-50 md:hidden">
+      <h2 class="m-0 text-lg font-semibold text-gray-800">메뉴</h2>
+      <button class="bg-none border-none text-xl cursor-pointer text-gray-600 w-[35px] h-[35px] flex items-center justify-center hover:bg-gray-200"
+              on:click={closeMenu} 
+              aria-label="메뉴 닫기">✕</button>
     </div>
+    
     <TreeMenu on:navigate={closeMenu} />
   </nav>
 
   <!-- 메인 콘텐츠 -->
-  <main class="main">
+  <main class="p-2 max-w-none mx-auto mt-[calc(env(safe-area-inset-top,0px)+70px)]
+              md:mt-0 md:p-4 md:ml-[280px]
+              max-[768px]:p-4
+              max-[480px]:p-1">
     <slot />
   </main>
 </div>
 
+<!-- 에러 배너 스타일 (필요시 사용) -->
 <style>
-  * {
-    box-sizing: border-box;
-  }
-
-  .layout {
-    min-height: 100vh;
-    background: #f8f9fa;
-  }
-
-  /* ========== 헤더 ========== */
-  .header {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 70px;
-    background: white;
-    border-bottom: 1px solid #dee2e6;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 1rem;
-    z-index: 100;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  /* PC: 백오피스 헤더 피하기 */
-  @media (min-width: 769px) {
-    .header {
-      /* top: 60px; 이 줄 삭제 */
-      position: relative; /* fixed에서 relative로 변경 */
-      top: auto;
-    }
-    
-    .main {
-      margin-top: 0; /* 130px에서 0으로 변경 */
-    }
-  }
-
-  /* iOS: 노치 처리 */
-  @supports (padding: max(0px)) {
-    @media (max-width: 768px) {
-      .header {
-        top: env(safe-area-inset-top, 0px);
-      }
-    }
-  }
-
-  .menu-btn {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-around;
-    width: 30px;
-    height: 30px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-  }
-
-  .bar {
-    width: 25px;
-    height: 3px;
-    background: #333;
-    border-radius: 2px;
-    transition: all 0.3s ease;
-    transform-origin: center;
-  }
-
-  .bar.open:nth-child(1) {
-    transform: rotate(45deg) translate(7px, 7px);
-  }
-
-  .bar.open:nth-child(2) {
-    opacity: 0;
-  }
-
-  .bar.open:nth-child(3) {
-    transform: rotate(-45deg) translate(7px, -7px);
-  }
-
-  h1 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: #333;
-    margin: 0;
-    flex: 1;
-    text-align: center;
-  }
-
-  .user-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-  }
-
-  .user-name {
-    font-weight: 600;
-    color: #333;
-  }
-
-  .user-role {
-    color: #666;
-  }
-
-  .logout-btn {
-    padding: 0.5rem 1rem;
-    background: #dc3545;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-    transition: background-color 0.2s;
-  }
-
-  .logout-btn:hover {
-    background: #c82333;
-  }
-
-  /* ========== 오버레이 ========== */
-  .overlay {
-    position: fixed;
-    top: 70px;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 90;
-    backdrop-filter: blur(2px);
-  }
-
-  /* iOS: 오버레이 노치 처리 */
-  @supports (padding: max(0px)) {
-    @media (max-width: 768px) {
-      .overlay {
-        top: calc(70px + env(safe-area-inset-top, 0px));
-      }
-    }
-  }
-
-  /* ========== 사이드바 ========== */
-  .sidebar {
-    position: fixed;
-    top: 70px;
-    left: -280px;
-    width: 280px;
-    height: calc(100vh - 70px);
-    background: white;
-    overflow-y: auto;
-    transition: left 0.3s ease;
-    z-index: 95;
-    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
-  }
-
-  /* iOS: 사이드바 노치 처리 */
-  @supports (padding: max(0px)) {
-    @media (max-width: 768px) {
-      .sidebar {
-        top: calc(70px + env(safe-area-inset-top, 0px));
-        height: calc(100vh - 70px - env(safe-area-inset-top, 0px));
-      }
-    }
-  }
-
-  .sidebar.open {
-    left: 0;
-  }
-
-  .sidebar-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    border-bottom: 1px solid #dee2e6;
-    background: #f8f9fa;
-  }
-
-  .sidebar-header h2 {
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: #333;
-  }
-
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 1.25rem;
-    cursor: pointer;
-    color: #666;
-    width: 35px;
-    height: 35px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .close-btn:hover {
-    background: #e9ecef;
-  }
-
-  .main {
-    padding: 0.5rem;
-    max-width: none;
-    margin: 0 auto;
-    margin-top: 70px;
-  }
-
-  /* PC: 메인 영역 */
-  @media (min-width: 769px) {
-    .main {
-      margin-top: 130px; /* 백오피스 헤더(60px) + 메뉴 헤더(70px) */
-    }
-  }
-
-  /* iOS: 메인 영역 노치 처리 */
-  @supports (padding: max(0px)) {
-    @media (max-width: 768px) {
-      .main {
-        margin-top: calc(70px + env(safe-area-inset-top, 0px));
-      }
-    }
-  }
-
   .error-banner {
-    background: #f8d7da;
-    color: #721c24;
-    padding: 1rem;
-    border-radius: 4px;
-    margin-bottom: 1.5rem;
-    border: 1px solid #f5c6cb;
-  }
-
-  /* ========== 데스크톱 ========== */
-  @media (min-width: 769px) {
-    .layout {
-      display: grid;
-      grid-template-columns: 280px 1fr;
-      grid-template-rows: auto 1fr;
-      grid-template-areas: 
-        "header header"
-        "sidebar main";
-    }
-
-    .header {
-      grid-area: header;
-      z-index: 50;
-    }
-
-    .menu-btn {
-      display: none;
-    }
-
-    .overlay {
-      display: none !important;
-    }
-
-    .sidebar {
-      grid-area: sidebar;
-      position: sticky;
-      top: 130px; /* 백오피스 헤더(60px) + 메뉴 헤더(70px) */
-      height: calc(100vh - 130px);
-      left: 0;
-      z-index: 10;
-      box-shadow: none;
-      border-right: 1px solid #dee2e6;
-    }
-
-    .sidebar-header {
-      display: none;
-    }
-
-    .main {
-      grid-area: main;
-      padding: 1rem;
-      max-width: none;
-      margin: 0;
-      margin-top: 0;
-    }
-  }
-
-  /* ========== 모바일 ========== */
-  @media (max-width: 768px) {
-    .overlay {
-      display: block;
-    }
-
-    .user-name, .user-role {
-      display: none;
-    }
-
-    .main {
-      padding: 1rem;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .header {
-      padding: 0.8rem;
-    }
-    
-    h1 {
-      font-size: 1.1rem;
-    }
-    
-    .main {
-      padding: 0.1rem;
-    }
-
-    .sidebar {
-      width: 280px;
-    }
+    @apply bg-red-100 text-red-800 p-4 rounded border border-red-200 mb-6;
   }
 </style>

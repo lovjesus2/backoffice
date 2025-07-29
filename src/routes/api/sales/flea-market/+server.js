@@ -1,3 +1,4 @@
+// src/routes/api/sales/flea-market/+server.js
 import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/database.js';
 import jwt from 'jsonwebtoken';
@@ -88,128 +89,158 @@ export async function GET({ url, cookies }) {
           params.push(categoryCode);
         }
         
-        productQuery += ' ORDER BY p.PROH_CODE LIMIT 50';
+        productQuery += ' ORDER BY p.PROH_CODE';
         
         const [products] = await db.execute(productQuery, params);
         
         return json({
           success: true,
-          data: products.map(product => ({
-            code: product.PROH_CODE,
-            name: product.PROH_NAME,
-            price: parseInt(product.DPRC_SOPR || 0),
-            cost: parseInt(product.DPRC_BAPR || 0),
-            category_code: product.category_code,
-            category_name: product.category_name,
-            image_url: `https://image.kungkungne.synology.me/${product.PROH_CODE}.jpg`
-          }))
+          data: products
+        });
+
+      case 'get_product_by_barcode':
+        // 바코드로 상품 조회
+        const barcode = url.searchParams.get('barcode');
+        if (!barcode) {
+          return json({ error: '바코드가 필요합니다.' }, { status: 400 });
+        }
+
+        const [barcodeProducts] = await db.execute(`
+          SELECT 
+            p.PROH_CODE,
+            p.PROH_NAME,
+            d.DPRC_SOPR,
+            d.DPRC_BAPR,
+            f.FLEA_ITEM
+          FROM ASSE_PROH p
+          INNER JOIN BISH_DPRC d ON p.PROH_CODE = d.DPRC_CODE
+          LEFT JOIN ASSE_FLEA f ON p.PROH_CODE = f.FLEA_ITEM
+          WHERE p.PROH_GUB1 = 'A1' AND p.PROH_GUB2 = 'AK' 
+            AND (p.PROH_CODE = ? OR p.PROH_BACO = ?)
+          LIMIT 1
+        `, [barcode, barcode]);
+
+        if (barcodeProducts.length === 0) {
+          return json({
+            success: false,
+            message: '바코드에 해당하는 상품을 찾을 수 없습니다.'
+          });
+        }
+
+        const product = barcodeProducts[0];
+        
+        // FLEA에 등록되지 않은 상품은 추가할지 물어봄
+        if (!product.FLEA_ITEM) {
+          return json({
+            success: false,
+            message: '이 상품은 FLEA에 등록되지 않았습니다. FLEA에 추가하시겠습니까?',
+            productData: product,
+            needFleaRegistration: true
+          });
+        }
+
+        return json({
+          success: true,
+          data: product
         });
 
       case 'search_products':
-        // 상품 검색 (기존 PHP와 동일한 로직)
+        // 상품 검색
         const searchTerm = url.searchParams.get('searchTerm') || '';
         const searchType = url.searchParams.get('searchType') || 'name';
         const productFilter = url.searchParams.get('productFilter') || 'all';
-        const discontinuedFilter = url.searchParams.get('discontinuedFilter') || 'normal';
-        
-        let searchParams = {};
-        let searchSQL = '';
-        
-        if (searchType === 'code') {
-          searchSQL = 'PROH_CODE LIKE :search_term';
-          searchParams.search_term = '%' + searchTerm + '%';
-        } else {
-          // 제품명 검색 - 각 문자를 분리하여 모두 포함
-          const searchTermNoSpace = searchTerm.replace(/\s/g, '');
-          const searchChars = [...searchTermNoSpace];
-          
-          const nameSearchConditions = [];
-          searchChars.forEach((char, index) => {
-            const paramName = `char_${index}`;
-            nameSearchConditions.push(`PROH_NAME LIKE :${paramName}`);
-            searchParams[paramName] = '%' + char + '%';
+        const discontinuedFilter = url.searchParams.get('discontinuedFilter') || 'all';
+
+        if (!searchTerm.trim()) {
+          return json({
+            success: true,
+            data: []
           });
-          
-          searchSQL = nameSearchConditions.join(' AND ');
         }
-        
-        // 상품 구분 필터
-        let joinSQL = '';
-        let productSQL = '';
-        if (productFilter === 'flea') {
-          joinSQL = 'INNER JOIN ASSE_FLEA ON PROH_CODE = FLEA_ITEM';
-        } else if (productFilter === 'normal') {
-          joinSQL = 'LEFT JOIN ASSE_FLEA ON PROH_CODE = FLEA_ITEM';
-          productSQL = 'AND FLEA_ITEM IS NULL';
-        } else {
-          joinSQL = 'LEFT JOIN ASSE_FLEA ON PROH_CODE = FLEA_ITEM';
-        }
-        
-        // 단종 필터
-        let discontinuedSQL = '';
-        if (discontinuedFilter === 'discontinued') {
-          discontinuedSQL = 'AND PROD_TXT1 = :discontinued_status';
-          searchParams.discontinued_status = '1';
-        } else if (discontinuedFilter === 'normal') {
-          discontinuedSQL = 'AND (PROD_TXT1 = :normal_status OR PROD_TXT1 IS NULL)';
-          searchParams.normal_status = '0';
-        }
-        
-        const searchQuery = `
-          SELECT PROH_CODE, PROH_NAME, DPRC_SOPR, DPRC_BAPR, PROD_TXT1,
-                 (CASE WHEN FLEA_ITEM IS NOT NULL THEN 1 ELSE 0 END) as IS_FLEA
-          FROM ASSE_PROH
-          INNER JOIN ASSE_PROD
-             ON PROH_GUB1 = PROD_GUB1
-            AND PROH_GUB2 = PROD_GUB2
-            AND PROH_CODE = PROD_CODE
-            AND PROD_COD2 = 'L5'
-          INNER JOIN BISH_DPRC
-             ON PROH_CODE = DPRC_CODE
-          ${joinSQL}
-          WHERE PROH_GUB1 = 'A1'
-            AND PROH_GUB2 = 'AK'
-            AND (${searchSQL})
-            ${discontinuedSQL}
-            ${productSQL}
-          ORDER BY PROH_CODE ASC
-          LIMIT 50
+
+        let searchQuery = `
+          SELECT DISTINCT
+            p.PROH_CODE,
+            p.PROH_NAME,
+            d.DPRC_SOPR,
+            d.DPRC_BAPR,
+            prod.PROD_COD2,
+            f.FLEA_ITEM,
+            CASE WHEN f.FLEA_ITEM IS NOT NULL THEN 1 ELSE 0 END as is_flea
+          FROM ASSE_PROH p
+          INNER JOIN BISH_DPRC d ON p.PROH_CODE = d.DPRC_CODE
+          INNER JOIN ASSE_PROD prod ON (p.PROH_GUB1 = prod.PROD_GUB1 
+                                    AND p.PROH_GUB2 = prod.PROD_GUB2 
+                                    AND p.PROH_CODE = prod.PROD_CODE)
+          LEFT JOIN ASSE_FLEA f ON p.PROH_CODE = f.FLEA_ITEM
+          WHERE p.PROH_GUB1 = 'A1' AND p.PROH_GUB2 = 'AK'
         `;
+
+        let searchParams = [];
         
+        // 검색 조건 추가 - PHP 방식과 동일
+        if (searchType === 'name') {
+          // 공백 제거 후 문자 분리
+          const searchTermNoSpace = searchTerm.replace(/\s/g, '');
+          const searchChars = [...searchTermNoSpace]; // 유니코드 문자 분리
+          
+          if (searchChars.length > 0) {
+            // 각 문자에 대한 LIKE 조건 생성
+            const nameSearchConditions = [];
+            searchChars.forEach((char, index) => {
+              nameSearchConditions.push('p.PROH_NAME LIKE ?');
+              searchParams.push(`%${char}%`);
+            });
+            
+            // AND로 연결 (모든 문자가 포함되어야 함)
+            searchQuery += ` AND (${nameSearchConditions.join(' AND ')})`;
+          }
+        } else if (searchType === 'code') {
+          searchQuery += ' AND p.PROH_CODE LIKE ?';
+          searchParams.push(`%${searchTerm}%`);
+        }
+
+        // 상품 필터 추가
+        if (productFilter === 'flea') {
+          searchQuery += ' AND f.FLEA_ITEM IS NOT NULL';
+        } else if (productFilter === 'non_flea') {
+          searchQuery += ' AND f.FLEA_ITEM IS NULL';
+        }
+
+        // 단종 필터 추가
+        if (discontinuedFilter === 'normal') {
+          searchQuery += ' AND prod.PROD_COD2 = "L1"';
+        } else if (discontinuedFilter === 'discontinued') {
+          searchQuery += ' AND prod.PROD_COD2 = "L2"';
+        }
+
+        searchQuery += ' ORDER BY p.PROH_CODE LIMIT 100';
+
         const [searchResults] = await db.execute(searchQuery, searchParams);
-        
+
         return json({
           success: true,
-          data: searchResults.map(product => ({
-            code: product.PROH_CODE,
-            name: product.PROH_NAME,
-            price: parseInt(product.DPRC_SOPR || 0),
-            cost: parseInt(product.DPRC_BAPR || 0),
-            discontinued: product.PROD_TXT1,
-            is_flea: product.IS_FLEA > 0,
-            image_url: `https://image.kungkungne.synology.me/${product.PROH_CODE}.jpg`
-          }))
+          data: searchResults
         });
 
-      case 'get_sije_amt3':
+      case 'get_sije_amount':
         // 시제 금액 조회
         const date = url.searchParams.get('date');
         if (!date) {
           return json({ error: '날짜가 필요합니다.' }, { status: 400 });
         }
-        
+
+        const sDate = date.replace(/-/g, '');
         const [sijeRows] = await db.execute(`
-          SELECT IFNULL(SIJE_AMT3, 0) AS SIJE_AMT3 
-          FROM BISH_SIJE 
-          WHERE SIJE_DATE = ? AND SIJE_SHOP = 'F1' 
-          LIMIT 1
-        `, [date]);
-        
-        const sijeAmt3 = sijeRows.length > 0 ? parseInt(sijeRows[0].SIJE_AMT3) : 0;
-        
+          SELECT SIJE_AMT1 FROM BISH_SIJE 
+          WHERE SIJE_DATE = ? AND SIJE_SHOP = 'F1'
+        `, [sDate]);
+
+        const sijeAmount = sijeRows.length > 0 ? parseInt(sijeRows[0].SIJE_AMT1) : 0;
+
         return json({
           success: true,
-          sije_amt3: sijeAmt3
+          amount: sijeAmount
         });
 
       case 'get_sales_list':
@@ -218,16 +249,27 @@ export async function GET({ url, cookies }) {
         const endDate = url.searchParams.get('endDate');
         
         if (!startDate || !endDate) {
-          return json({ error: '조회 기간을 선택해주세요.' }, { status: 400 });
+          return json({ error: '시작일과 종료일이 필요합니다.' }, { status: 400 });
         }
-        
+
+        const sStartDate = startDate.replace(/-/g, '');
+        const sEndDate = endDate.replace(/-/g, '');
+
         const [salesList] = await db.execute(`
-          SELECT h.DNHD_SLIP, h.DNHD_DATE, h.DNHD_QTY1, h.DNHD_TAMT, h.DNHD_IDAT, h.DNHD_RAND
+          SELECT 
+            h.DNHD_SLIP,
+            h.DNHD_DATE,
+            SUM(d.DNDT_QTY1) as DNHD_QTY1,
+            SUM(d.DNDT_TAMT) as DNHD_TAMT,
+            h.DNHD_IDAT,
+            h.DNHD_RAND
           FROM SALE_DNHD h
+          INNER JOIN SALE_DNDT d ON h.DNHD_SLIP = d.DNDT_SLIP
           WHERE h.DNHD_DATE BETWEEN ? AND ?
             AND h.DNHD_SHOP = 'F1'
+          GROUP BY h.DNHD_SLIP, h.DNHD_DATE, h.DNHD_IDAT, h.DNHD_RAND
           ORDER BY h.DNHD_DATE DESC, h.DNHD_SLIP DESC
-        `, [startDate, endDate]);
+        `, [sStartDate, sEndDate]);
         
         return json({
           success: true,
@@ -330,111 +372,100 @@ export async function POST({ request, cookies }) {
           message: 'FLEA에서 제거되었습니다.'
         });
 
-      case 'register_sije':
+      case 'save_sije_amount':
         if (!date || sijeAmount === undefined) {
           return json({ error: '날짜와 시제 금액이 필요합니다.' }, { status: 400 });
         }
+
+        const sDate = date.replace(/-/g, '');
         
         // 기존 시제 데이터 확인
         const [existingSije] = await db.execute(
-          'SELECT SIJE_AMT1, SIJE_AMT2 FROM BISH_SIJE WHERE SIJE_DATE = ? AND SIJE_SHOP = "F1"',
-          [date]
+          'SELECT SIJE_AMT1 FROM BISH_SIJE WHERE SIJE_DATE = ? AND SIJE_SHOP = "F1"',
+          [sDate]
         );
-        
+
         if (existingSije.length > 0) {
-          const currentAmt2 = parseInt(existingSije[0].SIJE_AMT2 || 0);
-          const newAmt3 = parseInt(sijeAmount) + currentAmt2;
-          
           // 업데이트
           await db.execute(
-            'UPDATE BISH_SIJE SET SIJE_AMT1 = ?, SIJE_AMT3 = ?, SIJE_IDAT = NOW(), SIJE_IUSR = ? WHERE SIJE_DATE = ? AND SIJE_SHOP = "F1"',
-            [sijeAmount, newAmt3, decoded.username, date]
+            'UPDATE BISH_SIJE SET SIJE_AMT1 = ?, SIJE_IUSR = ?, SIJE_UDAT = NOW() WHERE SIJE_DATE = ? AND SIJE_SHOP = "F1"',
+            [sijeAmount, decoded.username, sDate]
           );
         } else {
-          // 신규 등록
+          // 새로 삽입
           await db.execute(
-            'INSERT INTO BISH_SIJE (SIJE_DATE, SIJE_SHOP, SIJE_AMT1, SIJE_AMT2, SIJE_AMT3, SIJE_IDAT, SIJE_IUSR) VALUES (?, "F1", ?, 0, ?, NOW(), ?)',
-            [date, sijeAmount, sijeAmount, decoded.username]
+            'INSERT INTO BISH_SIJE (SIJE_DATE, SIJE_SHOP, SIJE_AMT1, SIJE_AMT2, SIJE_AMT3, SIJE_IUSR) VALUES (?, "F1", ?, 0, ?, ?)',
+            [sDate, sijeAmount, sijeAmount, decoded.username]
           );
         }
-        
+
         return json({
           success: true,
-          message: '시제가 등록되었습니다.'
+          message: '시제 금액이 저장되었습니다.'
         });
 
       case 'save_sales':
-        // 매출 저장 (기존 PHP 로직과 동일)
-        if (!items || !Array.isArray(items) || items.length === 0) {
-          return json({ error: '매출 항목을 추가해주세요.' }, { status: 400 });
+        if (!date || !items || items.length === 0) {
+          return json({ error: '날짜와 매출 항목이 필요합니다.' }, { status: 400 });
         }
 
-        const sDate = new Date().toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
-        let slipNo = sSlip;
-        let randomStr = null;
-        let reverseSlip = null;
-        let salesSlip = null;
-
-        // 1. 매출번호 생성 (없을 경우)
-        if (!slipNo) {
-          const [senoRows] = await db.execute(
-            'SELECT IFNULL(MAX(SLIP_SENO), 0) + 1 AS SENO FROM BISH_SLIP WHERE SLIP_GUBN = "SL" AND SLIP_DATE = ?',
-            [sDate]
-          );
-          const iSeno = senoRows[0].SENO;
-          
-          slipNo = 'SL' + sDate + iSeno.toString().padStart(5, '0');
-          
-          await db.execute(
-            'INSERT INTO BISH_SLIP (SLIP_GUBN, SLIP_DATE, SLIP_SENO, SLIP_SLIP, SLIP_IUSR) VALUES ("SL", ?, ?, ?, ?)',
-            [sDate, iSeno, slipNo, decoded.username]
-          );
-        }
-
-        // 2. 기존 매출 확인 및 수불 전표번호 생성
-        const [existingSales] = await db.execute(
-          'SELECT DNHD_SLIP FROM SALE_DNHD WHERE DNHD_SLIP = ?',
-          [slipNo]
-        );
+        const salesDate = date.replace(/-/g, '');
         
-        if (existingSales.length > 0) {
-          reverseSlip = await generateMoveSlip(db, sDate, decoded.username);
-        }
-        
-        salesSlip = await generateMoveSlip(db, sDate, decoded.username);
-
         // 트랜잭션 시작
         await db.execute('START TRANSACTION');
 
         try {
-          // 3. 기존 매출 반제 처리 (생략 - 복잡한 재고 로직)
+          // 1. 전표번호 생성
+          const [slipRows] = await db.execute(`
+            SELECT COALESCE(MAX(DNHD_SENO), 0) + 1 AS SENO 
+            FROM SALE_DNHD 
+            WHERE DNHD_SHOP = 'F1' AND DNHD_DATE = ?
+          `, [salesDate]);
           
-          // 4. 기존 매출 상세 삭제
-          await db.execute('DELETE FROM SALE_DNDT WHERE DNDT_SLIP = ?', [slipNo]);
+          const seno = slipRows[0].SENO;
+          const slipNo = 'F1' + salesDate + seno.toString().padStart(5, '0');
           
-          // 5. 총 수량, 총 금액 계산
-          const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
-          const totalAmt = items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+          // 2. 랜덤 문자열 생성
+          const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
           
-          // 6. 매출 헤더 저장/업데이트
-          const [existingHeader] = await db.execute(
-            'SELECT DNHD_SLIP, DNHD_RAND FROM SALE_DNHD WHERE DNHD_SLIP = ?',
-            [slipNo]
-          );
+          // 3. 총 금액 계산
+          const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+          const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
           
-          if (existingHeader.length > 0) {
-            randomStr = existingHeader[0].DNHD_RAND;
-            await db.execute(
-              'UPDATE SALE_DNHD SET DNHD_DATE = ?, DNHD_QTY1 = ?, DNHD_TAMT = ?, DNHD_IUSR = ?, DNHD_UDAT = NOW() WHERE DNHD_SLIP = ?',
-              [sDate, totalQty, totalAmt, decoded.username, slipNo]
+          // 4. 수불 전표 생성 (재고 차감용)
+          const moveSlip = await generateMoveSlip(db, salesDate, decoded.username);
+          
+          // 5. 재고 차감
+          for (let item of items) {
+            // 현재고 확인
+            const [stockCheck] = await db.execute(
+              'SELECT HYUN_QTY1 FROM STOK_HYUN WHERE HYUN_ITEM = ?',
+              [item.code]
             );
-          } else {
-            randomStr = Math.random().toString(36).substring(2, 7).toUpperCase();
+            
+            const currentStock = stockCheck.length > 0 ? parseInt(stockCheck[0].HYUN_QTY1) : 0;
+            const newStock = currentStock - item.quantity;
+            
+            // 재고 차감 (음수 허용)
+            if (stockCheck.length > 0) {
+              await db.execute(
+                'UPDATE STOK_HYUN SET HYUN_QTY1 = ?, HYUN_UDAT = NOW() WHERE HYUN_ITEM = ?',
+                [newStock, item.code]
+              );
+            }
+            
+            // 수불 내역 추가
             await db.execute(
-              'INSERT INTO SALE_DNHD (DNHD_SLIP, DNHD_DATE, DNHD_SHOP, DNHD_BPCD, DNHD_SLGB, DNHD_QTY1, DNHD_TAMT, DNHD_BIGO, DNHD_RAND, DNHD_IUSR) VALUES (?, ?, "F1", "", "SL", ?, ?, "", ?, ?)',
-              [slipNo, sDate, totalQty, totalAmt, randomStr, decoded.username]
+              'INSERT INTO STOK_SUBUL (SUBUL_SLIP, SUBUL_DATE, SUBUL_ITEM, SUBUL_CGBN, SUBUL_QTY1, SUBUL_IUSR) VALUES (?, ?, ?, "4", ?, ?)',
+              [moveSlip, salesDate, item.code, item.quantity, decoded.username]
             );
           }
+          
+          // 6. 매출 헤더 저장
+          await db.execute(
+            'INSERT INTO SALE_DNHD (DNHD_SLIP, DNHD_DATE, DNHD_SENO, DNHD_SHOP, DNHD_QTY1, DNHD_TAMT, DNHD_RAND, DNHD_IUSR) VALUES (?, ?, ?, "F1", ?, ?, ?, ?)',
+            [slipNo, salesDate, seno, totalQuantity, totalAmount, randomStr, decoded.username]
+          );
           
           // 7. 매출 상세 저장
           for (let index = 0; index < items.length; index++) {
@@ -443,7 +474,7 @@ export async function POST({ request, cookies }) {
             
             await db.execute(
               'INSERT INTO SALE_DNDT (DNDT_SLIP, DNDT_SENO, DNDT_ITEM, DNDT_HYGB, DNDT_QTY1, DNDT_TAMT, DNDT_IUSR) VALUES (?, ?, ?, ?, ?, ?, ?)',
-              [slipNo, index + 1, item.code, hygb, item.quantity, item.quantity * item.price, decoded.username]
+              [slipNo, index + 1, item.code, hygb, item.quantity, item.totalAmount, decoded.username]
             );
           }
           
@@ -453,13 +484,13 @@ export async function POST({ request, cookies }) {
             FROM SALE_DNHD 
             INNER JOIN SALE_DNDT ON DNHD_SLIP = DNDT_SLIP 
             WHERE DNHD_SHOP = 'F1' AND DNDT_HYGB = '1' AND DNHD_DATE = ?
-          `, [sDate]);
+          `, [salesDate]);
           
           const dailySalesTotal = parseInt(dailySales[0].AMT2);
           
           const [existingSijeData] = await db.execute(
             'SELECT SIJE_AMT1 FROM BISH_SIJE WHERE SIJE_DATE = ? AND SIJE_SHOP = "F1"',
-            [sDate]
+            [salesDate]
           );
           
           if (existingSijeData.length > 0) {
@@ -468,12 +499,12 @@ export async function POST({ request, cookies }) {
             
             await db.execute(
               'UPDATE BISH_SIJE SET SIJE_AMT2 = ?, SIJE_AMT3 = ?, SIJE_IUSR = ?, SIJE_UDAT = NOW() WHERE SIJE_DATE = ? AND SIJE_SHOP = "F1"',
-              [dailySalesTotal, newAmt3, decoded.username, sDate]
+              [dailySalesTotal, newAmt3, decoded.username, salesDate]
             );
           } else {
             await db.execute(
               'INSERT INTO BISH_SIJE (SIJE_DATE, SIJE_SHOP, SIJE_AMT1, SIJE_AMT2, SIJE_AMT3, SIJE_IUSR) VALUES (?, "F1", 0, ?, ?, ?)',
-              [sDate, dailySalesTotal, dailySalesTotal, decoded.username]
+              [salesDate, dailySalesTotal, dailySalesTotal, decoded.username]
             );
           }
           
