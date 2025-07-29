@@ -322,34 +322,96 @@ export async function initPWA() {
     await registerServiceWorker();
     setupInstallPrompt();
     
-    // 여기에 이 코드만 추가 ↓↓↓
-    // iPhone PWA 새로고침 버튼 추가
+
+   // PWA 초기화 함수에서 iPhone PWA 새로고침 버튼 부분을 이렇게 수정
+
+   // PWA 초기화 함수에서 iPhone PWA 새로고침 버튼 부분을 이렇게 수정
+
+    // ✅ iPhone PWA 새로고침 버튼 추가 (백오피스 헤더 오른쪽 끝에 고정)
     if (window.navigator.standalone && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
       const refreshBtn = document.createElement('button');
       refreshBtn.innerHTML = '↻';
       refreshBtn.style.cssText = `
         position: fixed;
-        top: 80px;
+        top: calc(env(safe-area-inset-top, 0px) + 17px);
         right: 15px;
-        color: #ff6b35;
-        border: none;
-        border-radius: 25px;
-        font-size: 20px;
-        z-index: 9999;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        width: 36px;
+        height: 36px;
+        color: #17a2b8;
+        background: rgba(23, 162, 184, 0.1);
+        border: 1px solid rgba(23, 162, 184, 0.3);
+        border-radius: 50%;
+        font-size: 16px;
+        font-weight: bold;
+        z-index: 101;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
         cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        transition: all 0.2s ease;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
       `;
       
       refreshBtn.onclick = () => {
         refreshBtn.innerHTML = '⟳';
-        refreshBtn.style.background = 'rgba(0,0,0,0.3)';
+        refreshBtn.style.background = 'rgba(23, 162, 184, 0.9)';
+        refreshBtn.style.color = 'white';
+        refreshBtn.style.transform = 'scale(0.95)';
         setTimeout(() => window.location.reload(), 200);
       };
       
+      // 호버 효과
+      refreshBtn.addEventListener('mouseenter', () => {
+        if (!refreshBtn.innerHTML.includes('⟳')) {
+          refreshBtn.style.background = 'rgba(23, 162, 184, 0.15)';
+          refreshBtn.style.borderColor = 'rgba(23, 162, 184, 0.5)';
+          refreshBtn.style.transform = 'scale(1.05)';
+        }
+      });
+      
+      refreshBtn.addEventListener('mouseleave', () => {
+        if (!refreshBtn.innerHTML.includes('⟳')) {
+          refreshBtn.style.background = 'rgba(23, 162, 184, 0.1)';
+          refreshBtn.style.borderColor = 'rgba(23, 162, 184, 0.3)';
+          refreshBtn.style.transform = 'scale(1)';
+        }
+      });
+      
+      // 터치 효과
+      refreshBtn.addEventListener('touchstart', () => {
+        if (!refreshBtn.innerHTML.includes('⟳')) {
+          refreshBtn.style.transform = 'scale(0.95)';
+        }
+      });
+      
+      refreshBtn.addEventListener('touchend', () => {
+        if (!refreshBtn.innerHTML.includes('⟳')) {
+          refreshBtn.style.transform = 'scale(1)';
+        }
+      });
+      
+      // 모바일에서 크기 및 위치 조정
+      if (window.innerWidth <= 480) {
+        refreshBtn.style.width = '32px';
+        refreshBtn.style.height = '32px';
+        refreshBtn.style.fontSize = '14px';
+        refreshBtn.style.right = '12px';
+      }
+      
+      // Safe Area 지원
+      if (window.innerWidth <= 480) {
+        refreshBtn.style.top = 'calc(env(safe-area-inset-top, 0px) + 19px)';
+      }
+      
       document.body.appendChild(refreshBtn);
-      console.log('iPhone PWA 새로고침 버튼 추가됨');
+      console.log('iPhone PWA 새로고침 버튼 추가됨 - 헤더 오른쪽');
     }
-    // 여기까지만 추가 ↑↑↑
 
     // 인증 상태 확인
     await checkAuth();
