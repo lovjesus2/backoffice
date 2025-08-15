@@ -173,12 +173,21 @@
     }
   }
   
-  // 바코드 출력 (수정됨 - 출력 중 토스트 메시지 추가)
+  // 바코드 출력 (수정됨 - 수량 없으면 기본 1장 출력)
   async function printBarcode(product) {
-    console.log('출력 요청된 제품:', product); // 디버깅용
+    console.log('출력 요청된 제품:', product);
+    
+    // 해당 제품의 재고 조정 입력 필드에서 수량 가져오기
+    const input = document.querySelector(`input[data-code="${product.code}"]`);
+    let quantity = input ? parseInt(input.value) : 0;
+    
+    // 0보다 작거나 같으면 기본 1장으로 설정
+    if (!quantity || quantity <= 0) {
+      quantity = 1;
+    }
     
     // 출력 시작 토스트 메시지
-    showToast('🖨️ 바코드 출력 중...', 'info');
+    showToast(`🖨️ 바코드 ${quantity}장 출력 중...`, 'info');
     
     // 상태를 명시적으로 업데이트
     selectedProduct = {
@@ -190,11 +199,12 @@
     // Svelte DOM 업데이트 대기
     await tick();
     
-    console.log('업데이트된 selectedProduct:', selectedProduct); // 디버깅용
+    console.log('업데이트된 selectedProduct:', selectedProduct);
+    console.log('출력 수량:', quantity);
     
-    // ref를 통해 직접 출력 함수 호출
+    // 바코드 출력 실행
     if (barcodeModal) {
-      barcodeModal.directPrint();
+      barcodeModal.directPrint(quantity);
     }
   }
   
