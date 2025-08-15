@@ -103,55 +103,62 @@
   }
 </script>
 
-<nav class="tree-menu">
+<nav class="bg-gray-50 rounded-lg p-4">
   {#if loading}
-    <div class="loading">메뉴 로딩 중...</div>
+    <div class="p-4 text-center text-gray-600 text-sm">메뉴 로딩 중...</div>
   {:else if error}
-    <div class="error">
-      <span>⚠️ {error}</span>
-      <button on:click={loadMenus}>다시 시도</button>
+    <div class="p-4 text-center text-red-600 text-sm">
+      <div>{error}</div>
+      <button 
+        class="mt-2 px-2 py-1 bg-red-600 text-white border-0 rounded text-xs cursor-pointer hover:bg-red-700 transition-colors duration-200"
+        on:click={loadMenus}
+      >
+        다시 시도
+      </button>
     </div>
   {:else if menus.length === 0}
-    <div class="no-menus">사용 가능한 메뉴가 없습니다.</div>
+    <div class="p-4 text-center text-gray-600 text-sm">메뉴가 없습니다.</div>
   {:else}
-    <ul class="menu-list">
+    <ul class="list-none m-0 p-0">
       {#each menus as menu}
-        <li class="menu-item">
+        <li class="mb-2">
           {#if menu.children && menu.children.length > 0}
-            <!-- 하위 메뉴가 있는 부모 메뉴 -->
-            <div class="parent-menu-container">
-              <button 
-                class="parent-menu-button"
-                class:active={currentPath === menu.href}
-                class:has-active-child={menu.children && menu.children.some(child => currentPath === child.href)}
+            <!-- 부모 메뉴 -->
+            <div class="w-full">
+              <button
+                class="flex items-center justify-between px-4 py-3 text-gray-700 bg-transparent border-0 rounded-md transition-all duration-200 text-base w-full cursor-pointer text-left font-medium
+                       hover:bg-blue-50 hover:text-blue-600
+                       {menu.href && isActive(menu.href) ? 'bg-blue-600 text-white border-l-4 border-blue-800 font-semibold' : ''}
+                       {hasActiveChild(menu) && !(menu.href && isActive(menu.href)) ? 'bg-blue-50 text-blue-600 border-l-[3px] border-blue-300' : ''}"
                 on:click={() => toggleMenu(menu.title)}
               >
-                <div class="parent-menu-content">
-                  <span class="menu-icon">{menu.icon}</span>
-                  <span class="menu-title">{menu.title}</span>
+                <div class="flex items-center">
+                  <span class="mr-2 text-lg">{menu.icon}</span>
+                  <span class="font-medium">{menu.title}</span>
                 </div>
-                <span class="expand-icon" class:expanded={expandedMenus[menu.title]}>
+                <span class="text-xs transition-transform duration-200 flex-shrink-0 {expandedMenus[menu.title] ? 'rotate-180' : ''}">
                   ▼
                 </span>
               </button>
               
               {#if expandedMenus[menu.title]}
-                <ul class="submenu-list">
+                <ul class="list-none mt-2 mb-0 p-0 pl-4">
                   {#each menu.children as child}
-                    <li class="submenu-item">
+                    <li class="mb-1">
                       <a 
                         href={child.href}
-                        class="child-menu-link"
-                        class:active={currentPath === child.href}
+                        class="flex items-center px-4 py-2 pl-6 text-gray-600 no-underline rounded-md transition-all duration-200 text-base font-normal
+                               hover:bg-purple-50 hover:text-purple-700
+                               {currentPath === child.href ? 'bg-purple-50 text-purple-700 border-l-[3px] border-purple-400 font-medium' : ''}"
                         on:click={() => {
-                          expandedMenus[menu.title] = true;
                           // 모바일에서만 햄버거 메뉴 닫기
                           if (window.innerWidth <= 768) {
                             dispatch('click');
                           }
                         }}
                       >
-                        <span class="child-menu-title">{child.title}</span>
+                        <span class="mr-2 text-lg">{child.icon}</span>
+                        <span class="font-medium">{child.title}</span>
                       </a>
                     </li>
                   {/each}
@@ -162,8 +169,9 @@
             <!-- 단독 메뉴 -->
             <a 
               href={menu.href}
-              class="single-menu-link"
-              class:active={currentPath === menu.href}
+              class="flex items-center px-4 py-3 text-gray-700 no-underline rounded-md transition-all duration-200 text-base
+                     hover:bg-blue-50 hover:text-blue-600
+                     {currentPath === menu.href ? 'bg-blue-600 text-white border-l-4 border-blue-800 font-semibold' : ''}"
               on:click={() => {
                 // 모바일에서만 햄버거 메뉴 닫기
                 if (window.innerWidth <= 768) {
@@ -171,8 +179,8 @@
                 }
               }}
             >
-              <span class="menu-icon">{menu.icon}</span>
-              <span class="menu-title">{menu.title}</span>
+              <span class="mr-2 text-lg">{menu.icon}</span>
+              <span class="font-medium">{menu.title}</span>
             </a>
           {/if}
         </li>
@@ -180,178 +188,3 @@
     </ul>
   {/if}
 </nav>
-
-<style>
-  .tree-menu {
-    background: #f8f9fa;
-    border-radius: 8px;
-    padding: 1rem;
-  }
-  
-  .menu-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  
-  .menu-item {
-    margin-bottom: 0.5rem;
-  }
-
-  /* 공통 스타일 */
-  .menu-icon {
-    margin-right: 0.5rem;
-    font-size: 1.2rem;
-  }
-
-  .menu-title,
-  .child-menu-title {
-    font-weight: 500;
-  }
-
-  /* ========== 단독 메뉴 스타일 ========== */
-  .single-menu-link {
-    display: flex;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    color: #333;
-    text-decoration: none;
-    border-radius: 6px;
-    transition: all 0.2s;
-    font-size: 1rem;
-  }
-
-  .single-menu-link:hover {
-    background: #e3f2fd;
-    color: #1976d2;
-  }
-
-  .single-menu-link.active {
-    background: #1976d2;
-    color: white;
-    border-left: 4px solid #0d47a1;
-    font-weight: 600;
-  }
-
-  /* ========== 부모 메뉴 스타일 ========== */
-  .parent-menu-container {
-    width: 100%;
-  }
-
-  .parent-menu-button {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    color: #333;
-    background: none;
-    border: none;
-    border-radius: 6px;
-    transition: all 0.2s;
-    font-size: 1rem;
-    width: 100%;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .parent-menu-button:hover {
-    background: #e3f2fd;
-    color: #1976d2;
-  }
-
-  .parent-menu-button.active {
-    background: #1976d2;
-    color: white;
-    border-left: 4px solid #0d47a1;
-    font-weight: 600;
-  }
-
-  .parent-menu-button.has-active-child {
-    background: #f0f9ff;
-    color: #1976d2;
-    border-left: 3px solid #93c5fd;
-  }
-
-  .parent-menu-content {
-    display: flex;
-    align-items: center;
-  }
-
-  .expand-icon {
-    font-size: 0.8rem;
-    transition: transform 0.2s;
-    flex-shrink: 0;
-  }
-
-  .expand-icon.expanded {
-    transform: rotate(180deg);
-  }
-
-  /* ========== 하위 메뉴 스타일 ========== */
-  .submenu-list {
-    list-style: none;
-    margin: 0.5rem 0 0 0;
-    padding: 0;
-    padding-left: 1rem;
-  }
-
-  .submenu-item {
-    margin-bottom: 0.25rem;
-  }
-
-  .child-menu-link {
-    display: flex;
-    align-items: center;
-    padding: 0.5rem 1rem;
-    padding-left: 1.5rem;
-    color: #555;
-    text-decoration: none;
-    border-radius: 6px;
-    transition: all 0.2s;
-    font-size: 1rem;
-    font-weight: 400;
-  }
-
-  .child-menu-link:hover {
-    background: #f3e5f5;
-    color: #7b1fa2;
-  }
-
-  .child-menu-link.active {
-    background: #f3e5f5;
-    color: #7b1fa2;
-    border-left: 3px solid #ba68c8;
-    font-weight: 500;
-  }
-
-  /* ========== 상태 표시 ========== */
-  .loading,
-  .no-menus {
-    padding: 1rem;
-    text-align: center;
-    color: #666;
-    font-size: 0.9rem;
-  }
-
-  .error {
-    padding: 1rem;
-    text-align: center;
-    color: #dc3545;
-    font-size: 0.9rem;
-  }
-
-  .error button {
-    margin-top: 0.5rem;
-    padding: 0.25rem 0.5rem;
-    background: #dc3545;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    cursor: pointer;
-  }
-
-  .error button:hover {
-    background: #c82333;
-  }
-</style>

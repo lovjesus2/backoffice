@@ -126,7 +126,7 @@
     >
       <!-- 로딩 상태 -->
       {#if loading}
-        <div class="flex items-center justify-center" style="width: 300px; height: 300px;">
+        <div class="flex items-center justify-center min-h-64 min-w-64">
           <div class="text-white text-center">
             <div class="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
             <p class="text-lg font-medium">이미지 로딩 중...</p>
@@ -139,7 +139,7 @@
       
       <!-- 에러 상태 -->
       {#if error}
-        <div class="flex items-center justify-center" style="width: 300px; height: 300px;">
+        <div class="flex items-center justify-center min-h-64 min-w-64">
           <div class="text-white text-center max-w-md">
             <div class="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,9 +176,9 @@
         </div>
       {/if}
       
-      <!-- 🔧 이미지 컨테이너 - 300x300 고정 크기 -->
+      <!-- 🔧 이미지 컨테이너 -->
       {#if actualSrc && !error}
-        <div class="relative flex items-center justify-center" style="width: 300px; height: 300px;">
+        <div class="relative max-w-full max-h-[80vh] flex items-center justify-center">
           <!-- 닫기 버튼 (이미지 상단 오른쪽) -->
           <button 
             class="absolute -top-2 -right-2 w-10 h-10 bg-black/70 hover:bg-black/90 text-white rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 z-20 backdrop-blur-sm"
@@ -193,8 +193,7 @@
           <img 
             src={actualSrc}
             alt={imageAlt}
-            class="rounded-lg shadow-2xl transition-all duration-300 {loading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}"
-            style="width: 300px; height: 300px; object-fit: cover;"
+            class="max-w-full max-h-full object-contain rounded-lg shadow-2xl transition-all duration-300 {loading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}"
             on:load={handleImageLoad}
             on:error={handleImageError}
           />
