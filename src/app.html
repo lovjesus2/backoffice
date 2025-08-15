@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    
+    <!-- 기본 뷰포트 설정 (모바일 최적화) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- 제목 및 설명 -->
+    <title>관리자 시스템</title>
+    <meta name="description" content="모바일 최적화된 관리자 백오피스 시스템" />
+    <meta name="keywords" content="관리자, 백오피스, PWA, 모바일" />
+    <meta name="author" content="Admin System" />
+    
+    <!-- PWA 매니페스트 -->
+    <link rel="manifest" href="%sveltekit.assets%/manifest.json" />
+    
+    <!-- PWA 테마 색상 -->
+    <meta name="theme-color" content="#1f2937" />
+    <meta name="background-color" content="#ffffff" />
+    
+    <!-- iOS PWA 최적화 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="관리자" />
+    <meta name="apple-touch-fullscreen" content="yes" />
+    
+    <!-- iOS 아이콘 설정 -->
+    <link rel="apple-touch-icon" href="%sveltekit.assets%/icon-192x192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="%sveltekit.assets%/icon-192x192.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="%sveltekit.assets%/icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="144x144" href="%sveltekit.assets%/icon-144x144.png" />
+    <link rel="apple-touch-icon" sizes="120x120" href="%sveltekit.assets%/icon-128x128.png" />
+    <link rel="apple-touch-icon" sizes="114x114" href="%sveltekit.assets%/icon-128x128.png" />
+    <link rel="apple-touch-icon" sizes="76x76" href="%sveltekit.assets%/icon-96x96.png" />
+    <link rel="apple-touch-icon" sizes="72x72" href="%sveltekit.assets%/icon-72x72.png" />
+    <link rel="apple-touch-icon" sizes="60x60" href="%sveltekit.assets%/icon-72x72.png" />
+    <link rel="apple-touch-icon" sizes="57x57" href="%sveltekit.assets%/icon-72x72.png" />
+    
+    <!-- Android PWA 설정 -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="관리자 시스템" />
+    
+    <!-- Windows 타일 설정 -->
+    <meta name="msapplication-TileColor" content="#1f2937" />
+    <meta name="msapplication-TileImage" content="%sveltekit.assets%/icon-144x144.png" />
+    <meta name="msapplication-config" content="%sveltekit.assets%/browserconfig.xml" />
+    
+    <!-- 보안 헤더 -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    		<!-- CSP 정책 수정 - localhost:8443 허용 -->
+		<meta http-equiv="Content-Security-Policy" content="
+			default-src 'self';
+			script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdnjs.cloudflare.com;
+			style-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com;
+			img-src 'self' data: blob: https: http:;
+			font-src 'self' https://unpkg.com https://cdnjs.cloudflare.com;
+			connect-src 'self' https://localhost:8443 wss://localhost:8443 https://unpkg.com https://cdnjs.cloudflare.com;
+			frame-src 'self';
+			object-src 'none';
+			base-uri 'self';
+			form-action 'self';
+		">
+
+    <!-- 캐시 제어 -->
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    
+    <!-- 추가 메타 태그 -->
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="robots" content="noindex, nofollow" />
+    
+    <!-- 프리로드 설정 -->
+    <link rel="preconnect" href="/" />
+
+    <!-- JsBarcode 라이브러리 로컬 로드 -->
+	  <script src="/jsbarcode.min.js"></script>
+
+    %sveltekit.head%
+  </head>
+  
+  <body data-sveltekit-preload-data="hover" class="loading">
+    <!-- 로딩 화면 -->
+    <div id="app-loading" style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      color: white;
+      font-family: system-ui, -apple-system, sans-serif;
+      transition: opacity 0.3s ease-out;
+    ">
+      <div style="
+        width: 60px;
+        height: 60px;
+        border: 4px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        border-top-color: #fff;
+        animation: spin 1s ease-in-out infinite;
+        margin-bottom: 20px;
+      "></div>
+      <h2 style="margin: 0; font-size: 1.5rem; font-weight: 300;">관리자 시스템</h2>
+      <p style="margin: 10px 0 0 0; opacity: 0.8; font-size: 0.9rem;">로딩 중...</p>
+    </div>
+    
+    <!-- SvelteKit 앱 컨테이너 -->
+    <div style="display: contents">%sveltekit.body%</div>
+    
+    <!-- PWA 설치 버튼 (숨김 상태) -->
+    <button id="pwa-install-btn" style="
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 25px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: none;
+      z-index: 1000;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    " onclick="installPWA()">
+      📱 앱 설치
+    </button>
+    
+    <!-- 업데이트 알림 토스트 -->
+    <div id="update-toast" style="
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #1f2937;
+      color: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: none;
+      z-index: 1001;
+      max-width: 320px;
+      font-size: 14px;
+    ">
+      <div style="font-weight: 500; margin-bottom: 8px;">새 버전 사용 가능</div>
+      <div style="font-size: 13px; opacity: 0.8; margin-bottom: 12px;">더 나은 경험을 위해 업데이트하세요.</div>
+      <div style="display: flex; gap: 8px;">
+        <button onclick="updateApp()" style="
+          background: #3b82f6;
+          color: white;
+          border: none;
+          padding: 6px 12px;
+          border-radius: 4px;
+          font-size: 12px;
+          cursor: pointer;
+        ">업데이트</button>
+        <button onclick="dismissUpdate()" style="
+          background: transparent;
+          color: #9ca3af;
+          border: 1px solid #374151;
+          padding: 6px 12px;
+          border-radius: 4px;
+          font-size: 12px;
+          cursor: pointer;
+        ">나중에</button>
+      </div>
+    </div>
+    
+    <!-- 스타일 및 스크립트 -->
+    <style>
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      
+      @keyframes slideInUp {
+        from {
+          transform: translateY(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+      
+      .loading {
+        overflow: hidden;
+      }
+      
+      #pwa-install-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+      }
+      
+      #update-toast {
+        animation: slideInUp 0.3s ease-out;
+      }
+      
+      /* 모바일 Safe Area 지원 */
+      @supports (padding: max(0px)) {
+        body {
+          padding-left: env(safe-area-inset-left);
+          padding-right: env(safe-area-inset-right);
+        }
+        
+        #pwa-install-btn {
+          bottom: max(20px, env(safe-area-inset-bottom) + 10px);
+          right: max(20px, env(safe-area-inset-right) + 10px);
+        }
+        
+        #update-toast {
+          top: max(20px, env(safe-area-inset-top) + 10px);
+          right: max(20px, env(safe-area-inset-right) + 10px);
+        }
+      }
+    </style>
+    
+    <script>
+      // 전역 변수
+      let deferredPrompt;
+      let updateServiceWorker = null;
+      
+      // 로딩 화면 제거
+      function hideLoadingScreen() {
+        const loading = document.getElementById('app-loading');
+        if (loading) {
+          setTimeout(() => {
+            loading.style.opacity = '0';
+            setTimeout(() => {
+              loading.remove();
+              document.body.classList.remove('loading');
+            }, 300);
+          }, 500);
+        }
+      }
+      
+      // DOM 로드 완료 시 로딩 화면 제거
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', hideLoadingScreen);
+      } else {
+        hideLoadingScreen();
+      }
+      
+      // Service Worker 등록 (SvelteKit과 충돌 방지)
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((registration) => {
+              console.log('✅ Service Worker 등록 성공:', registration.scope);
+              
+              // 업데이트 감지
+              registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                if (newWorker) {
+                  newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                      updateServiceWorker = newWorker;
+                      showUpdateToast();
+                    }
+                  });
+                }
+              });
+              
+              // 즉시 업데이트 확인
+              registration.update();
+            })
+            .catch((error) => {
+              console.log('❌ Service Worker 등록 실패:', error);
+            });
+        });
+      }
+      
+      // PWA 설치 프롬프트 처리
+      window.addEventListener('beforeinstallprompt', (e) => {
+        console.log('📱 PWA 설치 프롬프트 준비됨');
+        e.preventDefault();
+        deferredPrompt = e;
+        showInstallButton();
+      });
+      
+      // 앱 설치됨 이벤트
+      window.addEventListener('appinstalled', () => {
+        console.log('🎉 PWA 설치 완료');
+        hideInstallButton();
+        deferredPrompt = null;
+        
+        // 설치 성공 토스트 (옵션)
+        showToast('앱이 성공적으로 설치되었습니다!', 'success');
+      });
+      
+      // PWA 설치 버튼 표시
+      function showInstallButton() {
+        const btn = document.getElementById('pwa-install-btn');
+        if (btn) {
+          btn.style.display = 'block';
+        }
+      }
+      
+      // PWA 설치 버튼 숨김
+      function hideInstallButton() {
+        const btn = document.getElementById('pwa-install-btn');
+        if (btn) {
+          btn.style.display = 'none';
+        }
+      }
+      
+      // PWA 설치 함수
+      window.installPWA = async () => {
+        if (!deferredPrompt) {
+          showToast('설치가 현재 지원되지 않습니다.', 'error');
+          return;
+        }
+        
+        try {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          
+          if (outcome === 'accepted') {
+            console.log('👍 사용자가 PWA 설치를 승인');
+          } else {
+            console.log('👎 사용자가 PWA 설치를 거부');
+          }
+          
+          deferredPrompt = null;
+          hideInstallButton();
+        } catch (error) {
+          console.error('PWA 설치 오류:', error);
+          showToast('설치 중 오류가 발생했습니다.', 'error');
+        }
+      };
+      
+      // 업데이트 토스트 표시
+      function showUpdateToast() {
+        const toast = document.getElementById('update-toast');
+        if (toast) {
+          toast.style.display = 'block';
+        }
+      }
+      
+      // 업데이트 토스트 숨김
+      function hideUpdateToast() {
+        const toast = document.getElementById('update-toast');
+        if (toast) {
+          toast.style.display = 'none';
+        }
+      }
+      
+      // 앱 업데이트 함수
+      window.updateApp = () => {
+        if (updateServiceWorker) {
+          updateServiceWorker.postMessage({ action: 'skipWaiting' });
+          hideUpdateToast();
+          showToast('업데이트를 적용하고 있습니다...', 'info');
+          
+          // 페이지 새로고침
+          setTimeout(() => {
+            window.location.reload();
+          }, 1500);
+        }
+      };
+      
+      // 업데이트 알림 닫기
+      window.dismissUpdate = () => {
+        hideUpdateToast();
+      };
+      
+      // 범용 토스트 메시지 함수
+      function showToast(message, type = 'info', duration = 3000) {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+          position: fixed;
+          bottom: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          font-size: 14px;
+          z-index: 1002;
+          animation: slideInUp 0.3s ease-out;
+          max-width: 90%;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        `;
+        toast.textContent = message;
+        
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+          toast.style.opacity = '0';
+          toast.style.transform = 'translateX(-50%) translateY(100%)';
+          setTimeout(() => {
+            if (toast.parentNode) {
+              toast.parentNode.removeChild(toast);
+            }
+          }, 300);
+        }, duration);
+      }
+      
+      // 전역 함수로 노출
+      window.showToast = showToast;
+      
+      // 앱 가시성 변경 시 처리 (백그라운드에서 돌아올 때)
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          console.log('📱 앱이 포그라운드로 돌아옴');
+          // 필요시 데이터 새로고침 등 처리
+        }
+      });
+      
+      // 네트워크 상태 감지
+      window.addEventListener('online', () => {
+        showToast('인터넷 연결이 복구되었습니다.', 'success');
+      });
+      
+      window.addEventListener('offline', () => {
+        showToast('인터넷 연결이 끊어졌습니다.', 'error');
+      });
+      
+      // 개발 환경에서 콘솔 로그
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        console.log('🚀 SvelteKit + PWA 관리자 시스템');
+        console.log('📱 PWA 기능:', 'serviceWorker' in navigator ? '지원됨' : '지원안됨');
+        console.log('🌐 온라인 상태:', navigator.onLine ? '온라인' : '오프라인');
+      }
+    </script>
+  </body>
+</html>
