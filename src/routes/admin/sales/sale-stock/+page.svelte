@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { simpleCache } from '$lib/utils/simpleImageCache';
   import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
@@ -15,9 +15,10 @@
   let adjustingStock = new Set();
   let authenticated = false;
   
-  // 바코드 출력 관련 상태
-  let showBarcodeModal = false;
+  // 바코드 출력 관련 상태 (변경됨)
+  let barcodeModal; // ref로 사용
   let selectedProduct = null;
+  let shouldAutoPrint = false;
   
   // ESC 키로 검색, Enter 키로 검색
   function handleKeydown(event) {
@@ -44,7 +45,7 @@
     }
   });
   
-  //이미지 캐싱
+  // 이미지 캐싱
   async function cacheImage(event) {
     await simpleCache.handleImage(event.target);
   }
@@ -172,14 +173,104 @@
     }
   }
   
-  // 바코드 출력 모달 열기
-  function openBarcodeModal(product) {
+  // 바코드 출력 (수정됨 - 출력 중 토스트 메시지 추가)
+  async function printBarcode(product) {
+    console.log('출력 요청된 제품:', product); // 디버깅용
+    
+    // 출력 시작 토스트 메시지
+    showToast('🖨️ 바코드 출력 중...', 'info');
+    
+    // 상태를 명시적으로 업데이트
     selectedProduct = {
       code: product.code,
       name: product.name,
       price: product.price || 0
     };
-    showBarcodeModal = true;
+    
+    // Svelte DOM 업데이트 대기
+    await tick();
+    
+    console.log('업데이트된 selectedProduct:', selectedProduct); // 디버깅용
+    
+    // ref를 통해 직접 출력 함수 호출
+    if (barcodeModal) {
+      barcodeModal.directPrint();
+    }
+  }
+  
+  // 바코드 출력 성공 처리
+  function handlePrintSuccess(event) {
+    console.log('출력 완료:', event.detail.message);
+    
+    // 기존 출력 중 토스트 제거 후 성공 메시지 표시
+    const existingToast = document.querySelector('.toast-message');
+    if (existingToast) {
+      existingToast.remove();
+    }
+    
+    // 성공 메시지 표시 (간단한 토스트)
+    showToast('✅ 바코드 출력 완료!', 'success');
+  }
+  
+  // 바코드 출력 실패 처리
+  function handlePrintError(event) {
+    console.error('출력 실패:', event.detail.error);
+    
+    // 기존 출력 중 토스트 제거 후 실패 메시지 표시
+    const existingToast = document.querySelector('.toast-message');
+    if (existingToast) {
+      existingToast.remove();
+    }
+    
+    // 실패 메시지 표시
+    showToast('❌ 바코드 출력 실패: ' + event.detail.error, 'error');
+  }
+  
+  // 간단한 토스트 메시지 표시
+  function showToast(message, type = 'info') {
+    // 기존 토스트 제거
+    const existingToast = document.querySelector('.toast-message');
+    if (existingToast) {
+      existingToast.remove();
+    }
+    
+    // 새 토스트 생성
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      padding: 12px 20px;
+      border-radius: 8px;
+      color: white;
+      font-weight: 600;
+      font-size: 14px;
+      max-width: 300px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      ${type === 'success' ? 'background: #10b981;' : type === 'error' ? 'background: #ef4444;' : 'background: #3b82f6;'}
+    `;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    // 애니메이션으로 표시
+    setTimeout(() => {
+      toast.style.transform = 'translateX(0)';
+    }, 10);
+    
+    // 3초 후 자동 제거
+    setTimeout(() => {
+      toast.style.transform = 'translateX(100%)';
+      setTimeout(() => {
+        if (document.body.contains(toast)) {
+          document.body.removeChild(toast);
+        }
+      }, 300);
+    }, 3000);
   }
   
   // 엔터키 검색
@@ -207,7 +298,7 @@
 </script>
 
 <svelte:head>
-  <title>재고 관리 - 아코제주 관리시스템</title>
+  <title>재고 관리 - 아코 제주 관리시스템</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -348,12 +439,17 @@
 
             <!-- 하단 버튼들 -->
             <div class="absolute flex" style="bottom: 6px; right: 6px; gap: 4px;">
-              <!-- 🖨️ 바코드 출력 버튼 (신규 추가) -->
+              <!-- 🖨️ 바코드 출력 버튼 (수정됨 - 이벤트 핸들러 개선) -->
               <button 
                 type="button"
                 class="bg-purple-500 text-white border-0 rounded cursor-pointer hover:bg-purple-600 transition-all duration-200"
                 style="padding: 0.25rem 0.5rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);"
-                on:click={() => openBarcodeModal(product)}
+                on:click={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  console.log('버튼 클릭된 제품:', product);
+                  printBarcode(product);
+                }}
               >
                 🖨️ 출력
               </button>
@@ -379,10 +475,12 @@
   </main>
 </div>
 
-<!-- 바코드 출력 모달 -->
+<!-- 바코드 출력 컴포넌트 (숨겨져 있지만 직접 출력용) -->
 <BarcodeModal 
-  bind:isOpen={showBarcodeModal} 
+  bind:this={barcodeModal}
   bind:productData={selectedProduct}
+  on:printSuccess={handlePrintSuccess}
+  on:printError={handlePrintError}
 />
 
 {:else}
