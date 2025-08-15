@@ -74,6 +74,7 @@ export async function GET({ url }) {
         h.DNHD_SLIP,
         h.DNHD_DATE,
         h.DNHD_RAND,
+        h.DNHD_BIGO,
         DATE_FORMAT(h.DNHD_UDAT, '%Y-%m-%d %H:%i:%s') as REG_TIME,
         d.DNDT_ITEM,
         d.DNDT_QTY1,
@@ -143,7 +144,8 @@ export async function GET({ url }) {
           cashTotal: 0,
           cardTotal: 0,
           totalQty: 0,
-          items: []
+          items: [],
+          bigo: row.DNHD_BIGO || '' // 이 줄 추가
         });
       }
 

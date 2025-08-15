@@ -1,3 +1,4 @@
+<!-- src/routes/admin/menu-management/+page.svelte - Tailwind CSS 완전 변환 (중복 제거) -->
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
@@ -14,14 +15,14 @@
   // 폼 데이터
   let formData = {
     title: '',
-    icon: '📄',
+    icon: '',
     href: '',
     parent_id: null,
     roles: ['admin'],
     is_active: true
   };
 
-  // 터치 이벤트 개선
+  // 🔧 터치 및 마우스 이벤트 변수들
   let touchStartTime = 0;
   let touchStartY = 0;
   let touchStartX = 0;
@@ -29,6 +30,11 @@
   let draggedItem = null;
   let dragOverItem = null;
   let longPressTimeout = null;
+  
+  // 마우스 이벤트 변수들
+  let mousePressed = false;
+  let mouseStartX = 0;
+  let mouseStartY = 0;
 
   const availableRoles = ['admin', 'user'];
   const availableIcons = ['🏠', '👥', '⚙️', '👤', '📊', '📋', '📁', '🔧', '💼', '🎯', '📈', '🛡️', '📱', '💻', '🌟', '🎨'];
@@ -40,9 +46,15 @@
     document.addEventListener('selectstart', preventSelection);
     document.addEventListener('dragstart', preventSelection);
     
+    // 전역 마우스 이벤트 (드래그 중 마우스가 카드 밖으로 나가도 동작)
+    document.addEventListener('mousemove', handleGlobalMouseMove);
+    document.addEventListener('mouseup', handleGlobalMouseUp);
+    
     return () => {
       document.removeEventListener('selectstart', preventSelection);
       document.removeEventListener('dragstart', preventSelection);
+      document.removeEventListener('mousemove', handleGlobalMouseMove);
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
     };
   });
 
@@ -50,6 +62,18 @@
     if (isDragging) {
       e.preventDefault();
       return false;
+    }
+  }
+
+  function handleGlobalMouseMove(event) {
+    if (isDragging) {
+      handleMouseMove(event);
+    }
+  }
+
+  function handleGlobalMouseUp(event) {
+    if (isDragging) {
+      handleMouseEnd(event);
     }
   }
 
@@ -95,15 +119,10 @@
     return result;
   }
 
-  // 평면 배열로 다시 변환 (드래그용)
-  function flattenMenus(treeMenus) {
-    return treeMenus.map(({ level, ...menu }) => menu);
-  }
-
   function resetForm() {
     formData = {
       title: '',
-      icon: '📄',
+      icon: '',
       href: '',
       parent_id: null,
       roles: ['admin'],
@@ -121,7 +140,7 @@
   function editMenu(menu) {
     formData = {
       title: menu.title,
-      icon: menu.icon,
+      icon: menu.icon || '',
       href: menu.href,
       parent_id: menu.parent_id,
       roles: menu.allowed_roles || ['admin'],
@@ -133,7 +152,7 @@
 
   async function saveMenu() {
     if (!formData.title || !formData.title.trim()) {
-      showErrorToast("메뉴 제목을 입력해주세요.");
+      showToast("메뉴 제목을 입력해주세요.", "error");
       return;
     }
 
@@ -164,12 +183,12 @@
       if (result.success) {
         await loadMenus();
         resetForm();
-        showSuccessToast(editingMenu ? "메뉴가 수정되었습니다." : "메뉴가 추가되었습니다.");
+        showToast(editingMenu ? "메뉴가 수정되었습니다." : "메뉴가 추가되었습니다.", "success");
       } else {
-        showErrorToast(result.error);
+        showToast(result.error, "error");
       }
     } catch (err) {
-      showErrorToast("저장 중 오류가 발생했습니다.");
+      showToast("저장 중 오류가 발생했습니다.", "error");
       console.error("저장 오류:", err);
     }
   }
@@ -191,12 +210,12 @@
       
       if (result.success) {
         await loadMenus();
-        showSuccessToast('메뉴가 삭제되었습니다.');
+        showToast('메뉴가 삭제되었습니다.', 'success');
       } else {
-        showErrorToast(result.error);
+        showToast(result.error, 'error');
       }
     } catch (err) {
-      showErrorToast('삭제 중 오류가 발생했습니다.');
+      showToast('삭제 중 오류가 발생했습니다.', 'error');
       console.error('삭제 오류:', err);
     } finally {
       showDeleteConfirm = false;
@@ -218,13 +237,13 @@
     return parent ? parent.title : '알 수 없음';
   }
 
-  // 개선된 터치 이벤트 핸들러 (최상위 메뉴만 드래그 가능)
+  // 🔧 터치 이벤트 핸들러
   function handleTouchStart(event, menu) {
-    // 하위 메뉴는 드래그 불가
-    if (menu.level > 0) return;
+    console.log('👆 터치 시작:', menu.title);
     
     // 버튼 클릭은 무시
     if (event.target.closest('.action-button')) {
+      console.log('🚫 버튼 클릭 - 드래그 취소');
       return;
     }
     
@@ -233,20 +252,27 @@
     touchStartX = event.touches[0].clientX;
     isDragging = false;
     
+    // Long press 타이머 설정
     longPressTimeout = setTimeout(() => {
       if (!isDragging) {
+        console.log('⏰ Long press 감지 - 드래그 모드 시작');
         startDragMode(event, menu);
       }
     }, 600);
   }
 
   function handleTouchMove(event) {
+    if (!isDragging && !longPressTimeout) return;
+    
     const touch = event.touches[0];
     const deltaY = Math.abs(touch.clientY - touchStartY);
     const deltaX = Math.abs(touch.clientX - touchStartX);
     
+    // 세로 움직임이 크면 스크롤 허용 (드래그 중이 아닐 때만)
     if (deltaY > deltaX && deltaY > 15 && !isDragging) {
+      console.log('📜 스크롤 감지 - 드래그 취소');
       clearTimeout(longPressTimeout);
+      longPressTimeout = null;
       return;
     }
     
@@ -254,27 +280,144 @@
       event.preventDefault();
       event.stopPropagation();
       
-      const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
-      const menuCard = elementBelow?.closest('.menu-card:not(.submenu-card)'); // 최상위 메뉴만
+      console.log('🎯 드래그 중 - 위치:', touch.clientX, touch.clientY);
       
+      const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+      const menuCard = elementBelow?.closest('.menu-card');
+      
+      // 드롭 타겟 초기화
       document.querySelectorAll('.menu-card').forEach(card => {
         card.classList.remove('drop-target');
       });
       
       if (menuCard && menuCard !== event.target.closest('.menu-card')) {
-        menuCard.classList.add('drop-target');
         const menuId = parseInt(menuCard.dataset.menuId);
-        dragOverItem = flatMenus.find(m => m.id === menuId);
+        const targetMenu = flatMenus.find(m => m.id === menuId);
+        
+        console.log('🎯 드롭 타겟 후보:', targetMenu?.title);
+        
+        // 🔧 드래그 규칙 검증
+        if (canDropOn(draggedItem, targetMenu)) {
+          console.log('✅ 유효한 드롭 타겟');
+          menuCard.classList.add('drop-target');
+          dragOverItem = targetMenu;
+        } else {
+          console.log('❌ 무효한 드롭 타겟');
+          dragOverItem = null;
+        }
+      } else {
+        dragOverItem = null;
       }
     }
   }
 
   function handleTouchEnd(event) {
-    clearTimeout(longPressTimeout);
+    console.log('🏁 터치 종료');
+    
+    // Long press 타이머 정리
+    if (longPressTimeout) {
+      clearTimeout(longPressTimeout);
+      longPressTimeout = null;
+    }
     
     if (isDragging) {
       event.preventDefault();
       event.stopPropagation();
+      
+      console.log('🎯 드래그 종료 - dragOverItem:', dragOverItem?.title);
+      
+      const cardElement = event.target.closest('.menu-card');
+      if (cardElement) {
+        cardElement.style.opacity = '1';
+        cardElement.classList.remove('dragging');
+      }
+      
+      // 모든 드롭 타겟 스타일 제거
+      document.querySelectorAll('.menu-card').forEach(card => {
+        card.classList.remove('drop-target');
+      });
+      
+      // 순서 변경 실행
+      if (dragOverItem && draggedItem && draggedItem.id !== dragOverItem.id) {
+        console.log('🔄 순서 변경 실행:', draggedItem.title, '->', dragOverItem.title);
+        reorderMenus(draggedItem, dragOverItem);
+      } else {
+        console.log('❌ 순서 변경 조건 미충족');
+        if (!dragOverItem) console.log('  - dragOverItem이 없음');
+        if (!draggedItem) console.log('  - draggedItem이 없음');
+        if (draggedItem?.id === dragOverItem?.id) console.log('  - 같은 메뉴');
+      }
+      
+      // 상태 초기화
+      isDragging = false;
+      draggedItem = null;
+      dragOverItem = null;
+    }
+  }
+
+  // 🔧 마우스 이벤트 핸들러 (데스크톱 지원)
+  function handleMouseStart(event, menu) {
+    // 버튼 클릭은 무시
+    if (event.target.closest('.action-button')) {
+      return;
+    }
+    
+    console.log('🖱️ 마우스 시작:', menu.title);
+    
+    mousePressed = true;
+    mouseStartX = event.clientX;
+    mouseStartY = event.clientY;
+    
+    // 즉시 드래그 모드 시작 (마우스는 long press 불필요)
+    setTimeout(() => {
+      if (mousePressed && !isDragging) {
+        console.log('🖱️ 마우스 드래그 모드 시작');
+        startDragMode(event, menu);
+      }
+    }, 100);
+  }
+
+  function handleMouseMove(event) {
+    if (!mousePressed && !isDragging) return;
+    
+    const deltaX = Math.abs(event.clientX - mouseStartX);
+    const deltaY = Math.abs(event.clientY - mouseStartY);
+    
+    // 마우스가 충분히 움직였고 드래그 중이면
+    if (isDragging && (deltaX > 5 || deltaY > 5)) {
+      event.preventDefault();
+      
+      const elementBelow = document.elementFromPoint(event.clientX, event.clientY);
+      const menuCard = elementBelow?.closest('.menu-card');
+      
+      // 드롭 타겟 초기화
+      document.querySelectorAll('.menu-card').forEach(card => {
+        card.classList.remove('drop-target');
+      });
+      
+      if (menuCard && menuCard !== event.target.closest('.menu-card')) {
+        const menuId = parseInt(menuCard.dataset.menuId);
+        const targetMenu = flatMenus.find(m => m.id === menuId);
+        
+        if (canDropOn(draggedItem, targetMenu)) {
+          menuCard.classList.add('drop-target');
+          dragOverItem = targetMenu;
+        } else {
+          dragOverItem = null;
+        }
+      } else {
+        dragOverItem = null;
+      }
+    }
+  }
+
+  function handleMouseEnd(event) {
+    console.log('🖱️ 마우스 종료');
+    
+    mousePressed = false;
+    
+    if (isDragging) {
+      event.preventDefault();
       
       const cardElement = event.target.closest('.menu-card');
       if (cardElement) {
@@ -287,6 +430,7 @@
       });
       
       if (dragOverItem && draggedItem && draggedItem.id !== dragOverItem.id) {
+        console.log('🖱️ 마우스 순서 변경 실행');
         reorderMenus(draggedItem, dragOverItem);
       }
       
@@ -296,7 +440,10 @@
     }
   }
 
+  // 🔧 드래그 모드 시작 (통합 함수)
   function startDragMode(event, menu) {
+    console.log('🚀 드래그 모드 시작:', menu.title);
+    
     isDragging = true;
     draggedItem = menu;
     
@@ -306,26 +453,105 @@
       cardElement.classList.add('dragging');
     }
     
+    // 햅틱 피드백
     if (navigator.vibrate) {
       navigator.vibrate(100);
     }
     
-    showSuccessToast('드래그 모드 활성화');
+    showToast(`드래그 모드: ${menu.title} 📱`, 'info');
   }
 
+  // 🔧 개선된 드래그 규칙 검증 함수
+  function canDropOn(draggedMenu, targetMenu) {
+    if (!draggedMenu || !targetMenu) {
+      console.log('❌ 드래그 규칙: 메뉴가 없음');
+      return false;
+    }
+    
+    // 자기 자신에게는 드롭 불가
+    if (draggedMenu.id === targetMenu.id) {
+      console.log('❌ 드래그 규칙: 자기 자신');
+      return false;
+    }
+    
+    // 최상위 메뉴끼리 또는 같은 레벨의 서브 메뉴끼리만 순서 변경 가능
+    const draggedIsParent = !draggedMenu.parent_id;
+    const targetIsParent = !targetMenu.parent_id;
+    
+    console.log('🔍 드래그 규칙 검사:');
+    console.log('  - 드래그된 메뉴:', draggedMenu.title, '(parent_id:', draggedMenu.parent_id, ')');
+    console.log('  - 타겟 메뉴:', targetMenu.title, '(parent_id:', targetMenu.parent_id, ')');
+    
+    // 둘 다 최상위 메뉴인 경우
+    if (draggedIsParent && targetIsParent) {
+      console.log('✅ 드래그 규칙: 최상위 메뉴끼리');
+      return true;
+    }
+    
+    // 둘 다 서브 메뉴이고 같은 부모를 가진 경우
+    if (!draggedIsParent && !targetIsParent && draggedMenu.parent_id === targetMenu.parent_id) {
+      console.log('✅ 드래그 규칙: 같은 부모의 서브 메뉴끼리');
+      return true;
+    }
+    
+    console.log('❌ 드래그 규칙: 다른 레벨 또는 다른 부모');
+    return false;
+  }
+
+  // 🔧 개선된 메뉴 순서 변경 함수
   async function reorderMenus(draggedMenu, targetMenu) {
     try {
-      const currentIndex = flatMenus.findIndex(m => m.id === draggedMenu.id);
-      const targetIndex = flatMenus.findIndex(m => m.id === targetMenu.id);
+      console.log('🔄 순서 변경 시작:', draggedMenu.title, '->', targetMenu.title);
+      console.log('🔍 드래그된 메뉴:', draggedMenu);
+      console.log('🎯 타겟 메뉴:', targetMenu);
       
-      const newMenus = [...flatMenus];
+      // 같은 레벨의 메뉴들만 필터링
+      let sameLevelMenus;
+      if (draggedMenu.parent_id) {
+        // 서브 메뉴의 경우: 같은 부모를 가진 메뉴들
+        sameLevelMenus = flatMenus.filter(m => m.parent_id === draggedMenu.parent_id);
+        console.log('📂 서브 메뉴 그룹 (parent_id=' + draggedMenu.parent_id + '):', sameLevelMenus);
+      } else {
+        // 최상위 메뉴의 경우: parent_id가 null인 메뉴들
+        sameLevelMenus = flatMenus.filter(m => !m.parent_id);
+        console.log('🏠 최상위 메뉴 그룹:', sameLevelMenus);
+      }
+      
+      if (sameLevelMenus.length < 2) {
+        showToast('순서를 변경할 메뉴가 충분하지 않습니다.', 'error');
+        return;
+      }
+      
+      // 현재 순서대로 정렬
+      sameLevelMenus.sort((a, b) => a.sort_order - b.sort_order);
+      
+      const currentIndex = sameLevelMenus.findIndex(m => m.id === draggedMenu.id);
+      const targetIndex = sameLevelMenus.findIndex(m => m.id === targetMenu.id);
+      
+      console.log('📍 현재 인덱스:', currentIndex, '타겟 인덱스:', targetIndex);
+      
+      if (currentIndex === -1 || targetIndex === -1) {
+        showToast('메뉴를 찾을 수 없습니다.', 'error');
+        return;
+      }
+      
+      if (currentIndex === targetIndex) {
+        showToast('같은 위치입니다.', 'info');
+        return;
+      }
+      
+      // 배열에서 순서 변경
+      const newMenus = [...sameLevelMenus];
       const [movedMenu] = newMenus.splice(currentIndex, 1);
       newMenus.splice(targetIndex, 0, movedMenu);
       
+      // 새로운 sort_order 할당
       const menuOrders = newMenus.map((menu, index) => ({
         id: menu.id,
         sort_order: index + 1
       }));
+
+      console.log('📤 전송할 순서 데이터:', menuOrders);
 
       const response = await fetch('/api/menus', {
         method: 'PUT',
@@ -334,1083 +560,449 @@
       });
       
       const result = await response.json();
+      console.log('📡 서버 응답:', result);
       
       if (result.success) {
         await loadMenus();
-        showSuccessToast('메뉴 순서가 변경되었습니다.');
+        showToast('메뉴 순서가 변경되었습니다. ✅', 'success');
       } else {
-        showErrorToast('순서 변경 실패: ' + result.error);
+        showToast('순서 변경 실패: ' + result.error, 'error');
       }
     } catch (err) {
-      showErrorToast('순서 변경 중 오류가 발생했습니다.');
-      console.error('순서 변경 오류:', err);
+      showToast('순서 변경 중 오류가 발생했습니다.', 'error');
+      console.error('❌ 순서 변경 오류:', err);
     }
   }
 
-  // 토스트 알림
-  let toastMessage = '';
-  let toastType = '';
-  let toastVisible = false;
-
-  function showSuccessToast(message) {
-    toastMessage = message;
-    toastType = 'success';
-    toastVisible = true;
-    setTimeout(() => { toastVisible = false; }, 2000);
-  }
-
-  function showErrorToast(message) {
-    toastMessage = message;
-    toastType = 'error';
-    toastVisible = true;
-    setTimeout(() => { toastVisible = false; }, 3000);
+  // 토스트 메시지 표시
+  function showToast(message, type = 'info') {
+    if (typeof window === 'undefined') return;
+    
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    
+    const colors = {
+      success: 'bg-green-500',
+      error: 'bg-red-500',
+      info: 'bg-blue-500'
+    };
+    
+    toast.className = `fixed bottom-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg text-white font-medium z-50 transition-opacity duration-300 ${colors[type]}`;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
+      }, 300);
+    }, 3000);
   }
 </script>
 
 <svelte:head>
-  <title>메뉴 관리 - 백오피스</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="format-detection" content="telephone=no">
+  <title>메뉴 관리 - 관리자</title>
 </svelte:head>
 
-<div class="mobile-menu-management">
-  <!-- 세련된 헤더 -->
-  <div class="modern-header">
-    <h1>메뉴 관리</h1>
-    <button class="add-button" on:click={showAddMenuForm}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="12" y1="5" x2="12" y2="19"></line>
-        <line x1="5" y1="12" x2="19" y2="12"></line>
+<!-- 메인 컨테이너 - padding: 24px, max-width: 1200px -->
+<div class="p-6 max-w-7xl mx-auto">
+  
+  <!-- 페이지 헤더 - margin-bottom: 32px, gap: 20px -->
+  <div class="flex justify-between items-start mb-8 gap-5">
+    <div>
+      <!-- h1: font-size: 28px, font-weight: 700, color: #1a202c, margin: 0 0 8px 0 -->
+      <h1 class="text-3xl font-bold text-gray-900 mb-2">⚙️ 메뉴 관리</h1>
+      <!-- subtitle: color: #718096, font-size: 16px -->
+      <p class="text-gray-500 text-base m-0">시스템 메뉴를 관리하고 순서를 변경할 수 있습니다</p>
+    </div>
+    
+    <!-- 새 메뉴 추가 버튼 -->
+    <button 
+      class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 flex items-center gap-2 whitespace-nowrap"
+      on:click={showAddMenuForm}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <path d="M12 5v14m-7-7h14" stroke="currentColor" stroke-width="2"/>
       </svg>
+      새 메뉴
     </button>
   </div>
 
-  <!-- 스크롤 가능한 콘텐츠 영역 -->
-  <div class="content-area">
-    <!-- 에러 메시지 -->
-    {#if error}
-      <div class="error-alert">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="15" y1="9" x2="9" y2="15"></line>
-          <line x1="9" y1="9" x2="15" y2="15"></line>
-        </svg>
-        {error}
-      </div>
-    {/if}
+  {#if loading}
+    <!-- 로딩 상태 -->
+    <div class="flex flex-col items-center justify-center py-16">
+      <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+      <p class="text-gray-500">메뉴 정보를 불러오는 중...</p>
+    </div>
+  {:else if error}
+    <!-- 에러 상태 -->
+    <div class="flex flex-col items-center justify-center py-16">
+      <div class="text-red-500 text-5xl mb-4">❌</div>
+      <p class="text-red-600 text-lg">{error}</p>
+      <button 
+        class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+        on:click={loadMenus}
+      >
+        다시 시도
+      </button>
+    </div>
+  {:else}
+    <!-- 안내 메시지 -->
+    <div class="flex items-center gap-3 mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-700">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <path d="M9,12l2,2 4,-4"></path>
+      </svg>
+      <span class="text-sm font-medium">메뉴를 길게 눌러서 순서를 변경할 수 있습니다 (같은 레벨끼리만 가능)</span>
+    </div>
+    
+    <!-- 계층 구조 메뉴 카드들 -->
+    <div class="space-y-4">
+      {#each menus as menu (menu.id)}
+        <div 
+          class="menu-card bg-white rounded-2xl shadow-sm border border-slate-200 transition-all duration-200 select-none cursor-grab active:cursor-grabbing {menu.level > 0 ? 'ml-6 transform scale-95 bg-slate-50 border-slate-300 border-l-4 border-l-blue-500' : ''} {isDragging && draggedItem?.id === menu.id ? 'opacity-80 scale-105 shadow-lg z-50' : ''}"
+          class:drop-target={dragOverItem?.id === menu.id}
+          data-menu-id={menu.id}
+          on:touchstart={(e) => handleTouchStart(e, menu)}
+          on:touchmove={handleTouchMove}
+          on:touchend={handleTouchEnd}
+          on:mousedown={(e) => handleMouseStart(e, menu)}
+          on:mousemove={handleMouseMove}
+          on:mouseup={handleMouseEnd}
+          on:mouseleave={handleMouseEnd}
+        >
+          <!-- 하위 메뉴 연결선 -->
+          {#if menu.level > 0}
+            <div class="absolute left-0 top-1/2 w-6 h-px bg-slate-300 -translate-x-6"></div>
+            <div class="absolute left-0 top-1/2 w-px h-8 bg-slate-300 -translate-x-6 -translate-y-4"></div>
+          {/if}
 
-    <!-- 로딩 -->
-    {#if loading}
-      <div class="loading-state">
-        <div class="loading-spinner"></div>
-        <p>메뉴 정보를 불러오는 중...</p>
-      </div>
-    {:else}
-      <!-- 안내 메시지 -->
-      <div class="info-tip">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <path d="M9,12l2,2 4,-4"></path>
-        </svg>
-        최상위 메뉴를 길게 눌러서 순서를 변경할 수 있습니다
-      </div>
-      
-      <!-- 계층 구조 메뉴 카드들 -->
-      <div class="menu-cards">
-        {#each menus as menu (menu.id)}
-          <div 
-            class="menu-card"
-            class:submenu-card={menu.level > 0}
-            class:dragging={isDragging && draggedItem?.id === menu.id}
-            data-menu-id={menu.id}
-            on:touchstart={(e) => handleTouchStart(e, menu)}
-            on:touchmove={handleTouchMove}
-            on:touchend={handleTouchEnd}
-          >
-            <!-- 하위 메뉴 연결선 -->
-            {#if menu.level > 0}
-              <div class="submenu-connector"></div>
-            {/if}
-
-            <!-- 카드 헤더 -->
-            <div class="card-header">
-              <div class="menu-basic-info">
-                <span class="menu-icon">{menu.icon}</span>
-                <div class="menu-details">
-                  <h3 class="menu-title">
-                    {#if menu.level > 0}
-                      <span class="submenu-indicator">└</span>
-                    {/if}
-                    {menu.title}
-                  </h3>
-                  {#if menu.level > 0}
-                    <span class="parent-menu">부모: {getParentMenuName(menu.parent_id)}</span>
-                  {/if}
-                </div>
-              </div>
+          <!-- 카드 헤더 - padding: 16px 16px 12px -->
+          <div class="flex justify-between items-start p-4 pb-3">
+            <div class="flex items-start gap-3 flex-1">
+              <!-- 메뉴 아이콘 - font-size: 24px -->
+              {#if menu.icon}
+                <span class="text-2xl {menu.level > 0 ? 'text-xl' : ''}">{menu.icon}</span>
+              {:else}
+                <div class="w-6 h-6 {menu.level > 0 ? 'w-5 h-5' : ''}"></div>
+              {/if}
               
-              <div class="card-meta">
-                <span class="order-badge">#{menu.sort_order}</span>
-                <div class="status-indicator" class:active={menu.is_active}></div>
-                {#if menu.level > 0}
-                  <span class="level-badge">하위</span>
-                {/if}
-              </div>
-            </div>
-
-            <!-- 카드 정보 -->
-            {#if menu.href || (menu.allowed_roles && menu.allowed_roles.length > 0)}
-              <div class="card-info">
-                {#if menu.href}
-                  <div class="info-item">
-                    <span class="info-label">링크</span>
-                    <code class="info-value">{menu.href}</code>
-                  </div>
-                {/if}
+              <div class="flex-1">
+                <!-- 메뉴 제목 -->
+                <h3 class="text-lg font-semibold text-gray-800 mb-1 flex items-center gap-2">
+                  {#if menu.level > 0}
+                    <span class="text-slate-500 text-sm">└</span>
+                  {/if}
+                  {menu.title}
+                  {#if menu.level > 0}
+                    <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">SUB</span>
+                  {/if}
+                </h3>
                 
-                {#if menu.allowed_roles && menu.allowed_roles.length > 0}
-                  <div class="info-item">
-                    <span class="info-label">권한</span>
-                    <div class="role-chips">
-                      {#each menu.allowed_roles as role}
-                        <span class="role-chip {role}">{role}</span>
-                      {/each}
-                    </div>
-                  </div>
+                {#if menu.level > 0}
+                  <!-- 부모 메뉴 표시 -->
+                  <p class="text-sm text-slate-500">부모: {getParentMenuName(menu.parent_id)}</p>
                 {/if}
               </div>
-            {/if}
-
-            <!-- 카드 액션 -->
-            <div class="card-actions">
-              <button class="action-button edit" on:click={() => editMenu(menu)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-                </svg>
-                수정
-              </button>
-              <button class="action-button delete" on:click={() => confirmDelete(menu)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="3,6 5,6 21,6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-                삭제
-              </button>
             </div>
-
-            <!-- 드래그 인디케이터 (최상위 메뉴만) -->
-            {#if menu.level === 0}
-              <div class="drag-indicator">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="9" cy="12" r="1"></circle>
-                  <circle cx="9" cy="5" r="1"></circle>
-                  <circle cx="9" cy="19" r="1"></circle>
-                  <circle cx="15" cy="12" r="1"></circle>
-                  <circle cx="15" cy="5" r="1"></circle>
-                  <circle cx="15" cy="19" r="1"></circle>
-                </svg>
+            
+            <!-- 카드 메타 정보 -->
+            <div class="flex items-center gap-3">
+              <!-- 순서 배지 -->
+              <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                #{menu.sort_order}
+              </span>
+              
+              <!-- 액션 버튼들 -->
+              <div class="flex gap-2">
+                <button 
+                  class="action-button w-8 h-8 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-lg transition-all duration-200 flex items-center justify-center"
+                  on:click={() => editMenu(menu)}
+                  title="메뉴 편집"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2"/>
+                    <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="currentColor" stroke-width="2"/>
+                  </svg>
+                </button>
+                
+                <button 
+                  class="action-button w-8 h-8 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-all duration-200 flex items-center justify-center"
+                  on:click={() => confirmDelete(menu)}
+                  title="메뉴 삭제"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="m3 6 18 0M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2"/>
+                  </svg>
+                </button>
               </div>
-            {/if}
+            </div>
           </div>
-        {/each}
-      </div>
-    {/if}
-  </div>
 
-  <!-- 기존 모달들 (폼, 삭제 확인, 토스트) - 동일 -->
-  {#if showAddForm}
-    <div class="fullscreen-modal">
-      <div class="modal-header">
-        <button class="back-button" on:click={resetForm}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="15,18 9,12 15,6"></polyline>
+          <!-- 카드 정보 섹션 - padding: 0 16px 16px -->
+          <div class="px-4 pb-4 grid grid-cols-2 gap-4 text-sm">
+            <!-- URL 정보 -->
+            <div>
+              <div class="text-slate-500 font-medium mb-1">URL</div>
+              <div class="text-gray-700 font-mono text-xs bg-gray-50 px-2 py-1 rounded">
+                {menu.href || '미설정'}
+              </div>
+            </div>
+            
+            <!-- 상태 정보 -->
+            <div>
+              <div class="text-slate-500 font-medium mb-1">상태</div>
+              <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold {menu.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
+                {menu.is_active ? '활성' : '비활성'}
+              </span>
+            </div>
+            
+            <!-- 권한 정보 -->
+            <div class="col-span-2">
+              <div class="text-slate-500 font-medium mb-2">접근 권한</div>
+              <div class="flex flex-wrap gap-2">
+                {#each (menu.allowed_roles || ['admin']) as role}
+                  <span class="px-2 py-1 {role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'} text-xs font-semibold rounded-full">
+                    {role}
+                  </span>
+                {/each}
+              </div>
+            </div>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
+</div>
+
+<!-- 메뉴 추가/편집 모달 -->
+{#if showAddForm}
+  <div 
+    class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+    role="button"
+    tabindex="0"
+    on:click={resetForm}
+    on:keydown={(e) => e.key === 'Escape' && resetForm()}
+  >
+    <div 
+      class="bg-white rounded-2xl max-w-lg w-full max-h-screen overflow-y-auto"
+      on:click|stopPropagation
+      role="dialog" 
+      tabindex="-1"
+    >
+      <!-- 모달 헤더 -->
+      <div class="flex justify-between items-center px-6 pt-6 pb-0">
+        <h2 class="text-xl font-bold text-gray-900">
+          {editingMenu ? '✏️ 메뉴 편집' : '🆕 새 메뉴 추가'}
+        </h2>
+        <button 
+          class="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-500 transition-all duration-200 flex items-center justify-center"
+          on:click={resetForm}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="m18 6-12 12M6 6l12 12" stroke="currentColor" stroke-width="2"/>
           </svg>
         </button>
-        <h2>{editingMenu ? '메뉴 수정' : '새 메뉴 추가'}</h2>
-        <button class="save-button" on:click={saveMenu}>저장</button>
       </div>
-
-      <div class="modal-content">
-        <div class="form-group">
-          <label class="form-label">메뉴 제목 *</label>
-          <input
-            class="form-input"
-            type="text"
+      
+      <!-- 모달 폼 -->
+      <form on:submit|preventDefault={saveMenu} class="p-6">
+        <!-- 메뉴 제목 -->
+        <div class="mb-6">
+          <label class="block text-sm font-semibold text-gray-700 mb-2">메뉴 제목 *</label>
+          <input 
+            type="text" 
             bind:value={formData.title}
-            placeholder="메뉴 제목을 입력하세요"
-            maxlength="50"
+            required 
+            placeholder="메뉴 이름을 입력하세요"
+            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
           />
         </div>
-
-        <div class="form-group">
-          <label class="form-label">아이콘</label>
-          <div class="icon-selector">
-            {#each availableIcons as icon}
-              <button
-                class="icon-button"
-                class:selected={formData.icon === icon}
-                on:click={() => formData.icon = icon}
-              >
-                {icon}
-              </button>
-            {/each}
+        
+        <!-- 아이콘 선택 -->
+        <div class="mb-6">
+          <label class="block text-sm font-semibold text-gray-700 mb-2">아이콘</label>
+          <div class="flex flex-col gap-3">
+            <!-- 없음 옵션 -->
+            <button
+              type="button"
+              class="w-full px-4 py-3 text-left border-2 rounded-lg transition-all duration-200 {formData.icon === '' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}"
+              on:click={() => formData.icon = ''}
+            >
+              <span class="text-gray-500 font-medium">없음</span>
+            </button>
+            
+            <!-- 아이콘 그리드 -->
+            <div class="grid grid-cols-8 gap-2">
+              {#each availableIcons as icon}
+                <button
+                  type="button"
+                  class="w-10 h-10 text-xl border-2 rounded-lg transition-all duration-200 {formData.icon === icon ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}"
+                  on:click={() => formData.icon = icon}
+                >
+                  {icon}
+                </button>
+              {/each}
+            </div>
           </div>
         </div>
-
-        <div class="form-group">
-          <label class="form-label">링크 (href)</label>
-          <input
-            class="form-input"
-            type="text"
+        
+        <!-- URL -->
+        <div class="mb-6">
+          <label class="block text-sm font-semibold text-gray-700 mb-2">URL</label>
+          <input 
+            type="text" 
             bind:value={formData.href}
             placeholder="/admin/example"
+            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 font-mono text-sm"
           />
         </div>
-
-        <div class="form-group">
-          <label class="form-label">상위 메뉴</label>
-          <select class="form-select" bind:value={formData.parent_id}>
-            <option value={null}>없음 (최상위 메뉴)</option>
-            {#each flatMenus.filter(m => !m.parent_id && (!editingMenu || m.id !== editingMenu.id)) as menu}
-              <option value={menu.id}>{menu.title}</option>
+        
+        <!-- 부모 메뉴 -->
+        <div class="mb-6">
+          <label class="block text-sm font-semibold text-gray-700 mb-2">부모 메뉴</label>
+          <select 
+            bind:value={formData.parent_id}
+            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
+          >
+            <option value={null}>최상위 메뉴</option>
+            {#each flatMenus.filter(m => !m.parent_id) as parentMenu}
+              <option value={parentMenu.id}>{parentMenu.title}</option>
             {/each}
           </select>
         </div>
-
-        <div class="form-group">
-          <label class="form-label">접근 권한</label>
-          <div class="role-selector">
+        
+        <!-- 권한 설정 -->
+        <div class="mb-6">
+          <label class="block text-sm font-semibold text-gray-700 mb-2">접근 권한</label>
+          <div class="flex gap-3">
             {#each availableRoles as role}
-              <button
-                class="role-button"
-                class:active={formData.roles.includes(role)}
-                on:click={() => toggleRole(role)}
-              >
-                <div class="role-check">
-                  {#if formData.roles.includes(role)}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                      <polyline points="20,6 9,17 4,12"></polyline>
-                    </svg>
-                  {/if}
-                </div>
-                {role}
-              </button>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  checked={formData.roles.includes(role)}
+                  on:change={() => toggleRole(role)}
+                />
+                <span class="text-sm font-medium text-gray-700 capitalize">{role}</span>
+              </label>
             {/each}
           </div>
         </div>
-
-        <div class="form-group">
-          <label class="toggle-switch">
-            <input
-              type="checkbox"
+        
+        <!-- 활성 상태 -->
+        <div class="mb-8">
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input 
+              type="checkbox" 
+              class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               bind:checked={formData.is_active}
-              class="toggle-input"
             />
-            <span class="toggle-track"></span>
-            <span class="toggle-thumb"></span>
-            <span class="toggle-label">메뉴 활성화</span>
+            <span class="text-sm font-semibold text-gray-700">메뉴 활성화</span>
           </label>
         </div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- 삭제 확인 모달 -->
-  {#if showDeleteConfirm}
-    <div class="overlay">
-      <div class="confirm-modal">
-        <div class="confirm-icon">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2">
-            <polyline points="3,6 5,6 21,6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          </svg>
-        </div>
-        <h3>메뉴 삭제</h3>
-        <p>"{menuToDelete?.title}" 메뉴를<br>정말 삭제하시겠습니까?</p>
-        <div class="confirm-actions">
-          <button class="confirm-button cancel" on:click={() => showDeleteConfirm = false}>
+        
+        <!-- 액션 버튼 -->
+        <div class="flex gap-3 justify-end">
+          <button 
+            type="button" 
+            class="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200 font-medium"
+            on:click={resetForm}
+          >
             취소
           </button>
-          <button class="confirm-button delete" on:click={deleteMenu}>
+          <button 
+            type="submit" 
+            class="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all duration-200 font-medium"
+          >
+            {editingMenu ? '수정' : '추가'}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
+
+<!-- 삭제 확인 모달 -->
+{#if showDeleteConfirm}
+  <div 
+    class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+    role="button"
+    tabindex="0"
+    on:click={() => showDeleteConfirm = false}
+    on:keydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
+  >
+    <div 
+      class="bg-white rounded-2xl max-w-md w-full"
+      on:click|stopPropagation
+      role="dialog"
+      tabindex="-1"
+    >
+      <div class="p-6">
+        <div class="flex items-center gap-4 mb-4">
+          <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" class="text-red-600">
+              <path d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" stroke="currentColor" stroke-width="2"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-gray-900">메뉴 삭제</h3>
+            <p class="text-gray-600">정말로 삭제하시겠습니까?</p>
+          </div>
+        </div>
+        
+        {#if menuToDelete}
+          <div class="bg-gray-50 rounded-lg p-3 mb-6">
+            <div class="flex items-center gap-2">
+              {#if menuToDelete.icon}
+                <span class="text-xl">{menuToDelete.icon}</span>
+              {:else}
+                <div class="w-5 h-5 bg-gray-300 rounded"></div>
+              {/if}
+              <span class="font-medium text-gray-800">{menuToDelete.title}</span>
+            </div>
+          </div>
+        {/if}
+        
+        <div class="flex gap-3 justify-end">
+          <button 
+            class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200"
+            on:click={() => showDeleteConfirm = false}
+          >
+            취소
+          </button>
+          <button 
+            class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all duration-200"
+            on:click={deleteMenu}
+          >
             삭제
           </button>
         </div>
       </div>
     </div>
-  {/if}
-
-  <!-- 토스트 -->
-  {#if toastVisible}
-    <div class="toast {toastType}">
-      <div class="toast-icon">
-        {#if toastType === 'success'}
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20,6 9,17 4,12"></polyline>
-          </svg>
-        {:else}
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="15" y1="9" x2="9" y2="15"></line>
-            <line x1="9" y1="9" x2="15" y2="15"></line>
-          </svg>
-        {/if}
-      </div>
-      <span class="toast-message">{toastMessage}</span>
-    </div>
-  {/if}
-</div>
+  </div>
+{/if}
 
 <style>
-  .mobile-menu-management {
-    min-height: 100vh;
-    background: #f8fafc;
-    display: flex;
-    flex-direction: column;
+  /* 드롭 타겟 스타일 */
+  .drop-target {
+    @apply border-blue-500 bg-blue-50;
   }
-
-  /* ========== 기존 스타일 유지 ========== */
-  .modern-header {
-    background: #ffffff;
-    border-bottom: 1px solid #e2e8f0;
-    padding: 1rem 1.25rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    position: relative;
-    z-index: 10;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
+  
+  /* 드래그 중 스타일 */
+  .menu-card.dragging {
+    @apply opacity-80 scale-105 shadow-lg z-50;
   }
-
-  .modern-header h1 {
-    margin: 0;
-    font-size: 1.375rem;
-    font-weight: 700;
-    color: #1e293b;
-    letter-spacing: -0.025em;
-  }
-
-  .add-button {
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
-    background: #3b82f6;
-    border: none;
-    color: white;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1);
-  }
-
-  .add-button:active {
-    transform: scale(0.95);
-    background: #2563eb;
-  }
-
-  .content-area {
-    flex: 1;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: 0 1.25rem 2rem;
-  }
-
-  .error-alert {
-    background: #fee2e2;
-    color: #dc2626;
-    padding: 0.875rem 1rem;
-    border-radius: 12px;
-    margin: 1rem 0;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-  }
-
-  .info-tip {
-    background: #eff6ff;
-    color: #1d4ed8;
-    padding: 0.75rem 1rem;
-    border-radius: 12px;
-    margin: 1rem 0;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-  }
-
-  .loading-state {
-    text-align: center;
-    padding: 3rem 2rem;
-  }
-
-  .loading-spinner {
-    width: 32px;
-    height: 32px;
-    border: 2px solid #e2e8f0;
-    border-top: 2px solid #3b82f6;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 1rem;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
-  /* ========== 계층 구조 메뉴 카드 ========== */
-  .menu-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 1rem;
-  }
-
-  .menu-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 16px;
-    overflow: hidden;
-    position: relative;
-    transition: all 0.2s ease;
-    touch-action: pan-y;
+  
+  /* 텍스트 선택 방지 */
+  .select-none {
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
     -webkit-tap-highlight-color: transparent;
-  }
-
-  /* ========== 하위 메뉴 스타일 ========== */
-  .submenu-card {
-    margin-left: 1.5rem;
-    margin-top: 0.25rem;
-    transform: scale(0.95);
-    background: #f8fafc;
-    border-color: #cbd5e1;
-    border-left: 3px solid #3b82f6;
-    position: relative;
-  }
-
-  .submenu-connector {
-    position: absolute;
-    left: -1.5rem;
-    top: 50%;
-    width: 1.5rem;
-    height: 1px;
-    background: #cbd5e1;
-    z-index: 1;
-  }
-
-  .submenu-connector::before {
-    content: '';
-    position: absolute;
-    left: -1px;
-    top: -15px;
-    width: 1px;
-    height: 30px;
-    background: #cbd5e1;
-  }
-
-  .submenu-indicator {
-    color: #64748b;
-    margin-right: 0.25rem;
-    font-size: 0.9rem;
-  }
-
-  .level-badge {
-    background: #dbeafe;
-    color: #1e40af;
-    padding: 0.125rem 0.375rem;
-    border-radius: 8px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    margin-left: 0.25rem;
-  }
-
-  .menu-card:active {
-    transform: scale(0.995);
-  }
-
-  .submenu-card:active {
-    transform: scale(0.92);
-  }
-
-  .menu-card.dragging {
-    opacity: 0.8;
-    transform: scale(1.02);
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    z-index: 50;
-    pointer-events: none;
-  }
-
-  .menu-card.drop-target {
-    border-color: #3b82f6;
-    background: #f0f9ff;
-  }
-
-  /* ========== 기존 카드 내부 스타일 유지 ========== */
-  .card-header,
-  .menu-basic-info,
-  .menu-details,
-  .menu-title,
-  .parent-menu,
-  .card-meta,
-  .order-badge,
-  .card-info,
-  .info-item,
-  .info-label,
-  .info-value,
-  .role-chips,
-  .role-chip {
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-  }
-
-  .card-header {
-    padding: 1rem 1rem 0.75rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-  }
-
-  .menu-basic-info {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    flex: 1;
-  }
-
-  .menu-icon {
-    font-size: 1.5rem;
-    line-height: 1;
-  }
-
-  .submenu-card .menu-icon {
-    font-size: 1.25rem;
-  }
-
-  .menu-details {
-    flex: 1;
-  }
-
-  .menu-title {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
-    color: #1e293b;
-    line-height: 1.4;
-  }
-
-  .submenu-card .menu-title {
-    font-size: 0.9rem;
-    font-weight: 500;
-  }
-
-  .parent-menu {
-    font-size: 0.75rem;
-    color: #64748b;
-    margin-top: 0.25rem;
-    display: block;
-  }
-
-  .card-meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-shrink: 0;
-  }
-
-  .order-badge {
-    background: #f1f5f9;
-    color: #475569;
-    padding: 0.25rem 0.5rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .status-indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #ef4444;
-  }
-
-  .status-indicator.active {
-    background: #10b981;
-  }
-
-  .card-info {
-    padding: 0 1rem 0.75rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .info-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .info-label {
-    font-size: 0.75rem;
-    color: #64748b;
-    min-width: 32px;
-    font-weight: 500;
-  }
-
-  .info-value {
-    background: #f8fafc;
-    color: #e11d48;
-    padding: 0.125rem 0.375rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-family: ui-monospace, SFMono-Regular, monospace;
-  }
-
-  .role-chips {
-    display: flex;
-    gap: 0.25rem;
-  }
-
-  .role-chip {
-    padding: 0.125rem 0.375rem;
-    border-radius: 8px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-  }
-
-  .role-chip.admin {
-    background: #fef3c7;
-    color: #92400e;
-  }
-
-  .role-chip.user {
-    background: #dbeafe;
-    color: #1e40af;
-  }
-
-  .card-actions {
-    padding: 0.75rem 1rem 1rem;
-    display: flex;
-    gap: 0.5rem;
-    border-top: 1px solid #f1f5f9;
-  }
-
-  .action-button {
-    flex: 1;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    background: #ffffff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.375rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    min-height: 36px;
-    touch-action: manipulation;
-    pointer-events: auto;
-  }
-
-  .action-button.edit {
-    color: #1e40af;
-  }
-
-  .action-button.edit:active {
-    background: #eff6ff;
-    border-color: #3b82f6;
-    transform: scale(0.98);
-  }
-
-  .action-button.delete {
-    color: #dc2626;
-  }
-
-  .action-button.delete:active {
-    background: #fef2f2;
-    border-color: #ef4444;
-    transform: scale(0.98);
-  }
-
-  .drag-indicator {
-    position: absolute;
-    right: 0.75rem;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #cbd5e1;
-    pointer-events: none;
-  }
-
-  /* ========== 기존 모달 스타일들 유지 ========== */
-  .fullscreen-modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: #ffffff;
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .modal-header {
-    background: #ffffff;
-    border-bottom: 1px solid #e2e8f0;
-    padding: 1rem 1.25rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .back-button, .save-button {
-    padding: 0.5rem 0.75rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    background: #ffffff;
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    min-height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .save-button {
-    background: #3b82f6;
-    color: white;
-    border-color: #3b82f6;
-  }
-
-  .save-button:active {
-    background: #2563eb;
-    transform: scale(0.95);
-  }
-
-  .back-button:active {
-    background: #f8fafc;
-    transform: scale(0.95);
-  }
-
-  .modal-header h2 {
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: #1e293b;
-  }
-
-  .modal-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1.5rem 1.25rem 3rem;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /* ========== 기존 폼 스타일들 계속 ========== */
-  .form-group {
-    margin-bottom: 1.5rem;
-  }
-
-  .form-label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 600;
-    color: #1e293b;
-    font-size: 0.875rem;
-  }
-
-  .form-input, .form-select {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    font-size: 1rem;
-    background: #ffffff;
-    transition: all 0.2s ease;
-    box-sizing: border-box;
-  }
-
-  .form-input:focus, .form-select:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-  }
-
-  .icon-selector {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 0.5rem;
-  }
-
-  .icon-button {
-    aspect-ratio: 1;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    background: #ffffff;
-    cursor: pointer;
-    font-size: 1.25rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-  }
-
-  .icon-button:active {
-    transform: scale(0.95);
-  }
-
-  .icon-button.selected {
-    border-color: #3b82f6;
-    background: #eff6ff;
-  }
-
-  .role-selector {
-    display: flex;
-    gap: 0.75rem;
-  }
-
-  .role-button {
-    flex: 1;
-    padding: 0.75rem;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    background: #ffffff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    transition: all 0.2s ease;
-    font-weight: 500;
-  }
-
-  .role-button:active {
-    transform: scale(0.98);
-  }
-
-  .role-button.active {
-    border-color: #3b82f6;
-    background: #eff6ff;
-    color: #1e40af;
-  }
-
-  .role-check {
-    width: 18px;
-    height: 18px;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #ffffff;
-  }
-
-  .role-button.active .role-check {
-    background: #3b82f6;
-    border-color: #3b82f6;
-    color: white;
-  }
-
-  .toggle-switch {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    cursor: pointer;
-    padding: 0.75rem;
-    background: #f8fafc;
-    border-radius: 8px;
-    position: relative;
-  }
-
-  .toggle-input {
-    display: none;
-  }
-
-  .toggle-track {
-    width: 44px;
-    height: 24px;
-    background: #d1d5db;
-    border-radius: 12px;
-    position: relative;
-    transition: all 0.3s ease;
-  }
-
-  .toggle-thumb {
-    position: absolute;
-    width: 20px;
-    height: 20px;
-    background: #ffffff;
-    border-radius: 50%;
-    top: 2px;
-    left: 2px;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  }
-
-  .toggle-input:checked + .toggle-track {
-    background: #3b82f6;
-  }
-
-  .toggle-input:checked ~ .toggle-thumb {
-    transform: translateX(20px);
-  }
-
-  .toggle-label {
-    font-weight: 500;
-    color: #1e293b;
-  }
-
-  .overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 2000;
-    padding: 2rem;
-  }
-
-  .confirm-modal {
-    background: #ffffff;
-    border-radius: 16px;
-    padding: 2rem;
-    text-align: center;
-    max-width: 320px;
-    width: 100%;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  }
-
-  .confirm-icon {
-    margin-bottom: 1rem;
-  }
-
-  .confirm-modal h3 {
-    margin: 0 0 0.75rem;
-    color: #1e293b;
-    font-size: 1.25rem;
-    font-weight: 600;
-  }
-
-  .confirm-modal p {
-    margin: 0 0 1.5rem;
-    color: #64748b;
-    line-height: 1.5;
-  }
-
-  .confirm-actions {
-    display: flex;
-    gap: 0.75rem;
-  }
-
-  .confirm-button {
-    flex: 1;
-    padding: 0.75rem;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.2s ease;
-  }
-
-  .confirm-button.cancel {
-    background: #f1f5f9;
-    color: #475569;
-  }
-
-  .confirm-button.cancel:active {
-    background: #e2e8f0;
-    transform: scale(0.98);
-  }
-
-  .confirm-button.delete {
-    background: #ef4444;
-    color: white;
-  }
-
-  .confirm-button.delete:active {
-    background: #dc2626;
-    transform: scale(0.98);
-  }
-
-  .toast {
-    position: fixed;
-    bottom: 2rem;
-    left: 1.25rem;
-    right: 1.25rem;
-    padding: 1rem;
-    border-radius: 12px;
-    color: white;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    z-index: 3000;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    animation: slideUp 0.3s ease;
-    font-weight: 500;
-  }
-
-  .toast.success {
-    background: #10b981;
-  }
-
-  .toast.error {
-    background: #ef4444;
-  }
-
-  @keyframes slideUp {
-    from {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-
-  .toast-icon {
-    flex-shrink: 0;
-  }
-
-  .toast-message {
-    flex: 1;
-  }
-
-  @supports (padding: max(0px)) {
-    .modern-header {
-      padding-top: max(1rem, env(safe-area-inset-top));
-    }
-    
-    .content-area {
-      padding-bottom: max(2rem, env(safe-area-inset-bottom) + 2rem);
-    }
-    
-    .toast {
-      bottom: max(2rem, env(safe-area-inset-bottom) + 1rem);
-      left: max(1.25rem, env(safe-area-inset-left));
-      right: max(1.25rem, env(safe-area-inset-right));
-    }
   }
 </style>

@@ -1,5 +1,6 @@
 <script>
   import { goto } from '$app/navigation';
+  import '../app.postcss';
   
   let username = '';
   let password = '';
@@ -50,339 +51,84 @@
   <title>관리자 로그인</title>
 </svelte:head>
 
-<div class="login-container">
-  <div class="login-box">
-    <div class="logo">
-      <div class="logo-icon">🔐</div>
-      <h1>관리자 시스템</h1>
-      <p class="subtitle">로그인이 필요합니다</p>
-    </div>
-    
-    <form on:submit|preventDefault={login} class="login-form">
-      <div class="form-group">
-        <label for="username">사용자명</label>
-        <input
-          type="text"
-          id="username"
-          bind:value={username}
-          on:keypress={handleKeyPress}
-          disabled={isLoading}
-          autocomplete="username"
-          placeholder="사용자명을 입력하세요"
-        />
-      </div>
-
-      <div class="form-group">
-        <label for="password">비밀번호</label>
-        <input
-          type="password"
-          id="password"
-          bind:value={password}
-          on:keypress={handleKeyPress}
-          disabled={isLoading}
-          autocomplete="current-password"
-          placeholder="비밀번호를 입력하세요"
-        />
-      </div>
-
-      {#if errorMessage}
-        <div class="error-message">
-          ⚠️ {errorMessage}
+<!-- 전체 화면 배경 -->
+<div class="min-h-screen flex items-center justify-center bg-gray-50 px-4 sm:px-6 lg:px-8">
+  <!-- 로그인 카드 -->
+  <div class="max-w-md w-full space-y-8">
+    <!-- 배경 카드 -->
+    <div class="bg-white rounded-lg shadow-md border border-gray-200 p-8">
+      
+      <!-- 로고 섹션 -->
+      <div class="text-center mb-8">
+        <div class="mx-auto h-12 w-12 bg-gray-800 rounded-lg flex items-center justify-center mb-4">
+          <span class="text-xl text-white">🔐</span>
         </div>
-      {/if}
+        <h1 class="text-2xl font-semibold text-gray-900 mb-2">관리자 시스템</h1>
+        <p class="text-gray-600 text-sm">로그인이 필요합니다</p>
+      </div>
 
-      <button type="submit" disabled={isLoading} class="login-btn">
-        {#if isLoading}
-          <span class="loading-spinner"></span>
-          로그인 중...
-        {:else}
-          🚀 로그인
+      <!-- 로그인 폼 -->
+      <form on:submit|preventDefault={login} class="space-y-6">
+        
+        <!-- 사용자명 입력 -->
+        <div>
+          <label for="username" class="block text-sm font-medium text-gray-700 mb-2">
+            사용자명
+          </label>
+          <input
+            type="text"
+            id="username"
+            bind:value={username}
+            on:keypress={handleKeyPress}
+            disabled={isLoading}
+            autocomplete="username"
+            placeholder="사용자명을 입력하세요"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+        </div>
+
+        <!-- 비밀번호 입력 -->
+        <div>
+          <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
+            비밀번호
+          </label>
+          <input
+            type="password"
+            id="password"
+            bind:value={password}
+            on:keypress={handleKeyPress}
+            disabled={isLoading}
+            autocomplete="current-password"
+            placeholder="비밀번호를 입력하세요"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+        </div>
+
+        <!-- 에러 메시지 -->
+        {#if errorMessage}
+          <div class="bg-red-50 border border-red-200 rounded-md p-3 flex items-center space-x-2">
+            <span class="text-red-500">⚠️</span>
+            <span class="text-red-700 text-sm">{errorMessage}</span>
+          </div>
         {/if}
-      </button>
-    </form>
 
-    <div class="demo-info">
-      <p>📝 테스트 계정</p>
-      <p><strong>admin / admin123</strong></p>
+        <!-- 로그인 버튼 -->
+        <button 
+          type="submit" 
+          disabled={isLoading} 
+          class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+        >
+          {#if isLoading}
+            <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span>로그인 중...</span>
+          {:else}
+            <span>로그인</span>
+          {/if}
+        </button>
+      </form>
     </div>
   </div>
 </div>
-
-<style>
-  :global(body) {
-    margin: 0;
-    padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
-  }
-
-  .login-container {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    box-sizing: border-box;
-  }
-
-  .login-box {
-    background: white;
-    padding: 40px;
-    border-radius: 20px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-    width: 100%;
-    max-width: 400px;
-    text-align: center;
-  }
-
-  .logo {
-    margin-bottom: 30px;
-  }
-
-  .logo-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-  }
-
-  .logo h1 {
-    margin: 0 0 8px 0;
-    font-size: 28px;
-    color: #2c3e50;
-    font-weight: 700;
-  }
-
-  .subtitle {
-    margin: 0 0 20px 0;
-    color: #6c757d;
-    font-size: 14px;
-  }
-
-  .login-form {
-    text-align: left;
-  }
-
-  .form-group {
-    margin-bottom: 24px;
-  }
-
-  .form-group label {
-    display: block;
-    margin-bottom: 8px;
-    color: #2c3e50;
-    font-weight: 600;
-    font-size: 14px;
-  }
-
-  .form-group input {
-    width: 100%;
-    padding: 16px 20px;
-    border: 2px solid #e9ecef;
-    border-radius: 12px;
-    font-size: 16px; /* iOS 줌 방지 */
-    transition: all 0.3s ease;
-    box-sizing: border-box;
-    background: #f8f9fa;
-  }
-
-  .form-group input:focus {
-    outline: none;
-    border-color: #667eea;
-    background: white;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-  }
-
-  .form-group input:disabled {
-    background-color: #e9ecef;
-    cursor: not-allowed;
-    opacity: 0.7;
-  }
-
-  .form-group input::placeholder {
-    color: #adb5bd;
-  }
-
-  .login-btn {
-    width: 100%;
-    padding: 16px 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    min-height: 56px; /* 터치 친화적 */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-
-  .login-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
-  }
-
-  .login-btn:active {
-    transform: translateY(0);
-  }
-
-  .login-btn:disabled {
-    background: #adb5bd;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-  }
-
-  .loading-spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid #ffffff40;
-    border-top: 2px solid white;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
-  .error-message {
-    background: #ffebee;
-    color: #c62828;
-    padding: 16px 20px;
-    border-radius: 12px;
-    margin-bottom: 20px;
-    text-align: center;
-    border: 1px solid #ffcdd2;
-    font-size: 14px;
-    font-weight: 500;
-  }
-
-  .demo-info {
-    margin-top: 30px;
-    padding: 20px;
-    background: #f8f9fa;
-    border-radius: 12px;
-    border: 1px dashed #dee2e6;
-  }
-
-  .demo-info p {
-    margin: 0 0 4px 0;
-    font-size: 13px;
-    color: #6c757d;
-  }
-
-  .demo-info p:last-child {
-    margin: 0;
-    font-size: 14px;
-    color: #495057;
-  }
-
-  /* 모바일 최적화 */
-  @media (max-width: 768px) {
-    .login-container {
-      padding: 16px;
-    }
-
-    .login-box {
-      padding: 32px 24px;
-      border-radius: 16px;
-    }
-
-    .logo-icon {
-      font-size: 40px;
-      margin-bottom: 12px;
-    }
-
-    .logo h1 {
-      font-size: 24px;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-    }
-
-    .form-group input {
-      padding: 14px 16px;
-      font-size: 16px; /* iOS 줌 방지 중요 */
-    }
-
-    .login-btn {
-      padding: 14px 16px;
-      min-height: 52px;
-      font-size: 16px;
-    }
-  }
-
-  /* 작은 모바일 */
-  @media (max-width: 480px) {
-    .login-container {
-      padding: 12px;
-    }
-
-    .login-box {
-      padding: 24px 20px;
-      border-radius: 12px;
-    }
-
-    .logo h1 {
-      font-size: 22px;
-    }
-
-    .form-group input,
-    .login-btn {
-      padding: 12px 16px;
-      font-size: 16px;
-    }
-
-    .demo-info {
-      padding: 16px;
-      margin-top: 24px;
-    }
-  }
-
-  /* 터치 디바이스 최적화 */
-  @media (hover: none) and (pointer: coarse) {
-    .login-btn {
-      min-height: 56px;
-    }
-
-    .form-group input {
-      min-height: 48px;
-    }
-  }
-
-  /* 가로 모드 모바일 */
-  @media (max-height: 600px) and (orientation: landscape) {
-    .login-container {
-      padding: 12px;
-    }
-
-    .login-box {
-      padding: 20px;
-      max-width: 360px;
-    }
-
-    .logo {
-      margin-bottom: 20px;
-    }
-
-    .logo-icon {
-      font-size: 32px;
-      margin-bottom: 8px;
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    .demo-info {
-      margin-top: 20px;
-      padding: 12px;
-    }
-  }
-</style>

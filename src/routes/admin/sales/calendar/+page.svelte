@@ -3,6 +3,7 @@
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { simpleCache } from '$lib/utils/simpleImageCache';
+  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
 
   // 상태 변수들
   let currentYear = new Date().getFullYear();
@@ -45,6 +46,10 @@
   
   async function cacheImage(event) {
     await simpleCache.handleImage(event.target);
+  }
+
+  function handleImageClick(productCode, productName) {
+    openImageModal(getProxyImageUrl(productCode), productName);
   }
 
   // 캘린더 그리드 생성
@@ -308,7 +313,6 @@
     <!-- 월별 합계 -->
     <div class="py-4 px-1.5 bg-gray-50 border-b border-gray-300">
       <div class="bg-white rounded-lg py-4 px-1.5 shadow-sm">
-        <div class="text-lg font-semibold mb-4 text-gray-800 text-center">이번 달 합계</div>
         <div class="flex flex-row gap-5 max-w-2xl mx-auto justify-center">
           <div class="text-center py-2.5 px-4 rounded-md bg-gray-50 border border-gray-200 whitespace-nowrap">
             <div class="text-sm text-gray-600 mb-1.5">총 매출액</div>
@@ -415,7 +419,7 @@
 {#if showDailyDetail}
   <div 
     class="fixed bg-black bg-opacity-50 z-50 flex items-center justify-center"
-    style="top: 180px; left: 0; right: 0; bottom: 0;"
+    style="top: 180px; left: 350; right: 0; bottom: 0;"
     on:click={handleModalClick}
     role="dialog"
     aria-modal="true"
@@ -509,9 +513,10 @@
                           <img 
                             src="/proxy-images/{item.pcode}_1.jpg" 
                             alt={item.pname}
-                            class="w-full h-full object-cover"
+                            class="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
                             on:load={cacheImage}
                             on:error={(e) => { e.target.style.display = 'none'; }}
+                            on:click={() => handleImageClick(item.pcode, item.pname)}
                           />
                         {:else}
                           <span class="text-xs text-gray-500 text-center leading-3 md:text-[10px]">이미지<br/>없음</span>

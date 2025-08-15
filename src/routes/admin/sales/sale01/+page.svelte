@@ -4,6 +4,7 @@
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { simpleCache } from '$lib/utils/simpleImageCache';
+  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
 
   // 부모 레이아웃에서 전달받은 사용자 정보
   export let data;
@@ -30,6 +31,14 @@
   // 이미지 캐싱
   async function cacheImage(event) {
     await simpleCache.handleImage(event.target);
+  }
+
+  // 이미지 클릭 핸들러 (새로 추가)
+  function handleImageClick(productCode, productName) {
+    const imageSrc = getProxyImageUrl(productCode);
+    if (imageSrc) {
+      openImageModal(imageSrc, productName);
+    }
   }
 
   // 숫자 포맷팅
@@ -110,181 +119,194 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 </svelte:head>
 
-<div class="page">
-  <header class="header">
-    <h1>매출 조회</h1>
+<div class="min-h-screen bg-gray-50">
+  <!-- 헤더 -->
+  <header class="bg-white text-center shadow-sm mb-1.5" style="padding: 15px 5px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+    <h1 class="m-0 text-xl font-semibold text-gray-800">매출 조회</h1>
   </header>
 
-  <main class="main-content">
+  <!-- 메인 콘텐츠 -->
+  <main class="p-0">
     <!-- 검색 폼 -->
-    <form on:submit|preventDefault={handleSearch}>
-      <div class="search-field">
-        <label>기간</label>
-        <div class="date-inputs">
-          <input
-            type="date"
-            bind:value={date1}
-            class="form-control"
-            required
-          />
-          <span class="date-separator">~</span>
-          <input
-            type="date"
-            bind:value={date2}
-            class="form-control"
-            required
-          />
-        </div>
+    <form class="bg-white rounded-lg mx-1 px-3 py-3 shadow-sm mb-1" style="box-shadow: 0 1px 3px rgba(0,0,0,0.1);" on:submit|preventDefault={handleSearch}>
+      <!-- 기간 선택 -->
+      <div class="mb-4 flex items-center gap-2">
+        <input
+          type="date"
+          bind:value={date1}
+          class="px-3 py-3 border border-gray-300 rounded-md text-sm transition-colors focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+          required
+        />
+        <span class="font-bold text-gray-600">~</span>
+        <input
+          type="date"
+          bind:value={date2}
+          class="px-3 py-3 border border-gray-300 rounded-md text-sm transition-colors focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+          required
+        />
       </div>
 
-      <div class="search-field">
-        <div class="search-input-group">
-          <select bind:value={searchType} class="form-control">
-            <option value="name">상품명</option>
-            <option value="code">상품코드</option>
-          </select>
-          <input
-            type="text"
-            bind:value={text1}
-            class="search-input form-control"
-            placeholder="검색어를 입력하세요"
-            on:keydown={handleKeydown}
-          />
-          <button type="submit" class="btn btn-search" disabled={loading}>
-            {loading ? '검색중...' : '검색'}
-          </button>
-        </div>
+      <!-- 검색 입력 -->
+      <div class="flex gap-2">
+        <select bind:value={searchType} class="px-3 py-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white transition-colors">
+          <option value="name">상품명</option>
+          <option value="code">상품코드</option>
+        </select>
+        <input
+          type="text"
+          bind:value={text1}
+          class="flex-1 px-3 py-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
+          placeholder="검색어를 입력하세요"
+          on:keydown={handleKeydown}
+        />
+        <button type="submit" disabled={loading} class="px-6 py-3 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
+          {loading ? '검색중...' : '검색'}
+        </button>
       </div>
     </form>
 
     <!-- 오류 메시지 -->
     {#if error}
-      <div class="alert error">
-        {error}
+      <div class="bg-red-50 border-l-4 border-red-500 rounded-r-lg mx-1 mb-1" style="padding: 1rem;">
+        <p class="text-red-700 font-medium">{error}</p>
       </div>
     {/if}
 
     <!-- 로딩 -->
     {#if loading}
-      <div class="loading">
-        <div class="loading-spinner">🔄</div>
-        <p>검색 중...</p>
+      <div class="flex justify-center items-center py-12">
+        <div class="text-center">
+          <div class="text-4xl mb-3 animate-spin">🔄</div>
+          <p class="text-gray-600">검색 중...</p>
+        </div>
       </div>
     {/if}
 
-    <!-- 검색 결과 요약 (calendar daily-summary 스타일 정확히 적용) -->
+    <!-- 검색 결과 요약 -->
     {#if searchSubmitted && grandTotal}
-      <div class="daily-summary">
-        <h4>검색 결과 합계</h4>
-        <div class="daily-summary-grid">
-          <div class="daily-summary-row">
-            <div>현금:</div>
-            <div class="cash-payment">{formatNumber(grandTotal.cashTotal)}원</div>
+      <div class="mx-1 mb-3">
+        <h4 class="text-lg font-semibold mb-3 text-gray-800 text-center">검색 결과 합계</h4>
+
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <div class="flex justify-between p-1.5 bg-white rounded border border-gray-200">
+            <span>현금:</span>
+            <span class="font-semibold text-green-600">{formatNumber(grandTotal.cashTotal)}원</span>
           </div>
-          <div class="daily-summary-row">
-            <div>카드:</div>
-            <div class="card-payment">{formatNumber(grandTotal.cardTotal)}원</div>
+          <div class="flex justify-between p-1.5 bg-white rounded border border-gray-200">
+            <span>카드:</span>
+            <span class="font-semibold text-blue-600">{formatNumber(grandTotal.cardTotal)}원</span>
           </div>
-          <div class="daily-summary-row">
-            <div>총 수량:</div>
-            <div class="total-quantity">{formatNumber(grandTotal.totalQty)}개</div>
+          <div class="flex justify-between p-1.5 bg-white rounded border border-gray-200">
+            <span>총 수량:</span>
+            <span class="font-semibold text-gray-800">{formatNumber(grandTotal.totalQty)}개</span>
           </div>
-          <div class="daily-summary-row">
-            <div>총 금액:</div>
-            <div class="total-amount">{formatNumber(grandTotal.totalAmount)}원</div>
+          <div class="flex justify-between p-1.5 bg-white rounded border border-gray-200">
+            <span>총 금액:</span>
+            <span class="font-semibold text-blue-700">{formatNumber(grandTotal.totalAmount)}원</span>
           </div>
         </div>
-        <div class="search-stats">
-          <span>매출 건수: {searchResultCount}건</span>
+
+        <div class="bg-white rounded-lg p-2 shadow-sm border border-gray-200 text-center text-sm text-gray-600">
+          <span class="mr-4">매출 건수: {searchResultCount}건</span>
           <span>엽서 발송: {postSlipCount}건</span>
         </div>
       </div>
     {/if}
 
-    <!-- 매출 그룹 목록 (calendar 스타일 정확히 100% 적용) -->
+    <!-- 매출 그룹 목록 -->
     {#if searchSubmitted && salesGroups.length > 0}
-      <div class="sales-groups-container">
+      <div class="mx-1 space-y-3">
         {#each salesGroups as group}
-          <div class="sales-group">
-            <!-- 매출 그룹 헤더 -->
-            <div class="sales-group-header">
-              <div class="sales-group-title">
-                <div class="sales-group-number">
+          <div class="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
+            <!-- 매출 그룹 헤더 카드 -->
+            <div class="p-3 bg-gray-100 border-b border-gray-200 text-gray-800 flex justify-between items-start md:p-2.5">
+              <div class="flex-1">
+                <div class="font-mono text-sm font-bold mb-1 flex items-center gap-2 break-all md:text-sm">
                   {group.slipNo}
-                  <span class="sales-group-count">{formatNumber(group.totalQty)}개</span>
-                  <span class="sales-group-date-time">{group.regTime || ''}</span>
+                  <span class="bg-blue-600 text-white px-1.5 py-0.5 rounded-full text-xs font-bold">
+                    {group.items.length}
+                  </span>
                 </div>
-                
-                <div class="sales-group-summary">
-                  <div class="summary-item-inline">
-                    <span>현금:</span>
-                    <span class="cash-value">{formatNumber(group.cashTotal)}원</span>
+                <div class="text-xs text-gray-600 mb-2 font-mono whitespace-nowrap md:text-[10px]">{group.regTime}</div>
+                <div class="flex gap-4 flex-wrap text-sm md:w-full md:gap-2.5">
+                  <div class="flex items-center gap-1">
+                    <span class="text-gray-600">수량:</span>
+                    <span>{group.totalQty}</span>
                   </div>
-                  <div class="summary-item-inline">
-                    <span>카드:</span>
-                    <span class="card-value">{formatNumber(group.cardTotal)}원</span>
+                  <div class="flex items-center gap-1">
+                    <span class="text-gray-600">현금:</span>
+                    <span>{formatNumber(group.cashTotal)}</span>
                   </div>
-                  <div class="summary-item-inline">
-                    <span>금액:</span>
-                    <span class="total-value">{formatNumber(group.totalAmount)}원</span>
+                  <div class="flex items-center gap-1">
+                    <span class="text-gray-600">카드:</span>
+                    <span>{formatNumber(group.cardTotal)}</span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <span class="text-gray-600">합계:</span>
+                    <span>{formatNumber(group.totalAmount)}</span>
                   </div>
                 </div>
+                {#if group.bigo && group.bigo.trim()}
+                  <div class="mt-2 p-2 bg-yellow-100 border border-yellow-300 rounded text-xs text-gray-700">
+                    <span class="font-semibold text-gray-600">비고:</span> {group.bigo}
+                  </div>
+                {/if}
               </div>
-              
-              <div class="sales-group-controls">
+              <div class="flex-shrink-0">
                 <a 
-                  href="https://postcard.akojeju.com/receipt.php?sale_id={group.slipNo}_{group.rand}" 
+                  href="https://postcard.akojeju.com/receipt.php?sale_id={group.slipNo}_{group.rand}"
+                  class="inline-block px-2.5 py-1.5 border border-gray-500 rounded text-gray-700 text-xs font-bold whitespace-nowrap hover:bg-gray-600 hover:text-white transition-all {group.postSlip ? 'bg-green-600 text-white border-green-600' : ''} md:px-2 md:py-1 md:text-[11px]"
                   target="_blank"
-                  class="digital-postcard {group.postSlip && group.postSlip.trim() !== '' ? 'has-post-slip' : ''}"
                 >
                   엽서
                 </a>
               </div>
             </div>
             
-            <!-- 매출 상품 목록 -->
-            <div class="sales-group-content">
+            <!-- 매출 상품 목록 (캘린더 모달과 완전히 동일) -->
+            <div>
               {#each group.items as item}
-                <div class="sales-item {item.hygb === '1' ? 'cash-payment-item' : ''}">
-                  
-                  <div class="item-image-container">
-                    {#if item.stockManaged && item.currentStock !== undefined}
-                      <div class="stock-badge {item.currentStock === 0 ? 'zero-stock' : item.currentStock <= 5 ? 'low-stock' : item.currentStock <= 20 ? 'medium-stock' : ''}">
-                        {item.currentStock}개
-                      </div>
+                <div class="flex p-3 border-b border-gray-100 gap-3 hover:bg-gray-50 {item.hygb === '1' ? 'bg-green-50 border-l-4 border-l-green-500' : ''} md:p-2.5 md:gap-2.5">
+                  <div class="w-16 h-16 bg-gray-100 rounded flex items-center justify-center flex-shrink-0 relative overflow-hidden border border-gray-200 md:w-14 md:h-14">
+                    {#if item.itemCode}
+                      <img 
+                        src="/proxy-images/{item.itemCode}_1.jpg" 
+                        alt={item.itemName}
+                        class="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                        on:load={cacheImage}
+                        on:error={(e) => { e.target.style.display = 'none'; }}
+                        on:click={() => handleImageClick(item.itemCode, item.itemName)}
+                      />
+                    {:else}
+                      <span class="text-xs text-gray-500 text-center leading-3 md:text-[10px]">이미지<br/>없음</span>
                     {/if}
-                    
-                    <img 
-                      src="/proxy-images/{item.itemCode}_1.jpg"
-                      alt={item.itemName}
-                      class="item-image"
-                      on:load={cacheImage}
-                      on:error={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextElementSibling.style.display = 'block';
-                      }}
-                    />
-                    <div class="no-image" style="display:none;">이미지 없음</div>
+                    {#if item.stockManaged}
+                      <span class="absolute top-0.5 right-0.5 {item.currentStock === 0 ? 'bg-gray-500 text-white' : 'bg-yellow-400 text-gray-800'} px-1 py-0.5 rounded-lg text-xs font-bold min-w-6 text-center md:text-[10px]">
+                        {item.currentStock}
+                      </span>
+                    {/if}
                   </div>
-                  
-                  <div class="sales-item-content">
-                    <div class="sales-item-header">
-                      <div class="sales-item-title">
-                        {#if item.qrCode}
-                          <a href={item.qrCode} target="_blank">{item.itemName}</a>
-                        {:else}
-                          {item.itemName}
-                        {/if}
+                  <div class="flex-1 min-w-0">
+                    <div class="mb-2">
+                      <div class="text-sm font-semibold text-gray-800 mb-1 leading-tight">
+                        {item.itemName}
                       </div>
                     </div>
-                    
-                    <div class="sales-item-info">
-                      <div class="sales-item-code {item.hygb === '1' ? 'cash-payment' : 'card-payment'}">
-                        {item.itemCode}
+                    <div class="flex justify-between items-center flex-wrap gap-2">
+                      <div class="font-mono text-sm font-bold">
+                        {#if item.qrCode}
+                          <a href="{item.qrCode}" target="_blank" class="hover:text-blue-600 hover:underline cursor-pointer {item.hygb === '1' ? 'text-green-700' : 'text-blue-700'}">
+                            {item.itemCode}
+                          </a>
+                        {:else}
+                          <span class="cursor-default text-gray-800">
+                            {item.itemCode}
+                          </span>
+                        {/if}
                       </div>
-                      <div class="sales-item-amounts">
-                        <div class="sales-item-quantity">{formatNumber(item.qty)}개</div>
-                        <div class="sales-item-price">{formatNumber(item.totalAmount)}원</div>
+                      <div class="flex items-center gap-2.5 flex-shrink-0">
+                        <span class="text-sm font-semibold text-gray-700">{item.qty}개</span>
+                        <span class="text-sm font-bold text-red-600 text-right min-w-16">{formatNumber(item.totalAmount)}원</span>
                       </div>
                     </div>
                   </div>
@@ -295,637 +317,9 @@
         {/each}
       </div>
     {:else if searchSubmitted && salesGroups.length === 0}
-      <div class="no-data">
+      <div class="text-center py-12 text-gray-600 text-lg bg-white rounded-lg mx-1 shadow-sm">
         검색 결과가 없습니다.
       </div>
     {/if}
   </main>
 </div>
-
-<style>
-  /* 기본 스타일 */
-  .page {
-    min-height: 100vh;
-    background-color: #f8f9fa;
-  }
-
-  /* 헤더 스타일 */
-  .header {
-      background: white;
-      padding: 15px 5px;
-      margin-bottom: 5px;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      text-align: center;
-  }
-
-  .header h1 {
-      margin: 0;
-      font-size: 24px;
-      font-weight: 600;
-      color: #333;
-  }
-
-  /* 메인 컨텐츠 */
-  .main-content {
-    padding: 0;
-  }
-
-  /* 폼 스타일 */
-  form {
-    background: white;
-    margin: 0.2rem; /* 0.5rem에서 0.2rem로 줄임 */
-    border-radius: 8px;
-    padding: 0.8rem; /* 1rem에서 0.8rem로 줄임 */
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  }
-
-  .search-field {
-    margin-bottom: 1rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .search-field label {
-    min-width: 80px;
-    font-weight: 600;
-    color: #333;
-    font-size: 0.95rem;
-  }
-
-  .form-control {
-    padding: 0.75rem;
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    transition: border-color 0.2s;
-  }
-
-  .form-control:focus {
-    outline: none;
-    border-color: #2a69ac;
-    box-shadow: 0 0 0 2px rgba(42, 105, 172, 0.2);
-  }
-
-  .date-inputs {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex: 1;
-  }
-
-  .date-separator {
-    font-weight: bold;
-    color: #666;
-  }
-
-  .radio-group {
-    border: none;
-    margin: 0;
-    padding: 0;
-    flex: 1;
-  }
-
-  .radio-group legend {
-    display: none;
-  }
-
-  .radio-options {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .radio-option {
-    position: relative;
-  }
-
-  .radio-option input[type="radio"] {
-    position: absolute;
-    opacity: 0;
-    cursor: pointer;
-  }
-
-  .radio-option label {
-    padding: 0.5rem 0.75rem;
-    text-align: center;
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: #6b7280;
-    background-color: #f3f4f6;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    user-select: none;
-    white-space: nowrap;
-    min-height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .radio-option input[type="radio"]:checked + label {
-    background-color: #2a69ac;
-    color: #ffffff;
-    font-weight: 600;
-    transform: translateY(-1px);
-  }
-
-  .search-input-group {
-    display: flex;
-    gap: 0.5rem;
-    flex: 1;
-    align-items: stretch;
-  }
-
-  .search-input {
-    flex: 1;
-  }
-
-  .btn {
-    padding: 0.75rem 1.5rem;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-weight: 600;
-  }
-
-  .btn-search {
-    background: linear-gradient(135deg, #2a69ac 0%, #1e4f7a 100%);
-    color: white;
-    min-width: 80px;
-  }
-
-  .btn-search:hover:not(:disabled) {
-    background: linear-gradient(135deg, #1e4f7a 0%, #164063 100%);
-    transform: translateY(-2px);
-  }
-
-  .btn-search:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-  }
-
-  /* 알림 스타일 */
-  .alert {
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
-    margin-bottom: 1rem;
-    font-size: 0.9rem;
-  }
-
-  .alert.error {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-  }
-
-  /* 로딩 스타일 */
-  .loading {
-    text-align: center;
-    padding: 2rem;
-    color: #666;
-  }
-
-  .loading-spinner {
-    font-size: 2rem;
-    animation: spin 1s linear infinite;
-    margin-bottom: 1rem;
-  }
-
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-
-  /* Calendar daily-summary 스타일 정확히 100% 복사 */
-  .daily-summary {
-    padding: 10px 15px;
-    border-radius: 6px;
-    margin-bottom: 15px;
-      /* 기존 스타일에 추가 */
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    border: 1px solid #e0e0e0;
-    background: white; /* 기존 #f8f9fa에서 변경 */
-
-  }
-
-  .daily-summary h4 {
-    margin: 0 0 8px 0;
-    font-size: 18px;
-    color: #333;
-    font-weight: 600;
-    text-align: center;
-  }
-
-  .daily-summary-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5px;
-    max-width: 400px;
-    margin: 0 auto;
-  }
-
-  .daily-summary-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 14px;
-    /* 기존 스타일에 추가 */
-    border-bottom: 1px solid #e9ecef;
-    padding: 8px 0; /* 기존 4px에서 늘림 */
-  }
-
-  .daily-summary-row div:first-child {
-    color: #666;
-    font-weight: 500;
-  }
-
-  .daily-summary-row .cash-payment {
-    color: #28a745;
-    font-weight: bold;
-  }
-
-  .daily-summary-row .card-payment {
-    color: #007bff;
-    font-weight: bold;
-  }
-
-  .daily-summary-row .total-amount {
-    color: #dc3545;
-    font-weight: bold;
-    font-size: 16px;
-  }
-
-  .daily-summary-row .total-quantity {
-    color: #333;
-    font-weight: bold;
-  }
-
-  .search-stats {
-    display: flex;
-    justify-content: center;
-    gap: 20px;
-    font-size: 14px;
-    color: #666;
-    margin-top: 10px;
-  }
-
-  /* Calendar sales-group 스타일 정확히 100% 복사 */
-  .sales-groups-container {
-    space-y: 1rem;
-  }
-
-  .sales-group {
-    background: white;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    margin-bottom: 15px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    overflow: hidden;
-  }
-
-  .sales-group-header {
-    background: #f8f9fa;
-    padding: 12px 15px;
-    border-bottom: 1px solid #e0e0e0;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 15px;
-  }
-
-  .sales-group-title {
-    flex: 1;
-    min-width: 200px;
-    display: block;
-    overflow: visible;
-  }
-
-  .sales-group-number {
-    font-family: 'Courier New', monospace;
-    font-size: 14px;
-    font-weight: bold;
-    color: #333;
-    word-break: break-all;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .sales-group-count {
-    background: #007bff;
-    color: white;
-    padding: 2px 6px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: bold;
-    margin-left: 8px;
-  }
-
-  .sales-group-date-time {
-      font-size: 10px;
-      margin: 0;
-      padding: 0;
-      font-family: 'Malgun Gothic', sans-serif;
-      display: inline;
-      white-space: nowrap;
-      letter-spacing: -0.3px;
-  }
-
-  .sales-group-summary {
-    display: flex;
-    gap: 15px;
-    flex-wrap: wrap;
-    align-items: center;
-    width: 100%;
-    margin: 0;
-  }
-
-  .summary-item-inline {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 13px;
-  }
-
-  .summary-item-inline span:first-child {
-    color: #666;
-  }
-
-  .summary-item-inline .cash-value {
-    color: #28a745;
-    font-weight: bold;
-  }
-
-  .summary-item-inline .card-value {
-    color: #007bff;
-    font-weight: bold;
-  }
-
-  .summary-item-inline .total-value {
-    color: #dc3545;
-    font-weight: bold;
-  }
-
-  .sales-group-controls {
-    flex-shrink: 0;
-    align-self: flex-start;
-  }
-
-  .digital-postcard {
-    display: inline-block;
-    padding: 6px 10px;
-    border: 1px solid #6c757d;
-    border-radius: 4px;
-    color: #6c757d;
-    text-decoration: none;
-    font-size: 12px;
-    font-weight: bold;
-    white-space: nowrap;
-  }
-
-  .digital-postcard.has-post-slip {
-    background: #28a745;
-    color: white;
-    border-color: #28a745;
-  }
-
-  .digital-postcard:hover {
-    background: #5a6268;
-    color: white;
-  }
-
-  .sales-group-content {
-    padding: 0;
-  }
-
-  /* Calendar sales-item 스타일 정확히 100% 복사 */
-  .sales-item {
-    display: flex;
-    padding: 12px 15px;
-    border-bottom: 1px solid #f0f0f0;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .sales-item:last-child {
-    border-bottom: none;
-  }
-
-  .sales-item:hover {
-    background: #f8f9fa;
-  }
-
-  .sales-item.cash-payment-item {
-    background: rgba(40, 167, 69, 0.05);
-    border-left: 3px solid #28a745;
-  }
-
-  .sales-item.cash-payment-item:hover {
-    background: rgba(40, 167, 69, 0.1);
-  }
-
-  .item-image-container {
-    width: 70px;
-    height: 70px;
-    border-radius: 6px;
-    overflow: hidden;
-    background: #f8f9fa;
-    border: 1px solid #e0e0e0;
-    flex-shrink: 0;
-    position: relative;
-  }
-
-  .item-image {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .no-image {
-    font-size: 10px;
-    color: #999;
-    text-align: center;
-    padding: 25px 5px;
-    line-height: 1.2;
-  }
-
-  .stock-badge {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    background: #ffc107;
-    color: #333;
-    padding: 2px 5px;
-    border-radius: 8px;
-    font-size: 10px;
-    font-weight: bold;
-    min-width: 25px;
-    text-align: center;
-    z-index: 10;
-  }
-
-  .stock-badge.low-stock {
-    background: #ffc107;
-    color: #333;
-  }
-
-  .stock-badge.medium-stock {
-    background: #ffc107;
-    color: #333;
-  }
-
-  .stock-badge.zero-stock {
-    background: #6c757d;
-    color: white;
-  }
-
-  .sales-item-content {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .sales-item-header {
-    margin-bottom: 8px;
-  }
-
-  .sales-item-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: #333;
-    line-height: 1.3;
-    margin-bottom: 4px;
-  }
-
-  .sales-item-title a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .sales-item-title a:hover {
-    color: #007bff;
-    text-decoration: underline;
-  }
-
-  .sales-item-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: nowrap;
-    gap: 8px;
-  }
-
-  .sales-item-code {
-    font-family: 'Courier New', monospace;
-    font-size: 13px;
-    font-weight: bold;
-    color: #495057;
-  }
-
-  .sales-item-code.cash-payment {
-    color: #155724;
-  }
-
-  .sales-item-code.card-payment {
-    color: #004085;
-  }
-
-  .sales-item-amounts {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-
-  .sales-item-quantity {
-    font-size: 13px;
-    font-weight: 600;
-    color: #495057;
-  }
-
-  .sales-item-price {
-    font-size: 15px;
-    font-weight: bold;
-    color: #dc3545;
-    text-align: right;
-    min-width: 70px;
-  }
-
-  .no-data {
-    text-align: center;
-    padding: 3rem;
-    color: #666;
-    font-size: 1.1rem;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  }
-
-  /* Calendar 모바일 반응형 정확히 100% 복사 */
-  @media (max-width: 768px) {
-    .page {
-      padding: 1px 0px;
-      width: 100%;
-      margin: 0;
-    }
-    
-    .header {
-      padding: 10px 2px;
-      margin-bottom: 5px;
-    }
-    
-    .header h1 {
-      font-size: 20px;
-    }
-    
-    .content {
-      padding: 0.5rem;
-    }
-
-    .search-field {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.5rem;
-    }
-
-    .search-field label {
-      min-width: auto;
-    }
-
-    .date-inputs,
-    .search-input-group {
-      width: 100%;
-    }
-
-    .radio-options {
-      width: 100%;
-      justify-content: space-between;
-    }
-
-    .daily-summary-grid {
-      grid-template-columns: 1fr;
-      max-width: 300px;
-    }
-
-    .item-image-container {
-      width: 60px;
-      height: 60px;
-    }
-
-    .sales-item {
-      padding: 10px 12px;
-      gap: 10px;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .search-stats {
-      flex-direction: column;
-      gap: 8px;
-    }
-  }
-</style>

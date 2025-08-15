@@ -57,8 +57,32 @@
       observer.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
     }
     
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      // 컴포넌트 언마운트 시 body 스크롤 복원
+      if (typeof document !== 'undefined') {
+        document.body.style.overflow = '';
+      }
+    };
   });
+
+  // 모바일에서 패널 열림/닫힘 상태에 따른 body 스크롤 제어
+  $: if (typeof window !== 'undefined') {
+    if (window.innerWidth <= 1024 && leftPanelVisible) {
+      // 모바일에서 패널이 열렸을 때 body 스크롤 방지
+      document.body.style.overflow = 'hidden';
+    } else {
+      // 패널이 닫혔을 때 body 스크롤 복원
+      document.body.style.overflow = '';
+    }
+  }
+
+  // ESC 키로 패널 닫기
+  function handleKeydown(event) {
+    if (event.key === 'Escape' && leftPanelVisible && typeof window !== 'undefined' && window.innerWidth <= 1024) {
+      leftPanelVisible = false;
+    }
+  }
   
   // 대분류 목록 조회
   async function loadMajrList() {
@@ -291,1038 +315,388 @@
   
   // 현재 편집 중인 대분류 코드
   $: currentMajrCode = selectedMajr ? selectedMajr.MAJR_CODE : majrEditForm.MAJR_CODE;
+
+  // 오버레이 클릭 처리 - 패널 닫기만 수행
+  function handleOverlayClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    leftPanelVisible = false;
+  }
+
+  // 패널 내부 클릭 시 이벤트 전파 중지 (터치는 제외)
+  function handlePanelClick(event) {
+    event.stopPropagation();
+  }
+
+  // 대분류 선택 시 터치와 클릭 구분
+  let touchStartTime = 0;
+  let touchStartY = 0;
+  let isTouchScrolling = false;
+
+  function handleMajrTouchStart(event, majr) {
+    touchStartTime = Date.now();
+    touchStartY = event.touches[0].clientY;
+    isTouchScrolling = false;
+  }
+
+  function handleMajrTouchMove(event) {
+    if (!touchStartTime) return;
+    
+    const currentY = event.touches[0].clientY;
+    const deltaY = Math.abs(currentY - touchStartY);
+    
+    // 5px 이상 움직이면 스크롤로 간주
+    if (deltaY > 5) {
+      isTouchScrolling = true;
+    }
+  }
+
+  function handleMajrTouchEnd(event, majr) {
+    event.stopPropagation();
+    
+    const touchDuration = Date.now() - touchStartTime;
+    
+    // 스크롤 중이거나 너무 오래 눌렀으면 선택 안함
+    if (!isTouchScrolling && touchDuration < 500) {
+      selectMajr(majr);
+    }
+    
+    // 초기화
+    touchStartTime = 0;
+    touchStartY = 0;
+    isTouchScrolling = false;
+  }
 </script>
 
 <svelte:head>
   <title>공통코드 관리</title>
 </svelte:head>
 
-<div class="common-code-container">
+<svelte:window on:keydown={handleKeydown} />
+
+<div class="min-h-screen relative" style="background-color: #f5f5f5;">
   <!-- 메인 컨텐츠 -->
-  <div class="main-content">
+  <div class="flex flex-col" style="padding: 0; min-height: calc(100vh - 70px);">
     <!-- 헤더 -->
-    <div class="header">
-      <div class="header-content">
-        <div class="header-left">
-          <div class="hamburger-button" on:click={() => leftPanelVisible = !leftPanelVisible}>
-            <div class="hamburger-icon">
-              <span></span>
-              <span></span>
-              <span></span>
+    <div class="bg-white border-b sticky top-0 mb-2.5" style="border-color: #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 10;">
+      <div style="padding: 15px 8px;">
+        <div class="flex items-center gap-4">
+          <button 
+            class="bg-transparent border border-gray-300 rounded p-2 cursor-pointer transition-all duration-300 hover:bg-gray-50 hover:border-gray-400 flex items-center justify-center"
+            style="padding: 8px;"
+            on:click|stopPropagation={() => leftPanelVisible = !leftPanelVisible}
+          >
+            <div class="flex flex-col gap-1">
+              <span class="block bg-gray-600 rounded transition-all" style="width: 18px; height: 2px;"></span>
+              <span class="block bg-gray-600 rounded transition-all" style="width: 18px; height: 2px;"></span>
+              <span class="block bg-gray-600 rounded transition-all" style="width: 18px; height: 2px;"></span>
             </div>
-          </div>
-          <h1>공통코드 관리</h1>
+          </button>
+          <h1 class="text-gray-800 font-semibold m-0" style="font-size: 1.375rem;">공통코드 관리</h1>
         </div>
       </div>
     </div>
 
     <!-- 알림 메시지 -->
     {#if success}
-      <div class="alert alert-success">{success}</div>
+      <div class="mx-2 my-2.5 px-4 py-2.5 rounded" style="background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; font-size: 0.9rem;">
+        {success}
+      </div>
     {/if}
     
     {#if error}
-      <div class="alert alert-error">{error}</div>
+      <div class="mx-2 my-2.5 px-4 py-2.5 rounded" style="background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; font-size: 0.9rem;">
+        {error}
+      </div>
     {/if}
 
-    <div class="content-layout">
+    <div class="flex w-full relative flex-1">
+      <!-- 모바일 오버레이 배경 - 전체 화면을 덮되 패널 영역만 제외 -->
+      {#if typeof window !== 'undefined' && window.innerWidth <= 1024 && leftPanelVisible}
+        <div 
+          class="fixed inset-0 bg-black bg-opacity-50 z-20"
+          style="top: 70px;"
+          on:click={handleOverlayClick}
+          on:touchstart={handleOverlayClick}
+          on:touchmove|preventDefault
+        ></div>
+      {/if}
+
       <!-- 왼쪽 패널: 대분류 목록 -->
-      <div class="left-panel {leftPanelVisible ? 'visible' : 'hidden'}">
-        <div class="panel-card">
-          <div class="panel-header">
-            <h2>대분류 (BISH_MAJR)</h2>
-            <button class="panel-close-button" on:click={() => leftPanelVisible = false} title="닫기">×</button>
+      <div class="transition-all duration-300 {leftPanelVisible ? 'opacity-100' : 'opacity-0'} lg:relative lg:ml-2.5 {leftPanelVisible ? '' : 'hidden'}" 
+           style="flex: 0 0 {leftPanelVisible ? '350px' : '0px'}; background: transparent; z-index: 25;"
+           class:fixed={typeof window !== 'undefined' && window.innerWidth <= 1024}
+           class:left-0={typeof window !== 'undefined' && window.innerWidth <= 1024}
+           class:bg-white={typeof window !== 'undefined' && window.innerWidth <= 1024}
+           style:top={typeof window !== 'undefined' && window.innerWidth <= 1024 ? '70px' : 'auto'}
+           style:height={typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - 70px)' : 'auto'}
+           style:box-shadow={typeof window !== 'undefined' && window.innerWidth <= 1024 ? '2px 0 8px rgba(0,0,0,0.1)' : 'none'}
+           style:transform={typeof window !== 'undefined' && window.innerWidth <= 1024 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
+           on:click={handlePanelClick}>
+        
+        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);" 
+             on:click={handlePanelClick}>
+          
+          <!-- 패널 헤더 -->
+          <div class="py-4 px-5 border-b border-gray-200 flex flex-col items-stretch gap-4 relative" style="gap: 15px;">
+            {#if typeof window !== 'undefined' && window.innerWidth <= 1024}
+              <button 
+                class="absolute bg-red-600 text-white border-none rounded-full cursor-pointer flex items-center justify-center hover:bg-red-700 hover:scale-110 transition-all text-lg z-10"
+                style="top: 15px; right: 15px; width: 24px; height: 24px; font-size: 1.2rem;"
+                on:click|stopPropagation={() => leftPanelVisible = false}
+              >
+                ✕
+              </button>
+            {/if}
+            
+            <div class="flex items-center gap-2.5">
+              <h2 class="text-gray-800 m-0" style="font-size: 1.1rem;">대분류 목록</h2>
+            </div>
             
             <!-- 검색 -->
-            <div class="search-box">
-              <input
-                type="text"
+            <div class="flex gap-2 w-full">
+              <input 
+                type="text" 
+                placeholder="대분류 검색..."
                 bind:value={majrSearchTerm}
-                placeholder="코드 또는 명칭 검색..."
-                on:keydown={(e) => e.key === 'Enter' && handleMajrSearch()}
+                class="flex-1 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                style="padding: 6px 10px; font-size: 0.9rem;"
+                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                on:blur={(e) => e.target.style.boxShadow = 'none'}
+                on:click|stopPropagation
               />
-              <button class="btn btn-search" on:click={handleMajrSearch}>검색</button>
+              <button 
+                class="text-white border-none rounded cursor-pointer transition-colors text-sm hover:bg-blue-600"
+                style="padding: 6px 12px; background-color: #007bff; font-size: 0.9rem;"
+                on:click|stopPropagation={handleMajrSearch}
+              >
+                검색
+              </button>
             </div>
           </div>
           
-          <div class="panel-list">
-            {#if loading && !majrList.length}
-              <div class="loading">
-                <div class="spinner"></div>
-                <p>로딩 중...</p>
+          <!-- 목록 - 화면 맨 아래까지 -->
+          <div class="overflow-y-auto" style="max-height: calc(100vh - 250px);">
+            {#if loading}
+              <div class="text-center text-gray-600" style="padding: 30px 15px;">
+                <div class="mx-auto mb-2.5 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin" style="width: 25px; height: 25px;"></div>
+                로딩 중...
               </div>
             {:else if majrList.length === 0}
-              <div class="no-data">
+              <div class="text-center text-gray-600" style="padding: 30px 15px; font-size: 0.9rem;">
                 등록된 대분류가 없습니다.
               </div>
             {:else}
               {#each majrList as majr}
                 <div 
-                  class="list-item {selectedMajr && selectedMajr.MAJR_CODE === majr.MAJR_CODE ? 'selected' : ''}"
-                  on:click={() => selectMajr(majr)}
+                  class="border-b border-gray-200 cursor-pointer transition-colors hover:bg-gray-50 {selectedMajr && selectedMajr.MAJR_CODE === majr.MAJR_CODE ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''}"
+                  style="padding: 10px 15px;"
+                  on:click|stopPropagation={() => selectMajr(majr)}
+                  on:touchstart={(e) => handleMajrTouchStart(e, majr)}
+                  on:touchmove={handleMajrTouchMove}
+                  on:touchend={(e) => handleMajrTouchEnd(e, majr)}
                 >
-                  <div class="item-content">
-                    <div class="item-code">{majr.MAJR_CODE}</div>
-                    <div class="item-name">{majr.MAJR_NAME}</div>
-                    {#if majr.MAJR_BIGO}
-                      <div class="item-desc">{majr.MAJR_BIGO}</div>
-                    {/if}
-                  </div>
+                  <div class="font-semibold text-gray-900" style="font-size: 0.9rem;">{majr.MAJR_CODE}</div>
+                  <div class="text-gray-600 mt-0.5" style="font-size: 0.8rem;">{majr.MAJR_NAME}</div>
                 </div>
               {/each}
             {/if}
           </div>
+          
+          <!-- 신규 버튼 -->
+          <div class="p-4 border-t border-gray-200">
+            <button 
+              class="w-full text-white border-none rounded cursor-pointer font-medium transition-colors hover:bg-green-700"
+              style="padding: 8px 15px; background-color: #28a745; font-size: 0.9rem;"
+              on:click|stopPropagation={newMajrMode}
+            >
+              신규 등록
+            </button>
+          </div>
         </div>
       </div>
 
-      <!-- 오른쪽 패널: 선택된 대분류 편집 및 소분류 목록 -->
-      <div class="right-panel">
-        <div class="panel-content">
-          <!-- 선택된 대분류 편집 -->
-          <div class="panel-card">
-            <div class="panel-header">
-              <h2>
-                {majrEditForm.isNew ? '신규 대분류 등록' : `대분류 수정: ${currentMajrCode}`}
-              </h2>
-              
-              <div class="header-buttons">
-                <button 
-                  class="btn btn-secondary" 
-                  on:click={newMajrMode}
-                  disabled={loading}
-                >
-                  신규
-                </button>
-                <button 
-                  class="btn btn-primary" 
-                  on:click={saveAll}
-                  disabled={loading}
-                >
-                  {loading ? '저장 중...' : '저장'}
-                </button>
-              </div>
-            </div>
-            
-            <div class="edit-content">
-              <div class="edit-grid">
-                <div class="edit-item">
-                  <label>대분류코드 *</label>
-                  <input 
-                    type="text" 
-                    bind:value={majrEditForm.MAJR_CODE}
-                    class="form-control {majrEditForm.isNew ? '' : 'readonly'}"
-                    readonly={!majrEditForm.isNew}
-                    placeholder="대분류코드 입력"
-                  />
-                </div>
-                <div class="edit-item">
-                  <label>대분류명칭 *</label>
-                  <input 
-                    type="text" 
-                    bind:value={majrEditForm.MAJR_NAME}
-                    class="form-control"
-                    placeholder="대분류명칭 입력"
-                  />
-                </div>
-                <div class="edit-item">
-                  <label>비고1</label>
-                  <input 
-                    type="text" 
-                    bind:value={majrEditForm.MAJR_BIGO}
-                    class="form-control"
-                    placeholder="비고1 입력"
-                  />
-                </div>
-                <div class="edit-item">
-                  <label>비고2</label>
-                  <input 
-                    type="text" 
-                    bind:value={majrEditForm.MAJR_BIG2}
-                    class="form-control"
-                    placeholder="비고2 입력"
-                  />
-                </div>
-              </div>
+      <!-- 오른쪽 패널: 컨텐츠 -->
+      <div class="flex-1 min-w-0 px-2">
+        <!-- 대분류 편집 폼 -->
+        <div class="bg-white rounded-lg overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <div class="border-b border-gray-200 flex justify-between items-center flex-wrap" style="padding: 15px 20px; gap: 15px;">
+            <div class="flex items-center gap-2.5">
+              <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">대분류 {majrEditForm.isNew ? '신규등록' : '수정'}</h3>
             </div>
           </div>
-
-          <!-- 소분류 목록 -->
-          <div class="panel-card">
-            <div class="panel-header">
-              <h3>소분류 (BISH_MINR)</h3>
-              
-              <div class="header-buttons">
-                <button 
-                  class="btn btn-success" 
-                  on:click={addNewRow}
-                  disabled={loading}
-                >
-                  행추가
-                </button>
-              </div>
+          
+          <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+            <div class="flex flex-col">
+              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">대분류 코드</label>
+              <input 
+                type="text" 
+                bind:value={majrEditForm.MAJR_CODE}
+                maxlength="10"
+                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                style="padding: 8px 12px; font-size: 0.9rem;"
+                placeholder="대분류 코드 입력"
+                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                on:blur={(e) => e.target.style.boxShadow = 'none'}
+              />
             </div>
-            
-            <div class="minr-table-container">
-              {#if loading && !visibleMinrList.length}
-                <div class="loading">
-                  <div class="spinner"></div>
-                  <p>로딩 중...</p>
+            <div class="flex flex-col">
+              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">대분류 명칭</label>
+              <input 
+                type="text" 
+                bind:value={majrEditForm.MAJR_NAME}
+                maxlength="200"
+                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                style="padding: 8px 12px; font-size: 0.9rem;"
+                placeholder="대분류 명칭 입력"
+                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                on:blur={(e) => e.target.style.boxShadow = 'none'}
+              />
+            </div>
+            <div class="flex flex-col">
+              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">비고1</label>
+              <input 
+                type="text" 
+                bind:value={majrEditForm.MAJR_BIGO}
+                maxlength="200"
+                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                style="padding: 8px 12px; font-size: 0.9rem;"
+                placeholder="비고1 입력"
+                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                on:blur={(e) => e.target.style.boxShadow = 'none'}
+              />
+            </div>
+            <div class="flex flex-col">
+              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">비고2</label>
+              <input 
+                type="text" 
+                bind:value={majrEditForm.MAJR_BIG2}
+                maxlength="200"
+                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                style="padding: 8px 12px; font-size: 0.9rem;"
+                placeholder="비고2 입력"
+                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                on:blur={(e) => e.target.style.boxShadow = 'none'}
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- 소분류 관리 -->
+        <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <div class="border-b border-gray-200 flex justify-between items-center flex-wrap relative" style="padding: 15px 20px; gap: 15px;">
+            <div class="flex items-center gap-2.5">
+              <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">소분류 관리 {currentMajrCode ? `(${currentMajrCode})` : ''}</h3>
+            </div>
+            <div class="flex gap-2">
+              <button 
+                class="text-white border-none rounded cursor-pointer transition-colors hover:bg-gray-700"
+                style="padding: 6px 12px; background-color: #6c757d; font-size: 0.9rem;"
+                on:click={addNewRow}
+              >
+                행추가
+              </button>
+              <button 
+                class="text-white border-none rounded cursor-pointer transition-colors hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed"
+                style="padding: 6px 12px; background-color: #007bff; font-size: 0.9rem;"
+                on:click={saveAll}
+                disabled={loading}
+              >
+                {#if loading}
+                  <span class="inline-block border-2 border-white border-t-transparent rounded-full animate-spin mr-2" style="width: 12px; height: 12px;"></span>
+                {/if}
+                저장
+              </button>
+            </div>
+          </div>
+          
+          <div class="p-5">
+            {#if loading}
+              <div class="text-center text-gray-600" style="padding: 30px 15px;">
+                <div class="mx-auto mb-2.5 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin" style="width: 25px; height: 25px;"></div>
+                불러오는 중...
+              </div>
+            {:else if currentMajrCode}
+              {#if visibleMinrList.length === 0}
+                <div class="text-center text-gray-500" style="padding: 30px 15px; font-size: 0.9rem;">
+                  등록된 소분류가 없습니다.<br>
+                  "행추가" 버튼을 눌러 추가해보세요.
                 </div>
               {:else}
-                <div class="minr-table">
-                  <!-- 테이블 헤더 -->
-                  <div class="table-header">
-                    <div class="col-code">코드</div>
-                    <div class="col-name">명칭</div>
-                    <div class="col-bigo">비고1</div>
-                    <div class="col-big2">비고2</div>
-                  </div>
-                  
-                  <!-- 테이블 바디 -->
-                  <div class="table-body">
-                    {#each visibleMinrList as item, index}
-                      <div class="table-row {item.isNew ? 'new-row' : ''}">
-                        <!-- 데스크탑 버전 -->
-                        <div class="desktop-row">
-                          <div class="col-code">
+                <!-- 소분류 테이블 -->
+                <div class="overflow-x-auto">
+                  <table class="w-full border-collapse" style="font-size: 0.9rem;">
+                    <thead>
+                      <tr class="bg-gray-50">
+                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">소분류코드</th>
+                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">명칭</th>
+                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">비고1</th>
+                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">비고2</th>
+                        <th class="border border-gray-300 text-center text-gray-800 font-semibold" style="padding: 8px; color: #333;">삭제</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each visibleMinrList as item, index}
+                        <tr class="hover:bg-gray-50 {item.isNew ? 'bg-yellow-50' : 'bg-white'}">
+                          <td class="border border-gray-300" style="padding: 8px;">
                             <input 
                               type="text" 
                               bind:value={item.MINR_CODE}
-                              class="form-control {item.isNew ? '' : 'readonly'}"
-                              readonly={!item.isNew}
-                              placeholder="코드"
+                              maxlength="10"
+                              class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                              style="padding: 4px 6px; font-size: 0.85rem;"
                             />
-                          </div>
-                          <div class="col-name">
+                          </td>
+                          <td class="border border-gray-300" style="padding: 8px;">
                             <input 
                               type="text" 
                               bind:value={item.MINR_NAME}
-                              class="form-control"
-                              placeholder="명칭"
+                              maxlength="200"
+                              class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                              style="padding: 4px 6px; font-size: 0.85rem;"
                             />
-                          </div>
-                          <div class="col-bigo">
+                          </td>
+                          <td class="border border-gray-300" style="padding: 8px;">
                             <input 
                               type="text" 
                               bind:value={item.MINR_BIGO}
-                              class="form-control"
-                              placeholder="비고1"
+                              maxlength="200"
+                              class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                              style="padding: 4px 6px; font-size: 0.85rem;"
                             />
-                          </div>
-                          <div class="col-big2">
+                          </td>
+                          <td class="border border-gray-300" style="padding: 8px;">
                             <input 
                               type="text" 
                               bind:value={item.MINR_BIG2}
-                              class="form-control"
-                              placeholder="비고2"
+                              maxlength="200"
+                              class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                              style="padding: 4px 6px; font-size: 0.85rem;"
                             />
-                          </div>
-                          <!-- X 버튼 - 오른쪽 상단 절대 위치 -->
-                          <button 
-                            class="row-delete-btn"
-                            on:click={() => deleteRow(index)}
-                            title="삭제"
-                          >
-                            ×
-                          </button>
-                        </div>
-
-                        <!-- 모바일 버전 -->
-                        <div class="mobile-row">
-                          <!-- 첫 번째 줄: 코드 + 명칭 -->
-                          <div class="mobile-row-1">
-                            <div class="col-code">
-                              <div class="mobile-label">코드</div>
-                              <input 
-                                type="text" 
-                                bind:value={item.MINR_CODE}
-                                class="form-control {item.isNew ? '' : 'readonly'}"
-                                readonly={!item.isNew}
-                                placeholder="코드"
-                              />
-                            </div>
-                            <div class="col-name">
-                              <div class="mobile-label">명칭</div>
-                              <input 
-                                type="text" 
-                                bind:value={item.MINR_NAME}
-                                class="form-control"
-                                placeholder="명칭"
-                              />
-                            </div>
-                          </div>
-
-                          <!-- 두 번째 줄: 비고1 + 비고2 -->
-                          <div class="mobile-row-2">
-                            <div class="col-bigo">
-                              <div class="mobile-label">비고1</div>
-                              <input 
-                                type="text" 
-                                bind:value={item.MINR_BIGO}
-                                class="form-control"
-                                placeholder="비고1"
-                              />
-                            </div>
-                            <div class="col-big2">
-                              <div class="mobile-label">비고2</div>
-                              <input 
-                                type="text" 
-                                bind:value={item.MINR_BIG2}
-                                class="form-control"
-                                placeholder="비고2"
-                              />
-                            </div>
-                          </div>
-
-                          <!-- X 버튼 - 모바일도 오른쪽 상단 -->
-                          <button 
-                            class="row-delete-btn"
-                            on:click={() => deleteRow(index)}
-                            title="삭제"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                    {/each}
-                    
-                    {#if visibleMinrList.length === 0}
-                      <div class="no-data">
-                        등록된 소분류가 없습니다. "행추가" 버튼을 눌러 추가해보세요.
-                      </div>
-                    {/if}
-                  </div>
+                          </td>
+                          <td class="border border-gray-300 text-center" style="padding: 8px;">
+                            <button 
+                              class="bg-transparent border border-gray-300 rounded cursor-pointer text-red-600 hover:bg-red-100 transition-all"
+                              style="padding: 4px 8px; font-size: 0.8rem; color: #dc3545;"
+                              on:click={() => deleteRow(index)}
+                            >
+                              삭제
+                            </button>
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
                 </div>
               {/if}
-            </div>
+            {:else}
+              <div class="text-center text-gray-500" style="padding: 30px 15px; font-size: 0.9rem;">
+                대분류를 선택하거나 신규 등록해주세요.
+              </div>
+            {/if}
           </div>
         </div>
       </div>
     </div>
   </div>
 </div>
-
-<style>
-  /* 기본 스타일 */
-  .common-code-container {
-    min-height: 100vh;
-    background-color: #f5f5f5;
-    position: relative; /* 부모 컨테이너 위치 기준 */
-  }
-
-  /* 헤더 - main-content 안으로 이동됨 */
-  .header {
-    background: white;
-    border-bottom: 1px solid #ddd;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    position: sticky;
-    top: 0;
-    z-index: 10; /* 백오피스보다 낮게 설정 */
-    margin-bottom: 10px;
-  }
-
-  .header-content {
-    padding: 15px 8px;
-  }
-
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-  }
-
-  .header-left h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: #333;
-    font-weight: 600;
-  }
-
-  /* 햄버거 버튼 (헤더 안에 위치) */
-  .hamburger-button {
-    background: none;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    padding: 8px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .hamburger-button:hover {
-    background-color: #f8f9fa;
-    border-color: #adb5bd;
-  }
-
-  .hamburger-icon {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .hamburger-icon span {
-    width: 18px;
-    height: 2px;
-    background-color: #666;
-    transition: all 0.3s ease;
-    border-radius: 1px;
-  }
-
-  .hamburger-button:hover .hamburger-icon span {
-    background-color: #333;
-  }
-
-  /* 메인 컨텐츠 - Grid의 main 영역 안에서 Flex 레이아웃 */
-  .main-content {
-    padding: 0; /* 기존 padding 제거 */
-    display: flex;
-    flex-direction: column;
-    min-height: calc(100vh - 70px); /* 헤더 높이 제외 */
-  }
-
-  .content-layout {
-    display: flex;
-    width: 100%;
-    position: relative;
-    flex: 1; /* 헤더 다음 남은 공간 모두 차지 */
-  }
-
-  /* 왼쪽 패널: 대분류 목록 - Flex item으로 고정 너비 */
-  .left-panel {
-    flex: 0 0 350px; /* 고정 너비 350px */
-    background: transparent;
-    transition: all 0.3s ease;
-    overflow: hidden;
-    z-index: 5; /* 백오피스보다 낮게 설정 */
-  }
-
-  .left-panel.hidden {
-    flex: 0 0 0; /* 숨길 때 너비 0 */
-    opacity: 0;
-  }
-
-  .left-panel.visible {
-    flex: 0 0 350px;
-    opacity: 1;
-  }
-
-  /* 오른쪽 패널: 컨텐츠 - Flex item으로 나머지 공간 */
-  .right-panel {
-    flex: 1; /* 나머지 공간 모두 차지 */
-    min-width: 0; /* Flex 오버플로우 방지 */
-    padding: 0px 8px;
-  }
-
-  .panel-card {
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    overflow: hidden;
-    margin-bottom: 20px;
-  }
-
-  .panel-header {
-    padding: 15px 20px;
-    border-bottom: 1px solid #eee;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 15px;
-    position: relative;
-  }
-
-  /* 대분류 패널만 세로 배치 */
-  .left-panel .panel-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .panel-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .panel-header h2,
-  .panel-header h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    color: #333;
-  }
-
-  /* 대분류 패널 X버튼 - 절대위치로 자리 차지 안함 */
-  .panel-close-button {
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    background: #dc3545;
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 24px;
-    height: 24px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-    transition: all 0.2s;
-    z-index: 10;
-  }
-
-  .panel-close-button:hover {
-    background-color: #c82333;
-    transform: scale(1.1);
-  }
-
-  .close-button {
-    background: none;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    width: 24px;
-    height: 24px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #666;
-    font-size: 1.2rem;
-    transition: all 0.2s;
-  }
-
-  .close-button:hover {
-    background-color: #f8f9fa;
-    border-color: #adb5bd;
-    color: #333;
-  }
-
-  .header-buttons {
-    display: flex;
-    gap: 8px;
-  }
-
-  .search-box {
-    display: flex;
-    gap: 8px;
-    width: 100%; /* 전체 너비 사용 */
-  }
-
-  .search-box input {
-    flex: 1;
-    padding: 6px 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 0.9rem;
-  }
-
-  .search-box input:focus {
-    outline: none;
-    border-color: #007bff;
-    box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
-  }
-
-  /* 목록 스타일 */
-  .panel-list {
-    max-height: 500px;
-    overflow-y: auto;
-  }
-
-  .list-item {
-    padding: 12px 20px;
-    border-bottom: 1px solid #f0f0f0;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  .list-item:hover {
-    background-color: #f8f9fa;
-  }
-
-  .list-item.selected {
-    background-color: #e3f2fd;
-    border-left: 4px solid #2196f3;
-  }
-
-  .item-content {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .item-code {
-    font-weight: 600;
-    color: #333;
-    font-size: 0.95rem;
-  }
-
-  .item-name {
-    color: #666;
-    font-size: 0.9rem;
-    margin-top: 2px;
-  }
-
-  .item-desc {
-    color: #999;
-    font-size: 0.8rem;
-    margin-top: 2px;
-  }
-
-  /* 편집 컨텐츠 */
-  .edit-content {
-    padding: 15px 20px;
-  }
-
-  .edit-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 15px;
-  }
-
-  .edit-item {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .edit-item label {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #666;
-    margin-bottom: 5px;
-  }
-
-  /* 소분류 테이블 */
-  .minr-table-container {
-    padding: 15px 10px;
-  }
-
-  .minr-table {
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    overflow: hidden;
-  }
-
-  /* 데스크탑 버전 */
-  .desktop-row {
-    display: grid;
-    grid-template-columns: 120px 1fr 150px 150px; /* actions 컬럼 제거 */
-    border-bottom: 1px solid #eee;
-    position: relative; /* x 버튼 배치를 위한 relative */
-  }
-
-  .mobile-row {
-    display: none;
-  }
-
-  .table-header,
-  .desktop-row {
-    border-bottom: 1px solid #eee;
-  }
-
-  .table-header {
-    background-color: #f8f9fa;
-    font-weight: 600;
-    color: #333;
-    font-size: 0.9rem;
-    display: grid;
-    grid-template-columns: 120px 1fr 150px 150px; /* actions 컬럼 제거 */
-  }
-
-  .table-header > div,
-  .desktop-row > div {
-    padding: 10px 6px;
-    display: flex;
-    align-items: center;
-    border-right: 1px solid #eee;
-  }
-
-  .table-header > div:last-child,
-  .desktop-row > div:last-child {
-    border-right: none;
-  }
-
-  /* 소분류 X 버튼 - 오른쪽 최상단 절대 위치 */
-  .row-delete-btn {
-    position: absolute;
-    top: 0; /* 최대한 위로 */
-    right: 0; /* 최대한 오른쪽으로 */
-    background: #dc3545;
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-    z-index: 10;
-  }
-
-  .row-delete-btn:hover {
-    background-color: #c82333;
-    transform: scale(1.2);
-  }
-
-  .table-row {
-    background-color: white;
-  }
-
-  .table-row:hover {
-    background-color: #f8f9fa;
-  }
-
-  .table-row.new-row {
-    background-color: #fff3cd;
-  }
-
-  .table-row.new-row:hover {
-    background-color: #ffeaa7;
-  }
-
-  .table-body {
-    max-height: 400px;
-    overflow-y: auto;
-  }
-
-  /* 폼 요소 */
-  .form-control {
-    width: 100%;
-    padding: 6px 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    box-sizing: border-box;
-  }
-
-  .form-control:focus {
-    outline: none;
-    border-color: #007bff;
-    box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
-  }
-
-  .form-control.readonly {
-    background-color: #f8f9fa;
-    color: #6c757d;
-  }
-
-  /* 버튼 스타일 */
-  .btn {
-    padding: 6px 12px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 500;
-    transition: all 0.2s;
-    text-decoration: none;
-    display: inline-block;
-    text-align: center;
-  }
-
-  .btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background-color: #007bff;
-    color: white;
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: #0056b3;
-  }
-
-  .btn-secondary {
-    background-color: #6c757d;
-    color: white;
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: #545b62;
-  }
-
-  .btn-success {
-    background-color: #28a745;
-    color: white;
-  }
-
-  .btn-success:hover:not(:disabled) {
-    background-color: #1e7e34;
-  }
-
-  .btn-search {
-    background-color: #6c757d;
-    color: white;
-    padding: 6px 12px;
-  }
-
-  .btn-search:hover {
-    background-color: #545b62;
-  }
-
-  .btn-icon {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 1.2rem;
-    font-weight: bold;
-    transition: all 0.2s;
-  }
-
-  .btn-icon.delete {
-    color: #dc3545;
-  }
-
-  .btn-icon.delete:hover {
-    background-color: #f8d7da;
-  }
-
-  /* 알림 스타일 */
-  .alert {
-    padding: 10px 15px;
-    border-radius: 4px;
-    margin: 10px 8px;
-    font-size: 0.9rem;
-  }
-
-  .alert-success {
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-  }
-
-  .alert-error {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-  }
-
-  /* 로딩 스타일 */
-  .loading {
-    text-align: center;
-    padding: 30px 15px;
-    color: #666;
-  }
-
-  .spinner {
-    width: 25px;
-    height: 25px;
-    border: 3px solid #f3f3f3;
-    border-top: 3px solid #007bff;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 10px;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
-  /* 빈 상태 */
-  .no-data {
-    text-align: center;
-    padding: 30px 15px;
-    color: #999;
-    font-size: 0.9rem;
-  }
-
-  /* 반응형 디자인 */
-  @media (min-width: 1025px) {
-    /* 데스크탑에서 헤더가 백오피스 메뉴를 침범하지 않도록 */
-    .header {
-      margin-left: 10px; /* 백오피스 사이드바 너비만큼 여백 */
-    }
-    
-    .left-panel {
-      margin-left: 10px; /* PC에서만 오른쪽으로 이동 */
-    }
-  }
-
-  @media (max-width: 1024px) {
-    /* 태블릿/모바일에서 대분류 패널을 오버레이로 변경 */
-    .left-panel {
-      position: fixed;
-      left: 0;
-      top: 70px;
-      height: calc(100vh - 70px);
-      z-index: 80; /* 백오피스 메뉴(100)보다 낮게 */
-      background: white;
-      box-shadow: 2px 0 8px rgba(0,0,0,0.1);
-    }
-    
-    .left-panel.hidden {
-      transform: translateX(-100%);
-    }
-    
-    .left-panel.visible {
-      transform: translateX(0);
-    }
-    
-    /* 오른쪽 패널이 전체 너비 차지 */
-    .right-panel {
-      flex: 1;
-      width: 100%;
-    }
-
-    /* 태블릿에서 헤더 margin 제거 */
-    .header {
-      margin-left: 0;
-    }
-  }
-
-  @media (max-width: 768px) {
-    .header-content {
-      padding: 10px 5px;
-    }
-
-    .header-left {
-      gap: 10px;
-    }
-
-    .header-left h1 {
-      font-size: 1.3rem;
-    }
-
-    .right-panel {
-      padding: 10px 5px;
-    }
-
-    .edit-grid {
-      grid-template-columns: 1fr;
-      gap: 10px;
-    }
-
-    /* 모바일에서 버튼 위치 개선 - 절대 위치로 오른쪽 상단에 고정 */
-    .panel-header {
-      padding: 10px 15px 10px 15px;
-      position: relative;
-      min-height: 50px; /* 최소 높이 보장 */
-    }
-
-    .panel-header h2,
-    .panel-header h3 {
-      margin: 0;
-      padding-right: 120px; /* 버튼 영역 확보 */
-      line-height: 1.2;
-    }
-
-    .header-buttons {
-      position: absolute;
-      top: 10px;
-      right: 15px;
-      display: flex;
-      gap: 8px;
-      z-index: 5;
-    }
-
-    /* 대분류 패널에서는 기본 배치 유지 */
-    .left-panel .panel-header {
-      flex-direction: column;
-      align-items: stretch;
-      position: relative;
-      min-height: auto;
-    }
-
-    .left-panel .panel-header h2 {
-      padding-right: 30px; /* X버튼 공간만 확보 */
-    }
-
-    .search-box {
-      max-width: none;
-    }
-
-    .minr-table-container {
-      padding: 10px 5px;
-    }
-
-    /* 모바일에서 대분류 패널 z-index 더 낮게 */
-    .left-panel {
-      z-index: 50; /* 백오피스 메뉴보다 훨씬 낮게 */
-    }
-
-    /* 모바일 소분류 테이블 - 두 줄 구조 */
-    .table-header {
-      display: none; /* 모바일에서는 헤더 숨김 */
-    }
-
-    .desktop-row {
-      display: none; /* 모바일에서는 데스크탑 행 숨김 */
-    }
-
-    .mobile-row {
-      display: block; /* 모바일에서는 모바일 행 표시 */
-      position: relative; /* x 버튼 배치를 위한 relative */
-    }
-
-    .table-row {
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      margin-bottom: 10px;
-      padding: 10px;
-      background: white;
-    }
-
-    .table-row.new-row {
-      background-color: #fff3cd;
-      border-color: #ffeaa7;
-    }
-
-    .mobile-row-1 {
-      display: grid;
-      grid-template-columns: 80px 1fr; /* 작업 컬럼 제거 */
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .mobile-row-2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .col-code,
-    .col-name,
-    .col-bigo,
-    .col-big2,
-    .col-actions {
-      padding: 0;
-      border: none;
-    }
-
-    .mobile-label {
-      font-size: 0.7rem;
-      color: #666;
-      margin-bottom: 2px;
-      font-weight: 600;
-    }
-
-    .form-control {
-      font-size: 0.8rem;
-      padding: 5px 6px;
-      width: 100%;
-    }
-
-    .minr-table {
-      border: none;
-    }
-
-    .table-body {
-      max-height: none;
-    }
-
-    .btn-icon.delete {
-      font-size: 1.4rem;
-      padding: 2px 6px;
-    }
-  }
-</style>

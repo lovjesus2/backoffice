@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { simpleCache } from '$lib/utils/simpleImageCache';
   import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
+  import BarcodeModal from '$lib/components/BarcodeModal.svelte';
 
   // 상태 관리
   let searchTerm = '';
@@ -13,6 +14,10 @@
   let error = '';
   let adjustingStock = new Set();
   let authenticated = false;
+  
+  // 바코드 출력 관련 상태
+  let showBarcodeModal = false;
+  let selectedProduct = null;
   
   // ESC 키로 검색, Enter 키로 검색
   function handleKeydown(event) {
@@ -116,11 +121,12 @@
             ? { ...p, stock: result.new_stock }
             : p
         );
+        alert(result.message);
         
+        // 입력 필드 초기화
         const input = document.querySelector(`input[data-code="${productCode}"]`);
         if (input) input.value = '';
         
-        alert(`재고가 조정되었습니다.\n새 재고: ${result.new_stock}개`);
       } else {
         alert(result.message || '재고 조정 실패');
       }
@@ -133,22 +139,18 @@
     }
   }
   
-  // 단종 처리 토글
+  // 단종 처리
   async function toggleDiscontinued(productCode) {
     if (!authenticated) return;
     
-    const product = products.find(p => p.code === productCode);
-    if (!product) return;
-    
     try {
-      const response = await fetch('/api/sales/sale-stock/discontinued', {
+      const response = await fetch('/api/sales/sale-stock/discontinue', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          product_code: productCode,
-          discontinued: !product.discontinued
+          product_code: productCode
         })
       });
       
@@ -168,6 +170,16 @@
       console.error('단종 처리 오류:', err);
       alert('처리 중 오류가 발생했습니다.');
     }
+  }
+  
+  // 바코드 출력 모달 열기
+  function openBarcodeModal(product) {
+    selectedProduct = {
+      code: product.code,
+      name: product.name,
+      price: product.price || 0
+    };
+    showBarcodeModal = true;
   }
   
   // 엔터키 검색
@@ -249,56 +261,59 @@
           >
         </div>
         <button type="submit" disabled={loading} class="bg-blue-500 text-white rounded-lg font-medium transition-all duration-200 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed whitespace-nowrap" style="padding: 0.75rem 1.5rem; font-size: 1rem;">
-          {loading ? '검색중...' : '검색'}
+          {loading ? '검색 중...' : '검색'}
         </button>
       </div>
     </form>
 
-    <!-- 오류 메시지 -->
+    <!-- 에러 메시지 -->
     {#if error}
-      <div class="bg-red-50 border-l-4 border-red-500 rounded-r-lg" style="padding: 1rem; margin: 0.25rem;">
-        <p class="text-red-700 font-medium">{error}</p>
-      </div>
-    {/if}
-
-    <!-- 로딩 -->
-    {#if loading}
-      <div class="flex justify-center items-center py-12">
-        <div class="text-center">
-          <div class="text-4xl mb-3 animate-spin">🔄</div>
-          <p class="text-gray-600">검색 중...</p>
-        </div>
+      <div class="text-center py-4 text-red-600" style="background: #fee; margin: 0.2rem; padding: 1rem; border-radius: 8px; border: 1px solid #fcc;">
+        {error}
+        <button 
+          type="button" 
+          class="ml-2 px-2 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+          on:click={clearSearch}
+        >
+          지우기
+        </button>
       </div>
     {/if}
 
     <!-- 검색 결과 -->
-    {#if products.length > 0}
-      <div class="space-y-3" style="margin: 0.5rem 0.25rem;">
+    {#if loading}
+      <div class="text-center py-12">
+        <div class="text-4xl mb-4 animate-spin">🔄</div>
+        <p class="text-gray-600">검색 중...</p>
+      </div>
+    {:else if products.length > 0}
+      <div class="grid gap-3" style="margin: 0.2rem; grid-template-columns: 1fr;">
         {#each products as product}
-          <div class="bg-white rounded-lg border relative overflow-hidden {product.discontinued ? 'border-red-300 bg-red-50 opacity-70 border-l-4 border-l-red-500' : 'border-gray-200'}" style="box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; min-height: 120px;">
-            <!-- 제품 이미지 -->
-            <div class="flex-shrink-0 relative overflow-hidden cursor-pointer" style="width: 80px; height: 80px;" on:click={() => openImageModal(getProxyImageUrl(product.code), product.name)}>
-              <img 
-                src="/proxy-images/{product.code}_1.jpg"
-                alt={product.name}
-                class="w-full h-full object-cover hover:opacity-80 transition-opacity duration-200"
-                on:load={cacheImage}
-                on:error={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextElementSibling.style.display = 'flex';
-                }}
-              />
-              <div class="w-full h-full flex items-center justify-center text-center hidden hover:bg-gray-200 transition-colors duration-200" style="background: #f8f9fa; color: #999; font-size: 0.7rem;">
-                이미지<br>없음
+          <div class="relative bg-white rounded-lg border border-gray-200 overflow-hidden" style="padding: 0.8rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); {product.discontinued ? 'opacity: 0.6; background-color: #f8f8f8;' : ''}">
+            <!-- 이미지 및 기본 정보 -->
+            <div class="flex" style="gap: 0.8rem;">
+              <!-- 상품 이미지 -->
+              <div class="flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden" style="width: 80px; height: 80px;">
+                <img 
+                  src={getProxyImageUrl(product.code)} 
+                  alt={product.name}
+                  class="w-full h-full object-cover cursor-pointer"
+                  on:click={() => openImageModal(getProxyImageUrl(product.code), product.name)}
+                  on:load={cacheImage}
+                  on:error={(e) => {
+                    e.target.src = '/placeholder.png';
+                    e.target.style.background = '#f0f0f0';
+                  }}
+                >
               </div>
-            </div>
 
-            <!-- 제품 정보 -->
-            <div class="flex-1 flex flex-col justify-center" style="padding: 0.6rem;">
-              <div class="font-bold text-gray-600 mb-1" style="font-size: 0.8rem;">{product.code}</div>
-              <div class="font-medium text-gray-900 mb-1" style="font-size: 1rem; line-height: 1.3;">{product.name}</div>
-              <div class="text-gray-700 mb-1" style="font-size: 0.85rem;">원가: {product.cost ? `${product.cost.toLocaleString()}원` : '0원'}</div>
-              <div class="text-gray-700" style="font-size: 0.85rem;">금액: {product.price.toLocaleString()}원</div>
+              <!-- 상품 정보 -->
+              <div class="flex-1 min-w-0">
+                <h3 class="font-semibold text-gray-900 mb-1" style="font-size: 0.95rem; line-height: 1.3; word-break: break-all;">{product.name}</h3>
+                <div class="text-blue-600 font-bold mb-1" style="font-size: 0.9rem;">코드: {product.code}</div>
+                <div class="text-gray-600" style="font-size: 0.8rem;">원가: {product.cost ? `${product.cost.toLocaleString()}원` : '0원'}</div>
+                <div class="text-gray-700" style="font-size: 0.85rem;">금액: {product.price.toLocaleString()}원</div>
+              </div>
             </div>
 
             <!-- 재고 컨트롤 (오른쪽 위 absolute) -->
@@ -331,12 +346,23 @@
               </div>
             </div>
 
-            <!-- 단종 처리 버튼 (오른쪽 아래 absolute) -->
-            <div class="absolute" style="bottom: 6px; right: 6px;">
+            <!-- 하단 버튼들 -->
+            <div class="absolute flex" style="bottom: 6px; right: 6px; gap: 4px;">
+              <!-- 🖨️ 바코드 출력 버튼 (신규 추가) -->
+              <button 
+                type="button"
+                class="bg-purple-500 text-white border-0 rounded cursor-pointer hover:bg-purple-600 transition-all duration-200"
+                style="padding: 0.25rem 0.5rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);"
+                on:click={() => openBarcodeModal(product)}
+              >
+                🖨️ 출력
+              </button>
+              
+              <!-- 단종 처리 버튼 -->
               <button 
                 type="button"
                 class="border-0 rounded cursor-pointer transition-all duration-200 {product.discontinued ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-gray-400 text-white hover:bg-gray-500'}"
-                style="padding: 0.2rem 0.4rem; font-size: 0.65rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);"
+                style="padding: 0.25rem 0.5rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);"
                 on:click={() => toggleDiscontinued(product.code)}
               >
                 {product.discontinued ? '단종 취소' : '단종 처리'}
@@ -352,6 +378,13 @@
     {/if}
   </main>
 </div>
+
+<!-- 바코드 출력 모달 -->
+<BarcodeModal 
+  bind:isOpen={showBarcodeModal} 
+  bind:productData={selectedProduct}
+/>
+
 {:else}
   <div class="min-h-screen flex items-center justify-center bg-gray-50">
     <div class="text-center">
