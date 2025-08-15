@@ -1,19 +1,24 @@
-<!-- BarcodeModal.svelte - TSC 프린터 연동 버전 -->
+<!-- DirectPrint.svelte - 직접 TSC 바코드 출력 -->
 <script>
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
+  import { createEventDispatcher } from 'svelte';
   
-  export let isOpen = false;
+  const dispatch = createEventDispatcher();
+  
+  export let isOpen = false; // 기존 모달 기능 유지
   export let productData = null;
+  export let autoPrint = false;
   
   let printConfig = {
     showText: true
   };
   
+  // 출력 수량은 별도 관리 (항상 1장으로 초기화)
+  let printQuantity = 1;
+  
   let isPrinting = false;
   let printStatus = '준비됨';
-  let barcodeCanvas;
-  let JsBarcode = null;
   
   // 중복 출력 방지를 위한 전역 플래그
   let printWindowOpened = false;
@@ -47,8 +52,12 @@
   
   onMount(() => {
     loadConfig();
-    loadBarcodeLibrary();
-    checkTSCConnection();
+    //checkTSCConnection();
+    
+    // autoPrint가 true면 자동으로 출력 실행
+    if (autoPrint && productData) {
+      printToTSC();
+    }
   });
   
   // TSC 프린터 연결 확인 (iframe 방식 - Base64)
@@ -146,20 +155,21 @@
     if (!productData || isPrinting) return;
     
     const now = Date.now();
-    if (now - lastPrintTime < 2000) {
-      alert('너무 빠른 연속 출력입니다. 2초 후 다시 시도해주세요.');
+    if (now - lastPrintTime < 500) {
+      alert('너무 빠른 연속 출력입니다. 0.5초 후 다시 시도해주세요.');
       return;
     }
     
     lastPrintTime = now;
     isPrinting = true;
-    printStatus = 'TSC 출력 중...';
+    printStatus = `TSC 출력 중... (${printQuantity}장)`;
     
     try {
       const tscCommands = generateTSCCommands({
         productCode: productData.code,
         productName: productData.name,
-        proudctPrice: '(' + productData.price * 0.001 + ')'
+        proudctPrice: '(' + productData.price * 0.001 + ')',
+        quantity: printQuantity
       });
       
       console.log('📦 TSC 명령어 전송:', tscCommands);
@@ -170,27 +180,53 @@
           code: productData.code,
           name: productData.name,
           price: productData.price
-        }
+        },
+        quantity: printQuantity
       };
       
       const result = await accessTSCViaIframe('https://localhost:8443/print', 'POST', requestData);
       
       if (result.success) {
-        printStatus = '✅ TSC 출력 완료!';
+        printStatus = `✅ TSC 출력 완료! (${printQuantity}장)`;
         console.log('✅ TSC 출력 성공:', result.data?.message);
+        
+        // 자동 출력 모드일 때는 성공 이벤트 발생
+        if (autoPrint) {
+          dispatch('printSuccess', { 
+            message: `TSC 바코드 출력 완료 (${printQuantity}장)`,
+            product: productData,
+            quantity: printQuantity
+          });
+        }
         
         setTimeout(() => {
           if (isOpen) closeModal();
         }, 1500);
       } else {
         printStatus = '❌ TSC 출력 실패';
-        alert('TSC 출력 실패: ' + result.error);
+        
+        if (autoPrint) {
+          dispatch('printError', { 
+            error: result.error,
+            product: productData 
+          });
+        } else {
+          alert('TSC 출력 실패: ' + result.error);
+        }
       }
       
     } catch (error) {
       console.error('TSC 출력 오류:', error);
       printStatus = '❌ 출력 오류';
-      alert('TSC 프린터 오류: ' + error.message);
+      
+      if (autoPrint) {
+        dispatch('printError', { 
+          error: error.message,
+          product: productData 
+        });
+      } else {
+        alert('TSC 프린터 오류: ' + error.message);
+      }
     } finally {
       setTimeout(() => {
         isPrinting = false;
@@ -200,7 +236,7 @@
   }
   
   // TSC 명령어 생성 (30mm x 20mm 라벨)
-  function generateTSCCommands({ productCode, productName, proudctPrice }) {
+  function generateTSCCommands({ productCode, productName, proudctPrice, quantity = 1 }) {
     let commands = '';
 
     // SPEED 인쇄속도( 1.0(TTP-242만) , 1.5 , 2.0 , 3.0(TTP-243만) )
@@ -228,10 +264,6 @@
     // GAP 라벨사이의 거리,라벨사이의 거리에서 차감
     commands += 'GAP 3 mm, 0 mm\r\n';
 
-    // Print #1, "OFFSET 3.2 mm" + CRLF
-    // OFFSET 라벨 정지위치설정 ( PEEL OFF나 CUTTER 모드에서만 사용 가능 )
-    // ( inch 사용 시 위 예제 , mm 사용 시 OFFSET 12.7 mm )
-
     commands += 'REFERENCE 0, 0\r\n';   
     // 이미지 버퍼 지움 ( Memory Clear )
     commands += 'CLS\r\n';
@@ -249,76 +281,22 @@
     // 위치: x=20, y=100 (하단)
     commands += `TEXT 160,60,"1",0,1,1,"${proudctPrice}"\r\n`;
     
-    // 출력 명령 (1장)
-    commands += 'PRINT 1,1\r\n';
+    // 출력 명령 (quantity장, 복사본 1장)
+    commands += `PRINT ${quantity},1\r\n`;
     
     return commands;
-  }
-  
-  // JsBarcode 라이브러리 로드 (미리보기용)
-  async function loadBarcodeLibrary() {
-    if (!browser) return;
-    
-    if (typeof window !== 'undefined' && window.JsBarcode) {
-      JsBarcode = window.JsBarcode;
-      console.log('✅ JsBarcode 로드됨');
-      return;
-    }
-    
-    try {
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/jsbarcode@3.11.5/dist/JsBarcode.all.min.js';
-      script.onload = () => {
-        if (typeof window !== 'undefined') {
-          JsBarcode = window.JsBarcode;
-          console.log('✅ JsBarcode CDN 로드 성공');
-          generateBarcode();
-        }
-      };
-      script.onerror = () => {
-        console.warn('❌ JsBarcode 로드 실패');
-        printStatus = '바코드 라이브러리 로드 실패';
-      };
-      document.head.appendChild(script);
-    } catch (error) {
-      console.error('JsBarcode 로드 오류:', error);
-    }
   }
   
   function loadConfig() {
     try {
       const saved = safeGetItem('barcodeConfig');
       if (saved) {
-        printConfig = { ...printConfig, ...JSON.parse(saved) };
+        const savedConfig = JSON.parse(saved);
+        // showText만 복원하고, quantity는 항상 1로 시작
+        printConfig.showText = savedConfig.showText !== undefined ? savedConfig.showText : true;
       }
     } catch (error) {
       console.error('설정 로드 오류:', error);
-    }
-  }
-  
-  // 바코드 생성 (미리보기용 - 30mm x 20mm 라벨 전용)
-  function generateBarcode() {
-    if (!productData || !JsBarcode || !barcodeCanvas || !browser) return;
-    
-    try {
-      // 30mm x 20mm 라벨에 맞는 바코드 크기 (픽셀 변환: 1mm ≈ 3.78px)
-      barcodeCanvas.width = 113;   // 30mm = 113px
-      barcodeCanvas.height = 76;   // 20mm = 76px
-      
-      JsBarcode(barcodeCanvas, productData.code, {
-        format: 'CODE128',
-        width: 1,              // 바 너비 최소
-        height: 35,            // 바코드 높이 35px (라벨에 맞게)
-        displayValue: printConfig.showText,
-        fontSize: 8,           // 폰트 크기 작게
-        margin: 2,             // 여백 최소
-        background: '#ffffff',
-        lineColor: '#000000'
-      });
-      
-      console.log('✅ 30x20mm 라벨용 바코드 생성 완료');
-    } catch (error) {
-      console.error('바코드 생성 실패:', error);
     }
   }
   
@@ -326,18 +304,47 @@
     isOpen = false;
     // 모달 닫을 때 플래그 초기화
     printWindowOpened = false;
+    // 수량도 1로 초기화
+    printQuantity = 1;
+  }
+  
+  // 직접 출력 함수 (외부에서 호출 가능)
+  export function directPrint(quantity = null) {
+    if (productData && !isPrinting) {
+      // 매개변수로 수량이 전달되면 임시로 설정
+      if (quantity !== null) {
+        printQuantity = quantity;
+      }
+      printToTSC();
+    }
   }
   
   function saveConfig() {
-    safeSetItem('barcodeConfig', JSON.stringify(printConfig));
+    // showText만 저장하고, quantity는 저장하지 않음
+    const configToSave = {
+      showText: printConfig.showText
+    };
+    safeSetItem('barcodeConfig', JSON.stringify(configToSave));
   }
   
-  // 반응형 바코드 생성
-  $: if (isOpen && productData && JsBarcode && barcodeCanvas) {
-    generateBarcode();
+  // 수량 변경 핸들러
+  function handleQuantityChange(event) {
+    let value = parseInt(event.target.value);
+    if (isNaN(value) || value < 1) {
+      value = 1;
+    } else if (value > 99) {
+      value = 99;
+    }
+    printQuantity = value;
+    // 수량은 저장하지 않음
   }
   
-  // 모달이 열릴 때마다 TSC 연결 상태 확인
+  // autoPrint가 변경될 때 자동 출력 실행
+  $: if (autoPrint && productData && !isPrinting) {
+    printToTSC();
+  }
+  
+  // 모달이 열릴 때 TSC 연결 상태 확인
   $: if (isOpen) {
     checkTSCConnection();
   }
@@ -413,25 +420,46 @@
         </div>
       </div>
       
-      <!-- 바코드 미리보기 -->
-      <div class="bg-white border rounded-lg p-4 mb-4 text-center">
-        <h3 class="text-sm font-medium text-gray-700 mb-3">바코드 미리보기 (30×20mm)</h3>
-        {#if JsBarcode}
-          <canvas 
-            bind:this={barcodeCanvas}
-            class="border border-gray-200 max-w-full"
-          ></canvas>
-          <div class="text-xs text-gray-500 mt-2">실제 TSC 출력과 다를 수 있음</div>
-        {:else}
-          <div class="border border-gray-200 p-8 bg-gray-50 rounded">
-            <div class="text-4xl text-gray-400 mb-2">🏷️</div>
-            <div class="text-sm text-gray-500">바코드 라이브러리 로드 중...</div>
-          </div>
-        {/if}
-      </div>
-      
       <!-- 출력 설정 -->
       <div class="space-y-4 mb-6">
+        
+        <!-- 출력 수량 설정 -->
+        <div class="flex justify-between items-center">
+          <label class="text-sm font-medium text-gray-700">출력 수량</label>
+          <div class="flex items-center gap-2">
+            <button 
+              on:click={() => {
+                if (printQuantity > 1) {
+                  printQuantity--;
+                }
+              }}
+              disabled={isPrinting || printQuantity <= 1}
+              class="w-8 h-8 bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 rounded-full flex items-center justify-center text-lg font-bold"
+            >
+              -
+            </button>
+            <input 
+              type="number" 
+              min="1" 
+              max="99" 
+              bind:value={printQuantity}
+              on:input={handleQuantityChange}
+              disabled={isPrinting}
+              class="w-16 text-center border border-gray-300 rounded px-2 py-1 text-sm font-bold disabled:bg-gray-100"
+            >
+            <button 
+              on:click={() => {
+                if (printQuantity < 99) {
+                  printQuantity++;
+                }
+              }}
+              disabled={isPrinting || printQuantity >= 99}
+              class="w-8 h-8 bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 rounded-full flex items-center justify-center text-lg font-bold"
+            >
+              +
+            </button>
+          </div>
+        </div>
         
         <!-- 텍스트 표시 -->
         <div class="flex justify-between items-center">
@@ -459,9 +487,9 @@
         >
           {#if isPrinting}
             <div class="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
-            TSC 출력 중...
+            TSC 출력 중... ({printQuantity}장)
           {:else}
-            🖨️ TSC 바코드 출력
+            🖨️ TSC 바코드 출력 ({printQuantity}장)
           {/if}
         </button>
         
@@ -478,6 +506,7 @@
       <div class="mt-4 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg text-center">
         🖨️ TSC TTP-244 Pro 전용 30×20mm 라벨 출력<br>
         🔧 iframe 방식으로 CSP 우회 접근<br>
+        📊 출력 수량: 1~99장 설정 가능<br>
         {tscConnected ? '✅ 연결 상태: 정상' : '⚠️ TSC 에이전트를 먼저 실행하세요'}
       </div>
       
@@ -490,6 +519,20 @@
     </div>
     {/if}
     
+  </div>
+</div>
+{/if}
+
+<!-- 자동 출력 모드일 때 표시할 간단한 상태 표시 -->
+{#if autoPrint && isPrinting}
+<div class="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg border border-gray-200 p-4 z-50 min-w-[280px]">
+  <div class="flex items-center gap-3">
+    <div class="animate-spin w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full"></div>
+    <div>
+      <div class="font-medium text-gray-900">TSC 바코드 출력 중... ({printQuantity}장)</div>
+      <div class="text-sm text-gray-600">{productData?.name || ''}</div>
+      <div class="text-xs text-gray-500">{printStatus}</div>
+    </div>
   </div>
 </div>
 {/if}
