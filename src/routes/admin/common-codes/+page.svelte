@@ -415,7 +415,7 @@
       {#if typeof window !== 'undefined' && window.innerWidth <= 1024 && leftPanelVisible}
         <div 
           class="fixed inset-0 bg-black bg-opacity-50 z-20"
-          style="top: 70px;"
+          style="top: calc(env(safe-area-inset-top, 0px) + 70px);"
           on:click={handleOverlayClick}
           on:touchstart={handleOverlayClick}
           on:touchmove|preventDefault
@@ -428,8 +428,8 @@
            class:fixed={typeof window !== 'undefined' && window.innerWidth <= 1024}
            class:left-0={typeof window !== 'undefined' && window.innerWidth <= 1024}
            class:bg-white={typeof window !== 'undefined' && window.innerWidth <= 1024}
-           style:top={typeof window !== 'undefined' && window.innerWidth <= 1024 ? '70px' : 'auto'}
-           style:height={typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - 70px)' : 'auto'}
+           style:top={typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(env(safe-area-inset-top, 0px) + 70px)' : 'auto'}
+           style:height={typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - env(safe-area-inset-top, 0px) - 70px)' : 'auto'}
            style:box-shadow={typeof window !== 'undefined' && window.innerWidth <= 1024 ? '2px 0 8px rgba(0,0,0,0.1)' : 'none'}
            style:transform={typeof window !== 'undefined' && window.innerWidth <= 1024 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
            on:click={handlePanelClick}>
@@ -476,7 +476,10 @@
           </div>
           
           <!-- 목록 - 화면 맨 아래까지 -->
-          <div class="overflow-y-auto" style="max-height: calc(100vh - 250px);">
+          <div class="overflow-y-auto" 
+            style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 
+            ? 'calc(100vh - env(safe-area-inset-top, 0px) - 320px)' 
+            : 'calc(100vh - 250px)'};"> 
             {#if loading}
               <div class="text-center text-gray-600" style="padding: 30px 15px;">
                 <div class="mx-auto mb-2.5 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin" style="width: 25px; height: 25px;"></div>

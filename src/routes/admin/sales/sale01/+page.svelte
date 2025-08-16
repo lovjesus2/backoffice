@@ -4,7 +4,8 @@
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { simpleCache } from '$lib/utils/simpleImageCache';
-  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
+  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';  // 🔄 변경
+  import ImageModalStock from '$lib/components/ImageModalStock.svelte';  // 🔄 추가
 
   // 부모 레이아웃에서 전달받은 사용자 정보
   export let data;
@@ -33,12 +34,30 @@
     await simpleCache.handleImage(event.target);
   }
 
-  // 이미지 클릭 핸들러 (새로 추가)
-  function handleImageClick(productCode, productName) {
-    const imageSrc = getProxyImageUrl(productCode);
+  // 🔄 이미지 클릭 핸들러 수정 - productCode만 전달
+  function handleImageClick(item) {
+    const imageSrc = getProxyImageUrl(item.itemCode);
     if (imageSrc) {
-      openImageModal(imageSrc, productName);
+      // productCode만 전달하고 이미지 모달에서 API로 제품 정보 조회
+      openImageModal(imageSrc, item.itemName, item.itemCode);
     }
+  }
+
+  // 🔄 재고 업데이트 이벤트 처리 추가
+  function handleStockUpdated(event) {
+    const { productCode, newStock } = event.detail;
+    salesGroups = salesGroups.map(group => ({
+      ...group,
+      items: group.items.map(item => 
+        item.itemCode === productCode 
+          ? { ...item, currentStock: newStock }
+          : item
+      )
+    }));
+  }
+
+  function handleDiscontinuedUpdated(event) {
+    console.log('단종 상태 업데이트:', event.detail);
   }
 
   // 숫자 포맷팅
@@ -125,7 +144,7 @@
     <h1 class="m-0 text-xl font-semibold text-gray-800">매출 조회</h1>
   </header>
 
-  <!-- 메인 콘텐츠 -->
+  <!-- 메인 컨텐츠 -->
   <main class="p-0">
     <!-- 검색 폼 -->
     <form class="bg-white rounded-lg mx-1 px-3 py-3 shadow-sm mb-1" style="box-shadow: 0 1px 3px rgba(0,0,0,0.1);" on:submit|preventDefault={handleSearch}>
@@ -275,7 +294,7 @@
                         class="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
                         on:load={cacheImage}
                         on:error={(e) => { e.target.style.display = 'none'; }}
-                        on:click={() => handleImageClick(item.itemCode, item.itemName)}
+                        on:click={() => handleImageClick(item)}
                       />
                     {:else}
                       <span class="text-xs text-gray-500 text-center leading-3 md:text-[10px]">이미지<br/>없음</span>
@@ -323,3 +342,9 @@
     {/if}
   </main>
 </div>
+
+<!-- 🔄 ImageModalStock 컴포넌트 추가 -->
+<ImageModalStock 
+  on:stockUpdated={handleStockUpdated}
+  on:discontinuedUpdated={handleDiscontinuedUpdated}
+/>

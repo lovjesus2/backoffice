@@ -1,9 +1,11 @@
+<!-- src/routes/admin/sales/calendar/+page.svelte -->
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { simpleCache } from '$lib/utils/simpleImageCache';
-  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
+  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';  // 🔄 변경
+  import ImageModalStock from '$lib/components/ImageModalStock.svelte';  // 🔄 추가
 
   // 상태 변수들
   let currentYear = new Date().getFullYear();
@@ -48,8 +50,28 @@
     await simpleCache.handleImage(event.target);
   }
 
+  // 🔄 이미지 클릭 핸들러 수정 - productCode만 전달
   function handleImageClick(productCode, productName) {
-    openImageModal(getProxyImageUrl(productCode), productName);
+    const imageSrc = getProxyImageUrl(productCode);
+    if (imageSrc) {
+      // productCode를 세 번째 파라미터로 전달
+      openImageModal(imageSrc, productName, productCode);
+    }
+  }
+
+  // 🔄 재고 업데이트 이벤트 처리 추가
+  function handleStockUpdated(event) {
+    const { productCode, newStock } = event.detail;
+    // dailySalesDetail에서 해당 제품의 재고 정보 업데이트
+    dailySalesDetail = dailySalesDetail.map(item => 
+      item.pcode === productCode 
+        ? { ...item, currentStock: newStock }
+        : item
+    );
+  }
+
+  function handleDiscontinuedUpdated(event) {
+    console.log('단종 상태 업데이트:', event.detail);
   }
 
   // 캘린더 그리드 생성
@@ -562,3 +584,9 @@
     </div>
   </div>
 {/if}
+
+<!-- 🔄 ImageModalStock 컴포넌트 추가 -->
+<ImageModalStock 
+  on:stockUpdated={handleStockUpdated}
+  on:discontinuedUpdated={handleDiscontinuedUpdated}
+/>
