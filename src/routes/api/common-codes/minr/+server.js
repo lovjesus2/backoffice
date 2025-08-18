@@ -27,7 +27,7 @@ export async function GET({ url, cookies }) {
     }
     
     let sql = `
-      SELECT MINR_MJCD, MINR_CODE, MINR_NAME, MINR_BIGO, MINR_BIG2,
+      SELECT MINR_MJCD, MINR_CODE, MINR_NAME, MINR_BIGO, MINR_BIG2, MINR_SORT
              MINR_IDAT, MINR_IUSR, MINR_UDAT, MINR_UUSR
       FROM BISH_MINR
       WHERE MINR_MJCD = ?
@@ -39,7 +39,7 @@ export async function GET({ url, cookies }) {
       params.push(`%${searchTerm}%`, `%${searchTerm}%`);
     }
     
-    sql += ` ORDER BY MINR_CODE`;
+    sql += ` ORDER BY MINR_SORT ASC`;
     
     const [rows] = await db.execute(sql, params);
     
