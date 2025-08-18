@@ -13,10 +13,20 @@
   let error = '';
   let success = '';
   
-  // 검색
-  let majrSearchTerm = '';
+  // 검색 필터 상태
+  let companyList = []; // 회사구분 목록
+  let registrationList = []; // 등록구분 목록  
+  let productTypeList = []; // 제품구분 목록 (상세구분에서 변경)
   
-  // 대분류 편집 폼 (신규 입력 모드로 시작)
+  let selectedCompany = ''; // 선택된 회사구분
+  let selectedRegistration = ''; // 선택된 등록구분
+  let selectedProductType = ''; // 선택된 제품구분 (상세구분에서 변경)
+  let searchKeyword = ''; // 검색어
+  
+  // 제품구분 표시 여부 (등록구분이 "제품정보"일 때만)
+  $: showProductType = registrationList.find(item => item.MINR_CODE === selectedRegistration)?.MINR_NAME === '제품정보';
+  
+  // 카테고리 편집 폼 (신규 입력 모드로 시작)
   let majrEditForm = {
     MAJR_CODE: '',
     MAJR_NAME: '',
@@ -32,11 +42,16 @@
   // 모바일에서 백오피스 메뉴 상태 감지
   let backofficeMenuOpen = false;
   
-  // 페이지 로드 시 대분류 목록 조회
-  onMount(() => {
+  // 페이지 로드 시 초기화
+  onMount(async () => {
     // 모바일에서는 초기에 대분류 패널 숨김, PC에서는 표시
     leftPanelVisible = window.innerWidth > 768;
-    loadMajrList();
+    
+    // 회사구분 목록과 카테고리 목록 동시 로드
+    await Promise.all([
+      loadCompanyList(),
+      loadMajrList()
+    ]);
     
     // 백오피스 메뉴 상태 감지
     const detectBackofficeMenu = () => {
@@ -83,21 +98,143 @@
       leftPanelVisible = false;
     }
   }
+
+  // 회사구분 목록 조회 (MINR_MJCD = 'A0001')
+  async function loadCompanyList() {
+    try {
+      const response = await fetch('/api/common-codes/minr?majr_code=A0001');
+      const result = await response.json();
+      
+      if (result.success) {
+        companyList = result.data.sort((a, b) => parseInt(a.MINR_SORT) - parseInt(b.MINR_SORT));
+        // 첫 번째 항목 자동 선택
+        if (companyList.length > 0) {
+          selectedCompany = companyList[0].MINR_CODE;
+          await handleCompanyChange();
+        }
+      } else {
+        console.error('회사구분 조회 실패:', result.message);
+      }
+    } catch (err) {
+      console.error('회사구분 조회 오류:', err);
+    }
+  }
+
+  // 등록구분 목록 조회 (선택된 회사구분의 MINR_BIGO 값으로 조회)
+  async function loadRegistrationList(companyBigo) {
+    try {
+      if (!companyBigo) {
+        registrationList = [];
+        return;
+      }
+      
+      const response = await fetch(`/api/common-codes/minr?majr_code=${companyBigo}`);
+      const result = await response.json();
+      
+      if (result.success) {
+        registrationList = result.data.sort((a, b) => parseInt(a.MINR_SORT) - parseInt(b.MINR_SORT));
+        
+        // 첫 번째 항목 자동 선택
+        if (registrationList.length > 0) {
+          selectedRegistration = registrationList[0].MINR_CODE;
+          
+          // 선택된 항목이 제품정보인 경우 제품구분 로드
+          if (registrationList[0].MINR_NAME === '제품정보') {
+            await loadProductTypeList();
+          } else {
+            productTypeList = [];
+            selectedProductType = '';
+          }
+        }
+      } else {
+        console.error('등록구분 조회 실패:', result.message);
+        registrationList = [];
+      }
+      
+    } catch (err) {
+      console.error('등록구분 조회 오류:', err);
+      registrationList = [];
+    }
+  }
+
+  // 제품구분 목록 조회 (CD001 고정)
+  async function loadProductTypeList() {
+    try {
+      const response = await fetch('/api/common-codes/minr?majr_code=CD001');
+      const result = await response.json();
+      
+      if (result.success) {
+        const sortedData = result.data.sort((a, b) => parseInt(a.MINR_SORT) - parseInt(b.MINR_SORT));
+        // "전체" 옵션을 맨 앞에 추가
+        productTypeList = [
+          { MINR_CODE: 'ALL', MINR_NAME: '전체', MINR_SORT: -1 },
+          ...sortedData
+        ];
+        // "전체" 자동 선택
+        selectedProductType = 'ALL';
+      } else {
+        console.error('제품구분 조회 실패:', result.message);
+        productTypeList = [];
+      }
+      
+    } catch (err) {
+      console.error('제품구분 조회 오류:', err);
+      productTypeList = [];
+    }
+  }
+
+  // 회사구분 선택 시 처리
+  async function handleCompanyChange() {
+    const selectedCompanyItem = companyList.find(item => item.MINR_CODE === selectedCompany);
+    if (selectedCompanyItem && selectedCompanyItem.MINR_BIGO) {
+      await loadRegistrationList(selectedCompanyItem.MINR_BIGO);
+    } else {
+      registrationList = [];
+      selectedRegistration = '';
+      selectedProductType = '';
+      productTypeList = [];
+    }
+  }
+
+  // 등록구분 선택 시 처리
+  async function handleRegistrationChange() {
+    const selectedRegistrationItem = registrationList.find(item => item.MINR_CODE === selectedRegistration);
+    
+    // 제품정보가 선택된 경우에만 제품구분 로드
+    if (selectedRegistrationItem && selectedRegistrationItem.MINR_NAME === '제품정보') {
+      await loadProductTypeList();
+    } else {
+      productTypeList = [];
+      selectedProductType = '';
+    }
+  }
+
+  // 검색 실행
+  function handleSearch() {
+    console.log('검색 조건:', {
+      company: selectedCompany,
+      registration: selectedRegistration,
+      productType: selectedProductType,
+      keyword: searchKeyword
+    });
+    // 여기에 실제 검색 로직 구현
+  }
   
-  // 대분류 목록 조회
+  // 카테고리 목록 조회 (임시 데이터)
   async function loadMajrList() {
     try {
       loading = true;
-      const params = new URLSearchParams();
-      if (majrSearchTerm) params.append('search', majrSearchTerm);
       
-      // 임시 데이터 (제품 카테고리)
-      majrList = [
-        { MAJR_CODE: 'ELEC', MAJR_NAME: '전자제품', MAJR_BIGO: '전자제품 카테고리', MAJR_BIG2: '' },
-        { MAJR_CODE: 'FURN', MAJR_NAME: '가구', MAJR_BIGO: '가구 카테고리', MAJR_BIG2: '' },
-        { MAJR_CODE: 'CLTH', MAJR_NAME: '의류', MAJR_BIGO: '의류 카테고리', MAJR_BIG2: '' },
-        { MAJR_CODE: 'BOOK', MAJR_NAME: '도서', MAJR_BIGO: '도서 카테고리', MAJR_BIG2: '' }
+      // 임시 카테고리 데이터
+      const tempData = [
+        { MAJR_CODE: 'ELEC', MAJR_NAME: '전자제품', MAJR_BIGO: '전자기기', MAJR_BIG2: '' },
+        { MAJR_CODE: 'FURN', MAJR_NAME: '가구', MAJR_BIGO: '가정용 가구', MAJR_BIG2: '' },
+        { MAJR_CODE: 'CLTH', MAJR_NAME: '의류', MAJR_BIGO: '패션 의류', MAJR_BIG2: '' },
+        { MAJR_CODE: 'BOOK', MAJR_NAME: '도서', MAJR_BIGO: '서적 및 잡지', MAJR_BIG2: '' },
+        { MAJR_CODE: 'SPRT', MAJR_NAME: '스포츠용품', MAJR_BIGO: '운동용품', MAJR_BIG2: '' }
       ];
+      
+      majrList = tempData;
     } catch (err) {
       error = err.message;
     } finally {
@@ -105,18 +242,30 @@
     }
   }
   
-  // 소분류 목록 조회
+  // 제품 목록 조회 (임시 데이터)
   async function loadMinrList(majrCode) {
     try {
       loading = true;
-      const params = new URLSearchParams({ majr_code: majrCode });
       
-      // 임시 데이터 (제품 목록)
-      minrList = [
-        { MINR_MJCD: majrCode, MINR_CODE: 'P001', MINR_NAME: '스마트폰', MINR_BIGO: '최신 스마트폰', MINR_BIG2: '', isNew: false, isDeleted: false },
-        { MINR_MJCD: majrCode, MINR_CODE: 'P002', MINR_NAME: '노트북', MINR_BIGO: '고성능 노트북', MINR_BIG2: '', isNew: false, isDeleted: false },
-        { MINR_MJCD: majrCode, MINR_CODE: 'P003', MINR_NAME: '태블릿', MINR_BIGO: '휴대용 태블릿', MINR_BIG2: '', isNew: false, isDeleted: false }
-      ];
+      // 임시 제품 데이터
+      const tempProducts = {
+        'ELEC': [
+          { MINR_MJCD: 'ELEC', MINR_CODE: 'P001', MINR_NAME: '스마트폰', MINR_BIGO: '최신 스마트폰', MINR_BIG2: '', isNew: false, isDeleted: false },
+          { MINR_MJCD: 'ELEC', MINR_CODE: 'P002', MINR_NAME: '노트북', MINR_BIGO: '고성능 노트북', MINR_BIG2: '', isNew: false, isDeleted: false }
+        ],
+        'FURN': [
+          { MINR_MJCD: 'FURN', MINR_CODE: 'F001', MINR_NAME: '소파', MINR_BIGO: '3인용 소파', MINR_BIG2: '', isNew: false, isDeleted: false }
+        ],
+        'CLTH': [
+          { MINR_MJCD: 'CLTH', MINR_CODE: 'C001', MINR_NAME: 'T셔츠', MINR_BIGO: '면 100%', MINR_BIG2: '', isNew: false, isDeleted: false }
+        ]
+      };
+      
+      minrList = (tempProducts[majrCode] || []).map(item => ({
+        ...item,
+        isNew: false,
+        isDeleted: false
+      }));
       originalMinrList = JSON.parse(JSON.stringify(minrList));
     } catch (err) {
       error = err.message;
@@ -125,7 +274,7 @@
     }
   }
   
-  // 대분류 선택
+  // 카테고리 선택
   function selectMajr(majr) {
     selectedMajr = majr;
     majrEditForm = {
@@ -143,23 +292,10 @@
     }
   }
   
-  // 신규 대분류 모드
-  function newMajrMode() {
-    selectedMajr = null;
-    majrEditForm = {
-      MAJR_CODE: '',
-      MAJR_NAME: '',
-      MAJR_BIGO: '',
-      MAJR_BIG2: '',
-      isNew: true
-    };
-    minrList = [];
-  }
-  
   // 행 추가
   function addNewRow() {
     if (!selectedMajr && majrEditForm.isNew && !majrEditForm.MAJR_CODE) {
-      error = '먼저 대분류 정보를 입력해주세요.';
+      error = '먼저 카테고리 정보를 입력해주세요.';
       return;
     }
     
@@ -191,50 +327,109 @@
     minrList = [...minrList]; // 반응성 트리거
   }
   
-  // 전체 저장 (대분류 + 소분류)
+  // 전체 저장 (카테고리 + 제품)
   async function saveAll() {
     try {
       if (!majrEditForm.MAJR_CODE || !majrEditForm.MAJR_NAME) {
-        error = '대분류 코드와 명칭을 입력해주세요.';
+        error = '카테고리 코드와 명칭을 입력해주세요.';
         return;
       }
       
       loading = true;
       error = '';
       
-      // 임시 저장 로직
+      // 임시 저장 로직 (실제로는 API 호출)
       success = '저장이 완료되었습니다.';
       
-      // 목록 새로고침 시뮬레이션
+      // 목록 새로고침
       await loadMajrList();
-      if (selectedMajr) {
-        await loadMinrList(selectedMajr.MAJR_CODE);
+      
+      // 신규 등록이었다면 해당 카테고리 선택
+      if (majrEditForm.isNew) {
+        const savedMajr = majrList.find(m => m.MAJR_CODE === majrEditForm.MAJR_CODE);
+        if (savedMajr) {
+          selectMajr(savedMajr);
+        }
+      } else if (selectedMajr) {
+        const updatedMajr = majrList.find(m => m.MAJR_CODE === selectedMajr.MAJR_CODE);
+        if (updatedMajr) {
+          selectMajr(updatedMajr);
+        }
       }
+      
     } catch (err) {
       error = err.message;
     } finally {
       loading = false;
-      // 3초 후 성공 메시지 제거
-      if (success) {
-        setTimeout(() => {
-          success = '';
-        }, 3000);
-      }
     }
   }
   
-  // 오버레이 클릭 핸들러
-  function handleOverlayClick() {
+  // 검색 처리 (handleMajrSearch 제거)
+  
+  // 메시지 자동 숨김
+  $: if (success) {
+    setTimeout(() => success = '', 3000);
+  }
+  
+  $: if (error) {
+    setTimeout(() => error = '', 5000);
+  }
+  
+  // 표시할 제품 목록 (삭제되지 않은 것들만)
+  $: visibleMinrList = minrList.filter(item => !item.isDeleted);
+  
+  // 현재 편집 중인 카테고리 코드
+  $: currentMajrCode = selectedMajr ? selectedMajr.MAJR_CODE : majrEditForm.MAJR_CODE;
+
+  // 오버레이 클릭 처리 - 패널 닫기만 수행
+  function handleOverlayClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
     leftPanelVisible = false;
   }
-  
-  // 스크롤 방지
-  let scrolling = false;
-  function preventScrolling(event) {
-    if (leftPanelVisible && typeof window !== 'undefined' && window.innerWidth <= 1024) {
-      event.preventDefault();
+
+  // 패널 내부 클릭 시 이벤트 전파 중지 (터치는 제외)
+  function handlePanelClick(event) {
+    event.stopPropagation();
+  }
+
+  // 카테고리 선택 시 터치와 클릭 구분
+  let touchStartTime = 0;
+  let touchStartY = 0;
+  let isTouchScrolling = false;
+
+  function handleMajrTouchStart(event, majr) {
+    touchStartTime = Date.now();
+    touchStartY = event.touches[0].clientY;
+    isTouchScrolling = false;
+  }
+
+  function handleMajrTouchMove(event) {
+    if (!touchStartTime) return;
+    
+    const currentY = event.touches[0].clientY;
+    const deltaY = Math.abs(currentY - touchStartY);
+    
+    // 5px 이상 움직이면 스크롤로 간주
+    if (deltaY > 5) {
+      isTouchScrolling = true;
     }
-    scrolling = false;
+  }
+
+  function handleMajrTouchEnd(event, majr) {
+    event.stopPropagation();
+    
+    const touchDuration = Date.now() - touchStartTime;
+    
+    // 스크롤 중이거나 너무 오래 눌렀으면 선택 안함
+    if (!isTouchScrolling && touchDuration < 500) {
+      selectMajr(majr);
+    }
+    
+    // 초기화
+    touchStartTime = 0;
+    touchStartY = 0;
+    isTouchScrolling = false;
   }
 </script>
 
@@ -285,256 +480,325 @@
       {#if typeof window !== 'undefined' && window.innerWidth <= 1024 && leftPanelVisible}
         <div 
           class="fixed inset-0 bg-black bg-opacity-50 z-20"
-          style="top: 70px;"
+          style="top: calc(env(safe-area-inset-top, 0px) + 70px);"
           on:click={handleOverlayClick}
           on:touchstart={handleOverlayClick}
           on:touchmove|preventDefault
         ></div>
       {/if}
 
-      <!-- 왼쪽 패널: 대분류 목록 -->
+      <!-- 왼쪽 패널: 검색 및 카테고리 목록 -->
       <div class="transition-all duration-300 {leftPanelVisible ? 'opacity-100' : 'opacity-0'} lg:relative lg:ml-2.5 {leftPanelVisible ? '' : 'hidden'}" 
            style="flex: 0 0 {leftPanelVisible ? '350px' : '0px'}; background: transparent; z-index: 25;"
            class:fixed={typeof window !== 'undefined' && window.innerWidth <= 1024}
            class:left-0={typeof window !== 'undefined' && window.innerWidth <= 1024}
            class:bg-white={typeof window !== 'undefined' && window.innerWidth <= 1024}
-           style:top={typeof window !== 'undefined' && window.innerWidth <= 1024 ? '70px' : 'auto'}
-           style:height={typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - 70px)' : 'auto'}
-           style:width={typeof window !== 'undefined' && window.innerWidth <= 1024 ? '85%' : leftPanelVisible ? '350px' : '0px'}
-           style:max-width={typeof window !== 'undefined' && window.innerWidth <= 1024 ? '350px' : 'none'}>
-
-        <div class="bg-white rounded-lg shadow-sm border border-gray-200 h-full flex flex-col" style="height: calc(100vh - 110px);">
-          <!-- 대분류 목록 헤더 -->
-          <div style="padding: 15px; border-bottom: 1px solid #e5e7eb; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-            <div class="flex items-center justify-between">
-              <h2 class="text-white font-medium m-0" style="font-size: 1rem;">카테고리 목록</h2>
+           style:top={typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(env(safe-area-inset-top, 0px) + 70px)' : 'auto'}
+           style:height={typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - env(safe-area-inset-top, 0px) - 70px)' : 'auto'}
+           style:box-shadow={typeof window !== 'undefined' && window.innerWidth <= 1024 ? '2px 0 8px rgba(0,0,0,0.1)' : 'none'}
+           style:transform={typeof window !== 'undefined' && window.innerWidth <= 1024 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
+           on:click={handlePanelClick}>
+        
+        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);" 
+             on:click={handlePanelClick}>
+          
+          <!-- 패널 헤더 -->
+          <div class="py-4 px-5 border-b border-gray-200 flex flex-col items-stretch gap-4 relative" style="gap: 15px;">
+            {#if typeof window !== 'undefined' && window.innerWidth <= 1024}
               <button 
-                class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded p-1.5 transition-all duration-200"
-                on:click={newMajrMode}
-                title="신규 카테고리"
+                class="absolute bg-red-600 text-white border-none rounded-full cursor-pointer flex items-center justify-center hover:bg-red-700 hover:scale-110 transition-all text-lg z-10"
+                style="top: 15px; right: 15px; width: 24px; height: 24px; font-size: 1.2rem;"
+                on:click|stopPropagation={() => leftPanelVisible = false}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 4V20M4 12H20" stroke="currentColor" stroke-width="2"/>
-                </svg>
+                ✕
               </button>
+            {/if}
+            
+            <div class="flex items-center gap-2.5">
+              <h2 class="text-gray-800 m-0" style="font-size: 1.1rem;">검색 및 선택</h2>
+            </div>
+            
+            <!-- 검색 필터 -->
+            <div class="space-y-3">
+              <!-- 회사구분 -->
+              <div class="flex flex-col">
+                <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.85rem;">회사구분</label>
+                <select 
+                  bind:value={selectedCompany}
+                  on:change={handleCompanyChange}
+                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  style="padding: 6px 10px; font-size: 0.85rem;"
+                >
+                  {#each companyList as company}
+                    <option value={company.MINR_CODE}>{company.MINR_NAME}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <!-- 등록구분 -->
+              <div class="flex flex-col">
+                <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.85rem;">등록구분</label>
+                <select 
+                  bind:value={selectedRegistration}
+                  on:change={handleRegistrationChange}
+                  disabled={registrationList.length === 0}
+                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-100"
+                  style="padding: 6px 10px; font-size: 0.85rem;"
+                >
+                  {#each registrationList as registration}
+                    <option value={registration.MINR_CODE}>{registration.MINR_NAME}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <!-- 제품구분 (등록구분이 "제품정보"일 때만 표시) -->
+              {#if showProductType}
+                <div class="flex flex-col">
+                  <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.85rem;">제품구분</label>
+                  <select 
+                    bind:value={selectedProductType}
+                    class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                    style="padding: 6px 10px; font-size: 0.85rem;"
+                  >
+                    {#each productTypeList as productType}
+                      <option value={productType.MINR_CODE}>{productType.MINR_NAME}</option>
+                    {/each}
+                  </select>
+                </div>
+              {/if}
+
+              <!-- 검색어 -->
+              <div class="flex flex-col">
+                <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.85rem;">검색어</label>
+                <div class="flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="검색어 입력..."
+                    bind:value={searchKeyword}
+                    class="flex-1 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                    style="padding: 6px 10px; font-size: 0.85rem;"
+                    on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                    on:blur={(e) => e.target.style.boxShadow = 'none'}
+                    on:click|stopPropagation
+                  />
+                  <button 
+                    class="text-white border-none rounded cursor-pointer transition-colors text-sm hover:bg-blue-600"
+                    style="padding: 6px 12px; background-color: #007bff; font-size: 0.85rem;"
+                    on:click|stopPropagation={handleSearch}
+                  >
+                    조회
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-
-          <!-- 검색창 -->
-          <div style="padding: 10px 15px; border-bottom: 1px solid #e5e7eb;">
-            <input 
-              type="text" 
-              bind:value={majrSearchTerm}
-              placeholder="카테고리 검색..."
-              class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-              style="padding: 8px 12px; font-size: 0.9rem;"
-              on:input={loadMajrList}
-            />
-          </div>
-
-          <!-- 대분류 목록 -->
-          <div class="flex-1 overflow-y-auto" style="padding: 0;">
+          
+          <!-- 목록 - 화면 맨 아래까지 -->
+          <div class="overflow-y-auto" style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - env(safe-area-inset-top, 0px) - 380px)' : 'calc(100vh - 310px)'};">
             {#if loading}
-              <div class="flex items-center justify-center h-full">
-                <div class="text-gray-500">로딩 중...</div>
+              <div class="text-center text-gray-600" style="padding: 30px 15px;">
+                <div class="mx-auto mb-2.5 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin" style="width: 25px; height: 25px;"></div>
+                로딩 중...
+              </div>
+            {:else if majrList.length === 0}
+              <div class="text-center text-gray-600" style="padding: 30px 15px; font-size: 0.9rem;">
+                등록된 카테고리가 없습니다.
               </div>
             {:else}
               {#each majrList as majr}
-                <button
-                  class="w-full text-left border-b border-gray-100 hover:bg-gray-50 transition-all duration-200 cursor-pointer"
-                  style="padding: 12px 15px; border: none; background: none;"
-                  class:bg-blue-50={selectedMajr?.MAJR_CODE === majr.MAJR_CODE}
-                  class:border-l-4={selectedMajr?.MAJR_CODE === majr.MAJR_CODE}
-                  class:border-l-blue-500={selectedMajr?.MAJR_CODE === majr.MAJR_CODE}
-                  on:click={() => selectMajr(majr)}
+                <div 
+                  class="border-b border-gray-200 cursor-pointer transition-colors hover:bg-gray-50 {selectedMajr && selectedMajr.MAJR_CODE === majr.MAJR_CODE ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''}"
+                  style="padding: 10px 15px;"
+                  on:click|stopPropagation={() => selectMajr(majr)}
+                  on:touchstart={(e) => handleMajrTouchStart(e, majr)}
+                  on:touchmove={handleMajrTouchMove}
+                  on:touchend={(e) => handleMajrTouchEnd(e, majr)}
                 >
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <div class="font-medium text-gray-800" style="font-size: 0.9rem;">{majr.MAJR_NAME}</div>
-                      <div class="text-gray-500 mt-1" style="font-size: 0.75rem;">{majr.MAJR_CODE}</div>
-                    </div>
-                    {#if majr.MAJR_BIGO}
-                      <div class="text-xs text-gray-400">{majr.MAJR_BIGO}</div>
-                    {/if}
-                  </div>
-                </button>
+                  <div class="font-semibold text-gray-900" style="font-size: 0.9rem;">{majr.MAJR_CODE}</div>
+                  <div class="text-gray-600 mt-0.5" style="font-size: 0.8rem;">{majr.MAJR_NAME}</div>
+                </div>
               {/each}
             {/if}
           </div>
         </div>
       </div>
 
-      <!-- 오른쪽 패널: 대분류 편집 + 소분류 관리 -->
-      <div class="flex-1 lg:ml-2.5 lg:mr-2.5" style="margin-left: {leftPanelVisible ? '10px' : '10px'};">
-        <div class="bg-white rounded-lg shadow-sm border border-gray-200 h-full flex flex-col" style="height: calc(100vh - 110px);">
+      <!-- 오른쪽 패널: 컨텐츠 -->
+      <div class="flex-1 min-w-0 px-2">
+        <!-- 카테고리 편집 폼 -->
+        <div class="bg-white rounded-lg overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <div class="border-b border-gray-200 flex justify-between items-center flex-wrap" style="padding: 15px 20px; gap: 15px;">
+            <div class="flex items-center gap-2.5">
+              <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">카테고리 {majrEditForm.isNew ? '신규등록' : '수정'}</h3>
+            </div>
+          </div>
           
-          <!-- 대분류 편집 섹션 -->
-          <div style="border-bottom: 1px solid #e5e7eb;">
-            <div style="padding: 15px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-              <h3 class="text-white font-medium m-0 mb-3" style="font-size: 1rem;">
-                {majrEditForm.isNew ? '신규등록' : '수정'}
-              </h3>
+          <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+            <div class="flex flex-col">
+              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">카테고리 코드</label>
+              <input 
+                type="text" 
+                bind:value={majrEditForm.MAJR_CODE}
+                maxlength="10"
+                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                style="padding: 8px 12px; font-size: 0.9rem;"
+                placeholder="카테고리 코드 입력"
+                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                on:blur={(e) => e.target.style.boxShadow = 'none'}
+              />
             </div>
-            
-            <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-              <div class="flex flex-col">
-                <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">카테고리 코드</label>
-                <input 
-                  type="text" 
-                  bind:value={majrEditForm.MAJR_CODE}
-                  maxlength="10"
-                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                  style="padding: 8px 12px; font-size: 0.9rem;"
-                  placeholder="카테고리 코드 입력"
-                  on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
-                  on:blur={(e) => e.target.style.boxShadow = 'none'}
-                />
-              </div>
-              <div class="flex flex-col">
-                <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">카테고리 명칭</label>
-                <input 
-                  type="text" 
-                  bind:value={majrEditForm.MAJR_NAME}
-                  maxlength="200"
-                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                  style="padding: 8px 12px; font-size: 0.9rem;"
-                  placeholder="카테고리 명칭 입력"
-                  on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
-                  on:blur={(e) => e.target.style.boxShadow = 'none'}
-                />
-              </div>
-              <div class="flex flex-col">
-                <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">비고1</label>
-                <input 
-                  type="text" 
-                  bind:value={majrEditForm.MAJR_BIGO}
-                  maxlength="200"
-                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                  style="padding: 8px 12px; font-size: 0.9rem;"
-                  placeholder="비고1 입력"
-                  on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
-                  on:blur={(e) => e.target.style.boxShadow = 'none'}
-                />
-              </div>
-              <div class="flex flex-col">
-                <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">비고2</label>
-                <input 
-                  type="text" 
-                  bind:value={majrEditForm.MAJR_BIG2}
-                  maxlength="200"
-                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                  style="padding: 8px 12px; font-size: 0.9rem;"
-                  placeholder="비고2 입력"
-                  on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
-                  on:blur={(e) => e.target.style.boxShadow = 'none'}
-                />
-              </div>
+            <div class="flex flex-col">
+              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">카테고리 명칭</label>
+              <input 
+                type="text" 
+                bind:value={majrEditForm.MAJR_NAME}
+                maxlength="200"
+                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                style="padding: 8px 12px; font-size: 0.9rem;"
+                placeholder="카테고리 명칭 입력"
+                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                on:blur={(e) => e.target.style.boxShadow = 'none'}
+              />
+            </div>
+            <div class="flex flex-col">
+              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">비고1</label>
+              <input 
+                type="text" 
+                bind:value={majrEditForm.MAJR_BIGO}
+                maxlength="200"
+                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                style="padding: 8px 12px; font-size: 0.9rem;"
+                placeholder="비고1 입력"
+                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                on:blur={(e) => e.target.style.boxShadow = 'none'}
+              />
+            </div>
+            <div class="flex flex-col">
+              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">비고2</label>
+              <input 
+                type="text" 
+                bind:value={majrEditForm.MAJR_BIG2}
+                maxlength="200"
+                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                style="padding: 8px 12px; font-size: 0.9rem;"
+                placeholder="비고2 입력"
+                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                on:blur={(e) => e.target.style.boxShadow = 'none'}
+              />
             </div>
           </div>
+        </div>
 
-          <!-- 소분류 관리 섹션 헤더 -->
-          <div style="padding: 15px; border-bottom: 1px solid #e5e7eb; background: #f8fafc;">
-            <div class="flex items-center justify-between">
-              <h3 class="text-gray-700 font-medium m-0" style="font-size: 1rem;">제품 목록</h3>
-              <div class="flex gap-2">
-                <button 
-                  class="bg-blue-500 hover:bg-blue-600 text-white font-medium rounded transition-all duration-200"
-                  style="padding: 8px 12px; font-size: 0.9rem;"
-                  on:click={addNewRow}
-                >
-                  + 행추가
-                </button>
-                <button 
-                  class="bg-green-500 hover:bg-green-600 text-white font-medium rounded transition-all duration-200"
-                  style="padding: 8px 16px; font-size: 0.9rem;"
-                  on:click={saveAll}
-                >
-                  💾 저장
-                </button>
-              </div>
+        <!-- 제품 관리 -->
+        <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <div class="border-b border-gray-200 flex justify-between items-center flex-wrap relative" style="padding: 15px 20px; gap: 15px;">
+            <div class="flex items-center gap-2.5">
+              <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">제품 관리 {currentMajrCode ? `(${currentMajrCode})` : ''}</h3>
+            </div>
+            <div class="flex gap-2">
+              <button 
+                class="text-white border-none rounded cursor-pointer transition-colors hover:bg-gray-700"
+                style="padding: 6px 12px; background-color: #6c757d; font-size: 0.9rem;"
+                on:click={addNewRow}
+              >
+                행추가
+              </button>
+              <button 
+                class="text-white border-none rounded cursor-pointer transition-colors hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed"
+                style="padding: 6px 12px; background-color: #007bff; font-size: 0.9rem;"
+                on:click={saveAll}
+                disabled={loading}
+              >
+                {#if loading}
+                  <span class="inline-block border-2 border-white border-t-transparent rounded-full animate-spin mr-2" style="width: 12px; height: 12px;"></span>
+                {/if}
+                저장
+              </button>
             </div>
           </div>
-
-          <!-- 소분류 테이블 -->
-          <div class="flex-1 overflow-auto" style="padding: 0;">
-            {#if minrList.length === 0}
-              <div class="flex items-center justify-center h-full text-gray-500">
-                <div class="text-center">
-                  <div style="font-size: 3rem; margin-bottom: 10px;">📦</div>
-                  <p>등록된 제품이 없습니다</p>
-                  <p style="font-size: 0.9rem;">카테고리를 선택하고 제품을 추가해보세요</p>
+          
+          <div class="p-5">
+            {#if loading}
+              <div class="text-center text-gray-600" style="padding: 30px 15px;">
+                <div class="mx-auto mb-2.5 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin" style="width: 25px; height: 25px;"></div>
+                불러오는 중...
+              </div>
+            {:else if currentMajrCode}
+              {#if visibleMinrList.length === 0}
+                <div class="text-center text-gray-500" style="padding: 30px 15px; font-size: 0.9rem;">
+                  등록된 제품이 없습니다.<br>
+                  "행추가" 버튼을 눌러 추가해보세요.
                 </div>
-              </div>
-            {:else}
-              <div class="overflow-x-auto">
-                <table class="w-full" style="border-collapse: collapse;">
-                  <thead style="background: #f1f5f9; border-bottom: 2px solid #e5e7eb;">
-                    <tr>
-                      <th style="padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; font-size: 0.9rem; min-width: 120px;">제품코드</th>
-                      <th style="padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; font-size: 0.9rem; min-width: 150px;">제품명</th>
-                      <th style="padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; font-size: 0.9rem; min-width: 200px;">비고1</th>
-                      <th style="padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; font-size: 0.9rem; min-width: 200px;">비고2</th>
-                      <th style="padding: 12px 8px; text-align: center; font-weight: 600; color: #374151; font-size: 0.9rem; width: 80px;">삭제</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each minrList as item, index}
-                      {#if !item.isDeleted}
-                        <tr class="border-b border-gray-100 hover:bg-gray-50" class:bg-yellow-50={item.isNew}>
-                          <td style="padding: 10px 8px;">
+              {:else}
+                <!-- 제품 테이블 -->
+                <div class="overflow-x-auto">
+                  <table class="w-full border-collapse" style="font-size: 0.9rem;">
+                    <thead>
+                      <tr class="bg-gray-50">
+                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">제품코드</th>
+                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">제품명</th>
+                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">비고1</th>
+                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">비고2</th>
+                        <th class="border border-gray-300 text-center text-gray-800 font-semibold" style="padding: 8px; color: #333;">삭제</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each visibleMinrList as item, index}
+                        <tr class="hover:bg-gray-50 {item.isNew ? 'bg-yellow-50' : 'bg-white'}">
+                          <td class="border border-gray-300" style="padding: 8px;">
                             <input 
                               type="text" 
                               bind:value={item.MINR_CODE}
-                              maxlength="20"
+                              maxlength="10"
                               class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                              style="padding: 6px 8px; font-size: 0.85rem;"
-                              placeholder="제품코드"
+                              style="padding: 4px 6px; font-size: 0.85rem;"
                             />
                           </td>
-                          <td style="padding: 10px 8px;">
+                          <td class="border border-gray-300" style="padding: 8px;">
                             <input 
                               type="text" 
                               bind:value={item.MINR_NAME}
                               maxlength="200"
                               class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                              style="padding: 6px 8px; font-size: 0.85rem;"
-                              placeholder="제품명"
+                              style="padding: 4px 6px; font-size: 0.85rem;"
                             />
                           </td>
-                          <td style="padding: 10px 8px;">
+                          <td class="border border-gray-300" style="padding: 8px;">
                             <input 
                               type="text" 
                               bind:value={item.MINR_BIGO}
                               maxlength="200"
                               class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                              style="padding: 6px 8px; font-size: 0.85rem;"
-                              placeholder="비고1"
+                              style="padding: 4px 6px; font-size: 0.85rem;"
                             />
                           </td>
-                          <td style="padding: 10px 8px;">
+                          <td class="border border-gray-300" style="padding: 8px;">
                             <input 
                               type="text" 
                               bind:value={item.MINR_BIG2}
                               maxlength="200"
                               class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                              style="padding: 6px 8px; font-size: 0.85rem;"
-                              placeholder="비고2"
+                              style="padding: 4px 6px; font-size: 0.85rem;"
                             />
                           </td>
-                          <td style="padding: 10px 8px; text-align: center;">
+                          <td class="border border-gray-300 text-center" style="padding: 8px;">
                             <button 
-                              class="bg-red-500 hover:bg-red-600 text-white rounded transition-all duration-200"
-                              style="padding: 4px 8px; font-size: 0.8rem;"
+                              class="bg-transparent border border-gray-300 rounded cursor-pointer text-red-600 hover:bg-red-100 transition-all"
+                              style="padding: 4px 8px; font-size: 0.8rem; color: #dc3545;"
                               on:click={() => deleteRow(index)}
                             >
-                              🗑️
+                              삭제
                             </button>
                           </td>
                         </tr>
-                      {/if}
-                    {/each}
-                  </tbody>
-                </table>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              {/if}
+            {:else}
+              <div class="text-center text-gray-500" style="padding: 30px 15px; font-size: 0.9rem;">
+                카테고리를 선택하거나 신규 등록해주세요.
               </div>
             {/if}
           </div>
@@ -543,50 +807,3 @@
     </div>
   </div>
 </div>
-
-<style>
-  /* 모바일 터치 최적화 */
-  button, input {
-    touch-action: manipulation;
-  }
-  
-  /* 스크롤바 스타일링 */
-  .overflow-y-auto::-webkit-scrollbar,
-  .overflow-auto::-webkit-scrollbar {
-    width: 6px;
-  }
-  
-  .overflow-y-auto::-webkit-scrollbar-track,
-  .overflow-auto::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 3px;
-  }
-  
-  .overflow-y-auto::-webkit-scrollbar-thumb,
-  .overflow-auto::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 3px;
-  }
-  
-  .overflow-y-auto::-webkit-scrollbar-thumb:hover,
-  .overflow-auto::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
-  }
-
-  /* 테이블 반응형 */
-  @media (max-width: 768px) {
-    table {
-      font-size: 0.8rem;
-    }
-    
-    th, td {
-      padding: 8px 4px !important;
-      min-width: 80px !important;
-    }
-    
-    input[type="text"] {
-      font-size: 0.8rem !important;
-      padding: 4px 6px !important;
-    }
-  }
-</style>
