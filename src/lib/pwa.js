@@ -438,6 +438,7 @@ export async function initPWA() {
       applyImageCache();
     }
     
+    /*
     // 동적 이미지 감지
     if (document && window.MutationObserver) {
       const observer = new MutationObserver((mutations) => {
@@ -464,7 +465,7 @@ export async function initPWA() {
         subtree: true 
       });
     }
-    
+    */
     // 전역 함수 노출
     if (window) {
       window.showToast = showToast;

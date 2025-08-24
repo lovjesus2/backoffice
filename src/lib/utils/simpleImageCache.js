@@ -56,9 +56,16 @@ class SimpleImageCache {
 
   async checkETag(url) {
     try {
-      const response = await fetch(url, { method: 'HEAD' });
-      return response.headers.get('etag');
-    } catch {
+      const response = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+      
+      const etag = response.headers.get('etag');
+      const lastModified = response.headers.get('last-modified');
+
+      console.log('[checkETag]', url, { etag, lastModified, all: [...response.headers] });
+
+      return etag;
+    } catch (err) {
+      console.warn('[checkETag] 실패', url, err);
       return null;
     }
   }

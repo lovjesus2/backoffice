@@ -1,8 +1,9 @@
-<!-- src/lib/components/ImageModal.svelte - Store 기반 버전 -->
+<!-- src/lib/components/ImageModal.svelte - simpleImageCache 적용 버전 -->
 <script>
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import { imageModalStore, closeImageModal } from '$lib/utils/imageModalUtils';
+  import { simpleCache } from '$lib/utils/simpleImageCache.js';
 
   // store 구독
   $: ({ show, imageSrc, imagePath, imageAlt, zIndex } = $imageModalStore);
@@ -18,6 +19,7 @@
   let isMobile = false;
   let retryCount = 0;
   const MAX_RETRY = 2;
+  let imgElement = null;
 
   // 모바일 체크
   function checkMobile() {
@@ -58,6 +60,26 @@
     document.body.style.overflow = '';
   }
 
+  // 이미지 엘리먼트가 준비되면 캐시 처리 시작
+  $: if (imgElement && actualSrc && show) {
+    handleImageWithCache();
+  }
+
+  // simpleCache를 사용한 이미지 처리
+  async function handleImageWithCache() {
+    if (!imgElement || !actualSrc) return;
+    
+    console.log('🔄 캐시를 통한 이미지 로딩 시작:', actualSrc);
+    
+    try {
+      // simpleCache의 handleImage 메소드 사용
+      await simpleCache.handleImage(imgElement);
+    } catch (error) {
+      console.error('❌ 캐시 이미지 처리 실패:', error);
+      handleImageError();
+    }
+  }
+
   // 이미지 로드 완료
   function handleImageLoad(event) {
     console.log('✅ 모달 이미지 로드 완료:', event.target.src);
@@ -67,8 +89,8 @@
   }
 
   // 이미지 로드 실패
-  function handleImageError(event) {
-    console.error('❌ 모달 이미지 로드 실패:', event.target.src);
+  function handleImageError() {
+    console.error('❌ 모달 이미지 로드 실패:', actualSrc);
     loading = false;
     error = true;
   }
@@ -84,10 +106,16 @@
     error = false;
     retryCount++;
 
-    // 캐시 우회를 위한 타임스탬프 추가
-    const timestamp = Date.now();
-    const separator = actualSrc.includes('?') ? '&' : '?';
-    actualSrc = `${actualSrc.split('?')[0]}${separator}_retry=${timestamp}`;
+    console.log(`🔄 이미지 재시도 (${retryCount}/${MAX_RETRY})`);
+    
+    // 캐시 클리어 후 다시 시도
+    if (imgElement) {
+      // 강제로 src를 변경해서 재로드 트리거
+      const timestamp = Date.now();
+      const separator = actualSrc.includes('?') ? '&' : '?';
+      const newSrc = `${actualSrc.split('?')[0]}${separator}_retry=${timestamp}`;
+      imgElement.src = newSrc;
+    }
   }
 
   // ESC 키 처리
@@ -176,7 +204,7 @@
         </div>
       {/if}
       
-      <!-- 🔧 이미지 컨테이너 - 300x300 고정 크기 -->
+      <!-- 이미지 컨테이너 - 300x300 고정 크기 -->
       {#if actualSrc && !error}
         <div class="relative flex items-center justify-center" style="width: 300px; height: 300px;">
           <!-- 닫기 버튼 (이미지 상단 오른쪽) -->
@@ -191,6 +219,7 @@
           </button>
           
           <img 
+            bind:this={imgElement}
             src={actualSrc}
             alt={imageAlt}
             class="rounded-lg shadow-2xl transition-all duration-300 {loading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}"
@@ -208,11 +237,12 @@
         </div>
       {/if}
       
-      <!-- 🔧 품목명 (이미지 바로 아래) -->
+      <!-- 품목명 (이미지 바로 아래) -->
       {#if actualSrc && !error && !loading && imageAlt}
         <div class="mt-4 text-center">
           <div class="bg-black/70 backdrop-blur-sm text-white px-4 py-2 rounded-lg text-sm font-medium inline-block max-w-full">
             {imageAlt}
+            <span class="ml-2 text-xs opacity-75">📦</span>
           </div>
         </div>
       {/if}
