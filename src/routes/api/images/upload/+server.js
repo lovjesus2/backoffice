@@ -1,4 +1,4 @@
-// src/routes/api/images/upload/+server.js (최종 수정 버전)
+// src/routes/api/images/upload/+server.js (캐시 무효화 추가 버전)
 import { json } from '@sveltejs/kit';
 import { writeFile, mkdir, access, stat } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -114,7 +114,7 @@ export async function GET({ url, cookies }) {
   }
 }
 
-// POST: 수정된 업로드 로직
+// POST: 수정된 업로드 로직 - 파일명 충돌 해결
 export async function POST({ request, cookies }) {
   try {
     console.log('📤 이미지 업로드 API 호출됨');
@@ -146,7 +146,7 @@ export async function POST({ request, cookies }) {
     const imagGub3 = '0';
     const imagIusr = decoded.username;
     
-    // 🔥 핵심: 최종 순서 정보 받기
+    // 최종 순서 정보 받기
     const finalOrderData = formData.get('finalOrder');
     if (!finalOrderData) {
       return json({ error: '이미지 순서 정보가 누락되었습니다.' }, { status: 400 });
@@ -179,47 +179,77 @@ export async function POST({ request, cookies }) {
       
       console.log(`🗑️ 기존 DB 레코드 ${deleteResult[0].affectedRows}개 삭제됨`);
 
+      // 2단계: 🔥 핵심 해결 - 기존 파일들을 임시명으로 먼저 복사
+      const tempFileMap = new Map(); // 임시 파일명 매핑
+      const timestamp = Date.now();
+      
+      for (let i = 0; i < finalOrder.length; i++) {
+        const item = finalOrder[i];
+        
+        if (item.isExisting) {
+          const oldFileName = item.name;
+          const tempFileName = `temp_${timestamp}_${i}_${oldFileName}`;
+          
+          try {
+            const oldPath = path.join(IMAGE_BASE_DIR, oldFileName);
+            const tempPath = path.join(IMAGE_BASE_DIR, tempFileName);
+            
+            const { copyFile } = await import('fs/promises');
+            await copyFile(oldPath, tempPath);
+            
+            tempFileMap.set(i, {
+              tempFileName: tempFileName,
+              originalFileName: oldFileName
+            });
+            
+            console.log(`🔄 임시 복사: ${oldFileName} → ${tempFileName}`);
+            
+          } catch (copyError) {
+            console.error(`❌ 임시 파일 복사 실패: ${oldFileName}`, copyError);
+            throw new Error(`임시 파일 복사 실패: ${oldFileName}`);
+          }
+        }
+      }
+
+      // 3단계: 순서대로 최종 파일명으로 저장
       const savedFiles = [];
       let newFileIndex = 0;
       
-      // 2단계: finalOrder 순서대로 저장
       for (let i = 0; i < finalOrder.length; i++) {
         const item = finalOrder[i];
         const imagCnt1 = i + 1; // 최종 순서 번호
-        
-        let imagPcph;
-        let shouldSaveFile = false;
+        const imagPcph = `${imagCode}_${imagCnt1}.jpg`;
         
         if (item.isExisting) {
-          // 기존 이미지: 파일명 그대로 유지, 파일은 복사
-          const oldFileName = item.name;
-          imagPcph = `${imagCode}_${imagCnt1}.jpg`; // 새로운 순서번호로 파일명 생성
-          
-          // 기존 파일을 새 이름으로 복사
-          const oldPath = path.join(IMAGE_BASE_DIR, oldFileName);
-          const newPath = path.join(IMAGE_BASE_DIR, imagPcph);
+          // 기존 이미지: 임시 파일에서 최종 파일명으로 이동
+          const tempInfo = tempFileMap.get(i);
+          if (!tempInfo) {
+            throw new Error(`임시 파일 정보를 찾을 수 없습니다: ${i}`);
+          }
           
           try {
-            // Node.js fs 모듈의 copyFile 사용
-            const { copyFile } = await import('fs/promises');
-            await copyFile(oldPath, newPath);
-            console.log(`📋 기존 파일 복사: ${oldFileName} → ${imagPcph}`);
-          } catch (copyError) {
-            console.error(`❌ 파일 복사 실패: ${oldFileName}`, copyError);
-            // 복사 실패해도 계속 진행 (DB 레코드는 저장)
+            const tempPath = path.join(IMAGE_BASE_DIR, tempInfo.tempFileName);
+            const finalPath = path.join(IMAGE_BASE_DIR, imagPcph);
+            
+            const { rename } = await import('fs/promises');
+            await rename(tempPath, finalPath);
+            
+            console.log(`✅ 최종 이동: ${tempInfo.tempFileName} → ${imagPcph}`);
+            
+          } catch (moveError) {
+            console.error(`❌ 최종 파일 이동 실패: ${tempInfo.tempFileName}`, moveError);
+            throw new Error(`최종 파일 이동 실패: ${tempInfo.tempFileName}`);
           }
           
         } else {
-          // 새 이미지: 업로드된 파일에서 가져옴
+          // 새 이미지: 업로드된 파일에서 저장
           if (newFileIndex >= newFiles.length) {
             throw new Error(`새 파일 인덱스 초과: ${newFileIndex}/${newFiles.length}`);
           }
           
           const file = newFiles[newFileIndex];
-          imagPcph = `${imagCode}_${imagCnt1}.jpg`;
-          
-          // 새 파일 저장
           const fullPath = path.join(IMAGE_BASE_DIR, imagPcph);
+          
           const arrayBuffer = await file.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
           await writeFile(fullPath, buffer);
@@ -254,6 +284,24 @@ export async function POST({ request, cookies }) {
         console.log(`✅ 순서 ${imagCnt1}: ${imagPcph} ${item.isExisting ? '(기존)' : '(신규)'}`);
       }
       
+      // 4단계: 남은 임시 파일 정리 (안전장치)
+      try {
+        for (const [index, tempInfo] of tempFileMap.entries()) {
+          const tempPath = path.join(IMAGE_BASE_DIR, tempInfo.tempFileName);
+          try {
+            const { unlink, access } = await import('fs/promises');
+            await access(tempPath); // 파일 존재 확인
+            await unlink(tempPath); // 파일 삭제
+            console.log(`🗑️ 임시 파일 정리: ${tempInfo.tempFileName}`);
+          } catch (cleanupError) {
+            // 이미 처리된 파일이거나 없는 파일 - 무시
+            console.log(`ℹ️ 임시 파일 정리 스킵: ${tempInfo.tempFileName} (이미 처리됨)`);
+          }
+        }
+      } catch (cleanupError) {
+        console.warn('⚠️ 임시 파일 정리 중 오류 (무시됨):', cleanupError.message);
+      }
+      
       await db.execute('COMMIT');
       console.log('✅ 트랜잭션 커밋 완료');
       
@@ -261,10 +309,12 @@ export async function POST({ request, cookies }) {
         success: true,
         message: `${finalOrder.length}개 이미지가 순서대로 저장되었습니다.`,
         files: savedFiles,
+        invalidate_cache: imagCode, // 캐시 무효화 신호
         debug: {
           finalOrderCount: finalOrder.length,
           newFilesCount: newFiles.length,
           existingCount: finalOrder.filter(item => item.isExisting).length,
+          tempFilesProcessed: tempFileMap.size,
           user: imagIusr,
           timestamp: new Date().toISOString()
         }
@@ -273,6 +323,31 @@ export async function POST({ request, cookies }) {
     } catch (error) {
       await db.execute('ROLLBACK');
       console.error('❌ 트랜잭션 롤백:', error);
+      
+      // 오류 발생 시 임시 파일들 정리
+      try {
+        console.log('🧹 오류로 인한 임시 파일 정리 시작...');
+        const { readdir, unlink } = await import('fs/promises');
+        const files = await readdir(IMAGE_BASE_DIR);
+        
+        const tempFiles = files.filter(file => 
+          file.startsWith(`temp_${timestamp || ''}_`) || 
+          file.includes('temp_')
+        );
+        
+        for (const tempFile of tempFiles) {
+          try {
+            await unlink(path.join(IMAGE_BASE_DIR, tempFile));
+            console.log(`🗑️ 임시 파일 삭제: ${tempFile}`);
+          } catch (deleteError) {
+            console.warn(`⚠️ 임시 파일 삭제 실패: ${tempFile}`);
+          }
+        }
+        
+      } catch (cleanupError) {
+        console.warn('⚠️ 오류 후 임시 파일 정리 실패:', cleanupError.message);
+      }
+      
       throw error;
     }
 

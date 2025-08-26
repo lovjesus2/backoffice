@@ -2,6 +2,7 @@
 <script>
   import { onMount, createEventDispatcher } from 'svelte';
   import { browser } from '$app/environment';
+  import { simpleCache } from '$lib/utils/simpleImageCache.js';
   
   // Props
   export let imagGub1 = '';
@@ -27,15 +28,39 @@
   let successMessage = '';
   let errorMessage = '';
   
+  // 리사이즈 설정
+  let resizeMode = 'contain'; // 'contain' (축소) 또는 'cover' (자르기)
+  let selectedWidth = defaultWidth;
+  let selectedHeight = defaultHeight;
+  let showCustomSize = false;
+  let customWidth = 300;
+  let customHeight = 300;
+  
+  // 빠른 선택 크기들
+  const quickSizes = [
+    { label: '300×300', width: 300, height: 300 },
+    { label: '400×400', width: 400, height: 400 },
+    { label: '500×500', width: 500, height: 500 }
+  ];
+  
   // 통합 이미지 배열
   let allImages = [];  
   let selectedImageIndex = null;
   
-  // 드래그 상태
+  // 개선된 터치 드래그 관련 변수들
   let draggedIndex = null;
   let isDragging = false;
-  let touchStartY = 0;
+  let dragMode = false;
   let touchStartX = 0;
+  let touchStartY = 0;
+  let currentTouchX = 0;
+  let currentTouchY = 0;
+  let longPressTimer = null;
+  let isDragMoving = false;
+  let draggedElement = null;
+  let dragPlaceholder = null;
+  let floatingDragElement = null;
+  let lastDragEndTime = 0;
   
   // 파일 드래그 상태 (+ 버튼 전용)
   let isFileDragOver = false;
@@ -43,6 +68,9 @@
   // 로딩 상태
   let isLoadingImages = false;
   let lastLoadedKey = '';
+
+  // 변환된 파일을 저장할 Map
+  let processedFiles = new Map();
   
   const dispatch = createEventDispatcher();
   
@@ -51,8 +79,14 @@
   $: newImages = allImages.filter(img => !img.isExisting);
   $: images = allImages;
   
+  // 컴포넌트 마운트 시 초기화
   onMount(async () => {
     if (!browser) return;
+    
+    // 상태 초기화
+    isLoadingImages = false;
+    lastLoadedKey = '';
+    allImages = [];
     
     try {
       initializationError = null;
@@ -61,8 +95,23 @@
       initializationError = error.message;
       dispatch('error', { message: 'FilePond 초기화에 실패했습니다.' });
     }
+    
+    // 이벤트 리스너 설정
+    const handleBeforeUnload = () => resetTouchDragState();
+    const handleOrientationChange = () => resetTouchDragState();
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('orientationchange', handleOrientationChange);
+    
+    // 컴포넌트 언마운트 시 정리
+    return () => {
+      resetTouchDragState();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+    };
   });
-  
+
+  // 3. 단순한 FilePond 초기화 (복잡한 iOS 코드 제거)
   async function initializeFilePond() {
     if (!window.FilePond) {
       let waitTime = 0;
@@ -84,7 +133,7 @@
       allowMultiple: true,
       maxFiles: maxFiles,
       acceptedFileTypes: ['image/*'],
-      maxFileSize: '10MB', // 100MB → 10MB로 변경
+      maxFileSize: '10MB',
       labelIdle: `드래그 앤 드롭하거나 <span class="filepond--label-action">${placeholder}</span>`,
       
       allowDrop: true,
@@ -99,10 +148,12 @@
       
       itemInsertLocation: 'after',
       
-      imageResizeTargetWidth: enableResize ? defaultWidth : null,
-      imageResizeTargetHeight: enableResize ? defaultHeight : null,
-      imageResizeMode: 'cover',
+      // 리사이즈 설정
+      imageResizeTargetWidth: enableResize ? selectedWidth : null,
+      imageResizeTargetHeight: enableResize ? selectedHeight : null,
+      imageResizeMode: resizeMode,
       imageResizeUpscale: false,
+      imageResizeBackgroundColor: '#ffffff',
       
       imageTransformOutputMimeType: 'image/jpeg',
       imageTransformOutputQuality: quality,
@@ -113,15 +164,43 @@
       credits: false,
       server: null,
       
+      // 간단한 콜백들
       onaddfile: (error, file) => {
-        if (error) return;
+        if (error) {
+          console.error('파일 추가 오류:', error);
+          return;
+        }
+        console.log('파일 추가됨:', file.filename);
         syncNewImagesFromPond();
       },
+      
       onremovefile: (error, file) => {
         if (error) return;
+        console.log('파일 제거됨:', file.filename);
         syncNewImagesFromPond();
       },
+      
+      onupdatefiles: (fileItems) => {
+        console.log('onupdatefiles 콜백:', fileItems.length);
+        // 즉시 동기화
+        syncNewImagesFromPond();
+      },
+
+      onpreparefile: (fileItem, outputFile) => {
+        console.log('이미지 변환 완료:', {
+          filename: fileItem.filename,
+          originalSize: fileItem.file ? fileItem.file.size : 'N/A',
+          resizedSize: outputFile ? outputFile.size : 'N/A'
+        });
+        
+        // 변환된 파일을 Map에 저장
+        if (outputFile && enableResize) {
+          processedFiles.set(fileItem.filename, outputFile);
+        }
+      },
+      
       onerror: (error) => {
+        console.error('FilePond 오류:', error);
         errorMessage = error.body || error.main || '알 수 없는 오류가 발생했습니다.';
         setTimeout(() => errorMessage = '', 5000);
       }
@@ -134,15 +213,361 @@
     }
   }
   
+  // 리사이즈 설정 업데이트
+  function updateResizeSettings() {
+    if (!pond || !enableResize) return;
+    
+    try {
+      pond.setOptions({
+        imageResizeTargetWidth: selectedWidth,
+        imageResizeTargetHeight: selectedHeight,
+        imageResizeMode: resizeMode,
+        imageTransformClientTransforms: ['resize', 'transform']
+      });
+      
+      console.log('리사이즈 설정 업데이트:', {
+        size: `${selectedWidth}x${selectedHeight}`,
+        mode: resizeMode
+      });
+    } catch (error) {
+      console.warn('리사이즈 설정 업데이트 실패:', error);
+    }
+  }
+  
+  // 빠른 크기 선택
+  function selectQuickSize(size) {
+    selectedWidth = size.width;
+    selectedHeight = size.height;
+    showCustomSize = false;
+    updateResizeSettings();
+    
+    successMessage = `크기가 ${size.width}×${size.height}로 설정되었습니다.`;
+    setTimeout(() => successMessage = '', 2000);
+  }
+  
+  // 사용자 정의 크기 적용
+  function applyCustomSize() {
+    if (customWidth < 50 || customWidth > 2000 || customHeight < 50 || customHeight > 2000) {
+      errorMessage = '크기는 50px에서 2000px 사이로 설정해주세요.';
+      setTimeout(() => errorMessage = '', 3000);
+      return;
+    }
+    
+    selectedWidth = customWidth;
+    selectedHeight = customHeight;
+    showCustomSize = false;
+    updateResizeSettings();
+    
+    successMessage = `사용자 정의 크기 ${customWidth}×${customHeight}가 적용되었습니다.`;
+    setTimeout(() => successMessage = '', 2000);
+  }
+  
+  // 리사이즈 모드 변경
+  function changeResizeMode(mode) {
+    resizeMode = mode;
+    updateResizeSettings();
+  }
+  
+  // 리사이즈 토글
+  function toggleResize() {
+    enableResize = !enableResize;
+    
+    if (pond && typeof pond.setOptions === 'function') {
+      try {
+        if (enableResize) {
+          pond.setOptions({
+            imageResizeTargetWidth: selectedWidth,
+            imageResizeTargetHeight: selectedHeight,
+            imageResizeMode: resizeMode,
+            imageTransformClientTransforms: ['resize', 'transform']
+          });
+        } else {
+          pond.setOptions({
+            imageResizeTargetWidth: null,
+            imageResizeTargetHeight: null,
+            imageTransformClientTransforms: ['transform']
+          });
+        }
+      } catch (error) {
+        console.warn('리사이즈 토글 실패:', error);
+      }
+    }
+  }
+  
+  // ========== 기존 드래그 로직들 ==========
+  
+  // 터치 시작 - 길게 누르기 감지
+  function handleTouchStart(event, index) {
+    if (event.target.closest('button')) return;
+    
+    resetTouchDragState();
+    
+    const touch = event.touches[0];
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+    currentTouchX = touch.clientX;
+    currentTouchY = touch.clientY;
+    draggedIndex = index;
+    
+    longPressTimer = setTimeout(() => {
+      dragMode = true;
+      isDragMoving = false;
+      
+      const element = event.currentTarget;
+      draggedElement = element;
+      
+      startDragVisualFeedback(element, index);
+      
+      if (navigator.vibrate) {
+        navigator.vibrate([50, 30, 50]);
+      }
+      
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    }, 300);
+  }
+
+  function handleTouchMove(event) {
+    if (draggedIndex === null) return;
+    
+    const touch = event.touches[0];
+    const deltaX = Math.abs(touch.clientX - touchStartX);
+    const deltaY = Math.abs(touch.clientY - touchStartY);
+    const totalDelta = deltaX + deltaY;
+    
+    if (!dragMode && totalDelta > 10) {
+      resetTouchDragState();
+      return;
+    }
+    
+    if (dragMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      currentTouchX = touch.clientX;
+      currentTouchY = touch.clientY;
+      isDragMoving = true;
+      
+      updateDraggedElementPosition(touch.clientX, touch.clientY);
+      const dropTarget = findDropTarget(touch.clientX, touch.clientY);
+      updateDropTargetHighlight(dropTarget);
+    }
+  }
+
+  function handleTouchEnd(event) {
+    clearTimeout(longPressTimer);
+    
+    if (!dragMode) {
+      resetTouchDragState();
+      return;
+    }
+    
+    event.preventDefault();
+    event.stopPropagation();
+    
+    let dropIndex = null;
+    
+    if (isDragMoving) {
+      const touch = event.changedTouches[0];
+      dropIndex = findDropIndex(touch.clientX, touch.clientY);
+    }
+    
+    completeDragOperation(dropIndex);
+    lastDragEndTime = Date.now();
+    resetTouchDragState();
+  }
+
+  function startDragVisualFeedback(element, index) {
+    if (!element) return;
+    
+    element.style.opacity = '0.3';
+    element.style.transform = 'scale(0.95)';
+    element.style.transition = 'all 0.2s ease';
+    element.style.zIndex = '999';
+    
+    createDragPlaceholder(element);
+    createFloatingDragElement(element);
+  }
+
+  function createDragPlaceholder(element) {
+    const rect = element.getBoundingClientRect();
+    
+    dragPlaceholder = document.createElement('div');
+    dragPlaceholder.className = element.className;
+    dragPlaceholder.style.opacity = '0.5';
+    dragPlaceholder.style.background = 'linear-gradient(45deg, #e3f2fd, #bbdefb)';
+    dragPlaceholder.style.border = '2px dashed #2196f3';
+    dragPlaceholder.style.borderRadius = '8px';
+    dragPlaceholder.style.transform = 'scale(0.98)';
+    dragPlaceholder.style.minHeight = `${rect.height}px`;
+    dragPlaceholder.style.display = 'flex';
+    dragPlaceholder.style.alignItems = 'center';
+    dragPlaceholder.style.justifyContent = 'center';
+    dragPlaceholder.innerHTML = `
+      <div class="text-blue-500 text-sm font-bold text-center">
+        <div class="animate-pulse">📱</div>
+        <div class="mt-1">드래그 중...</div>
+      </div>
+    `;
+    dragPlaceholder.setAttribute('data-placeholder', 'true');
+    
+    element.parentNode.insertBefore(dragPlaceholder, element.nextSibling);
+  }
+
+  function createFloatingDragElement(element) {
+    const rect = element.getBoundingClientRect();
+    
+    floatingDragElement = element.cloneNode(true);
+    floatingDragElement.style.position = 'fixed';
+    floatingDragElement.style.pointerEvents = 'none';
+    floatingDragElement.style.zIndex = '9999';
+    floatingDragElement.style.opacity = '0.9';
+    floatingDragElement.style.transform = 'scale(1.1) rotate(3deg)';
+    floatingDragElement.style.boxShadow = '0 15px 35px rgba(0,0,0,0.4), 0 5px 15px rgba(0,0,0,0.2)';
+    floatingDragElement.style.borderRadius = '12px';
+    floatingDragElement.style.transition = 'none';
+    floatingDragElement.style.border = '3px solid #2196f3';
+    floatingDragElement.setAttribute('data-floating-drag', 'true');
+    
+    floatingDragElement.style.left = `${currentTouchX - rect.width / 2}px`;
+    floatingDragElement.style.top = `${currentTouchY - rect.height / 2}px`;
+    floatingDragElement.style.width = `${rect.width}px`;
+    floatingDragElement.style.height = `${rect.height}px`;
+    
+    document.body.appendChild(floatingDragElement);
+  }
+
+  function updateDraggedElementPosition(x, y) {
+    if (!floatingDragElement) return;
+    
+    const rect = floatingDragElement.getBoundingClientRect();
+    floatingDragElement.style.left = `${x - rect.width / 2}px`;
+    floatingDragElement.style.top = `${y - rect.height / 2}px`;
+    
+    const rotationAngle = Math.sin(Date.now() / 200) * 5;
+    floatingDragElement.style.transform = `scale(1.1) rotate(${rotationAngle}deg)`;
+  }
+
+  function findDropTarget(x, y) {
+    const elements = document.querySelectorAll('[data-image-index]:not([data-placeholder]):not([data-floating-drag])');
+    
+    for (let el of elements) {
+      const rect = el.getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && 
+          y >= rect.top && y <= rect.bottom) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  function updateDropTargetHighlight(targetElement) {
+    document.querySelectorAll('[data-image-index]').forEach(el => {
+      if (!el.hasAttribute('data-floating-drag') && !el.hasAttribute('data-placeholder')) {
+        el.style.backgroundColor = '';
+        el.style.borderColor = '';
+        el.style.outline = '';
+      }
+    });
+    
+    if (targetElement) {
+      targetElement.style.backgroundColor = '#fff3e0';
+      targetElement.style.borderColor = '#ff9800';
+      targetElement.style.outline = '3px solid #ff9800';
+      targetElement.style.transition = 'all 0.2s ease';
+    }
+  }
+
+  function findDropIndex(x, y) {
+    const elements = document.querySelectorAll('[data-image-index]:not([data-placeholder]):not([data-floating-drag])');
+    
+    for (let el of elements) {
+      const index = parseInt(el.getAttribute('data-image-index'));
+      if (index === draggedIndex) continue;
+      
+      const rect = el.getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && 
+          y >= rect.top && y <= rect.bottom) {
+        return index;
+      }
+    }
+    return null;
+  }
+
+  function completeDragOperation(dropIndex) {
+    if (dropIndex !== null && dropIndex !== draggedIndex) {
+      reorderImages(draggedIndex, dropIndex);
+      
+      if (navigator.vibrate) {
+        navigator.vibrate([30, 20, 30]);
+      }
+      
+      successMessage = '이미지 순서가 변경되었습니다!';
+      setTimeout(() => successMessage = '', 2000);
+    } else {
+      if (navigator.vibrate) {
+        navigator.vibrate(100);
+      }
+    }
+  }
+
+  function resetTouchDragState() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    
+    if (floatingDragElement) {
+      floatingDragElement.remove();
+      floatingDragElement = null;
+    }
+    
+    if (dragPlaceholder) {
+      dragPlaceholder.remove();
+      dragPlaceholder = null;
+    }
+    
+    document.querySelectorAll('[data-image-index]').forEach(el => {
+      el.style.opacity = '';
+      el.style.transform = '';
+      el.style.transition = '';
+      el.style.zIndex = '';
+      el.style.backgroundColor = '';
+      el.style.borderColor = '';
+      el.style.outline = '';
+    });
+    
+    document.body.style.overflow = '';
+    document.body.style.touchAction = '';
+    
+    dragMode = false;
+    isDragMoving = false;
+    draggedIndex = null;
+    draggedElement = null;
+    touchStartX = 0;
+    touchStartY = 0;
+    currentTouchX = 0;
+    currentTouchY = 0;
+  }
+  
+  // ========== 기존 함수들 계속 ==========
+  
   async function loadExistingImages() {
     const currentKey = `${imagGub1}-${imagGub2}-${imagCode}`;
     
     if (!imagGub1 || !imagGub2 || !imagCode) {
       allImages = [];
+      isLoadingImages = false;
+      lastLoadedKey = '';
       return;
     }
     
-    if (isLoadingImages) return;
+    if (isLoadingImages) {
+      console.warn('이미 로딩 중', '강제 초기화');
+      isLoadingImages = false;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
     isLoadingImages = true;
     
     try {
@@ -177,7 +602,9 @@
         
         const loadedImages = validImages.map((img, index) => ({
           ...img,
-          url: img.name.startsWith('/') ? img.name : `/proxy-images/${img.name}`,
+          url: img.name.startsWith('/') ? 
+            `${img.name}?nocache=${Date.now()}` : 
+            `/proxy-images/${img.name}?nocache=${Date.now()}`,
           isExisting: true,
           originalIndex: index,
           loadTime: Date.now(),
@@ -187,15 +614,17 @@
         }));
         
         allImages = [...loadedImages, ...newImages];
-        lastLoadedKey = currentKey;
-        preloadImageResolutions();
       } else {
         allImages = [...newImages];
-        lastLoadedKey = currentKey;
       }
       
+      lastLoadedKey = currentKey;
+      preloadImageResolutions();
+      
     } catch (error) {
-      dispatch('error', { message: '기존 이미지 로드에 실패했습니다.' });
+      console.error('이미지 로드 실패:', error);
+      errorMessage = '기존 이미지 로드에 실패했습니다.';
+      setTimeout(() => errorMessage = '', 3000);
       allImages = [...newImages];
     } finally {
       isLoadingImages = false;
@@ -214,11 +643,14 @@
           };
           allImages = [...allImages];
         };
-        imgElement.src = img.url;
+        const url = new URL(img.url, window.location.origin);
+        url.searchParams.set('nocache', Date.now());
+        imgElement.src = url.toString();
       }
     });
   }
   
+  // 1. 간단하고 안정적인 syncNewImagesFromPond 함수
   function syncNewImagesFromPond() {
     if (!pond) return;
     
@@ -233,10 +665,12 @@
       const removedFileNames = currentNewFileNames.filter(name => !pondFileNames.includes(name));
       
       if (newFiles.length > 0 || removedFileNames.length > 0) {
+        // 제거된 파일들 필터링
         let updatedImages = allImages.filter(img => 
           img.isExisting || !removedFileNames.includes(img.name)
         );
         
+        // 새 파일들 추가
         const newImageObjects = newFiles.map((fileItem) => {
           let url = null;
           
@@ -244,13 +678,14 @@
             try {
               url = URL.createObjectURL(fileItem.file);
               
+              // 이미지 해상도 로딩
               const img = new Image();
               img.onload = function() {
                 updateImageResolution(fileItem.filename, img.naturalWidth, img.naturalHeight);
               };
               img.src = url;
-            } catch (urlError) {
-              url = null;
+            } catch (error) {
+              console.warn('URL 생성 실패:', error);
             }
           }
           
@@ -259,7 +694,7 @@
             file: fileItem.file,
             url: url,
             serverId: fileItem.serverId,
-            size: fileItem.file ? fileItem.file.size : 0, // 실제 파일 크기 사용
+            size: fileItem.file ? fileItem.file.size : 0,
             width: null,
             height: null,
             isExisting: false,
@@ -277,95 +712,282 @@
       }
       
     } catch (error) {
-      console.warn('FilePond 동기화 오류:', error);
+      console.error('동기화 오류:', error);
     }
   }
   
-  function updateImageResolution(filename, width, height) {
-    const index = allImages.findIndex(img => img.name === filename);
-    if (index !== -1) {
-      allImages[index] = {
-        ...allImages[index],
-        width: width,
-        height: height
-      };
-      allImages = [...allImages];
-    }
-  }
   
+  // 2. 간단한 handleImageAddClick 함수 (스크롤 문제 해결)
   function handleImageAddClick() {
     if (disabled || !isLibraryLoaded || allImages.length >= maxFiles) {
       return;
     }
     
-    // FilePond browse() 대신 네이티브 input 클릭 사용
+    // 간단한 파일 입력 생성
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = 'image/*';
     fileInput.multiple = maxFiles > 1;
     
-    fileInput.onchange = (event) => {
+    // 화면에서 완전히 숨김 (스크롤 문제 방지)
+    fileInput.style.cssText = `
+      position: fixed !important;
+      left: -9999px !important;
+      top: -9999px !important;
+      width: 1px !important;
+      height: 1px !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    `;
+    
+    // 파일 선택 처리
+    const handleFileChange = (event) => {
       const files = Array.from(event.target.files || []);
-      if (files.length === 0) return;
       
-      // 파일 검증
+      if (files.length === 0) {
+        cleanup();
+        return;
+      }
+      
+      // 이미지 파일만 필터링
       const imageFiles = files.filter(file => file.type.startsWith('image/'));
       
       if (imageFiles.length === 0) {
         errorMessage = '이미지 파일만 업로드 가능합니다.';
         setTimeout(() => errorMessage = '', 3000);
+        cleanup();
         return;
       }
       
+      // 파일 개수 체크
       if (allImages.length + imageFiles.length > maxFiles) {
         errorMessage = `최대 ${maxFiles}개의 파일만 업로드 가능합니다.`;
         setTimeout(() => errorMessage = '', 3000);
+        cleanup();
         return;
       }
       
-      // 개별 파일 크기 체크
+      // 파일 크기 체크
       const maxFileSize = 10 * 1024 * 1024; // 10MB
       const oversizedFiles = imageFiles.filter(file => file.size > maxFileSize);
       
       if (oversizedFiles.length > 0) {
         errorMessage = `다음 파일이 10MB를 초과합니다: ${oversizedFiles.map(f => f.name).join(', ')}`;
         setTimeout(() => errorMessage = '', 5000);
+        cleanup();
         return;
       }
       
-      // 전체 용량 체크
-      const currentNewFilesSize = newImages.reduce((total, img) => total + (img.size || 0), 0);
-      const newFilesSize = imageFiles.reduce((total, file) => total + file.size, 0);
-      const totalNewSize = currentNewFilesSize + newFilesSize;
-      const maxTotalNewSize = 50 * 1024 * 1024; // 50MB
-      
+      // 전체 용량 체크 - 리사이즈 예상 크기로 계산
+      const currentNewFilesSize = newImages.reduce((total, img) => {
+        const processedFile = processedFiles.get(img.name);
+        const fileSize = processedFile ? processedFile.size : (img.size || 0);
+        return total + fileSize;
+      }, 0);
+
+      // 새로 추가될 파일들의 예상 리사이즈 크기 계산 (대략 30% 감소 추정)
+      const estimatedNewFilesSize = imageFiles.reduce((total, file) => {
+        // 리사이즈 활성화 시 대략적인 크기 추정
+        const estimatedSize = enableResize ? file.size * 0.3 : file.size;
+        return total + estimatedSize;
+      }, 0);
+
+      const totalNewSize = currentNewFilesSize + estimatedNewFilesSize;
+      const maxTotalNewSize = 50 * 1024 * 1024; // 50MB (전체 새 파일들 제한)
+
       if (totalNewSize > maxTotalNewSize) {
         errorMessage = `새 파일들의 총 크기가 ${formatFileSize(maxTotalNewSize)}를 초과합니다. 현재: ${formatFileSize(totalNewSize)}`;
         setTimeout(() => errorMessage = '', 5000);
+        cleanup();
         return;
       }
       
       // FilePond에 파일 추가
       try {
         imageFiles.forEach(file => {
-          console.log(`버튼으로 파일 추가: ${file.name} (${formatFileSize(file.size)})`);
           if (pond) {
             pond.addFile(file);
           }
         });
-        console.log(`총 ${imageFiles.length}개 파일 추가 완료. 새 파일 총 용량: ${formatFileSize(totalNewSize)}`);
       } catch (error) {
+        console.error('파일 추가 오류:', error);
         errorMessage = '파일 추가에 실패했습니다.';
         setTimeout(() => errorMessage = '', 3000);
-        console.error('파일 추가 오류:', error);
+      }
+      
+      cleanup();
+    };
+    
+    // 정리 함수
+    const cleanup = () => {
+      try {
+        if (fileInput.parentNode) {
+          fileInput.parentNode.removeChild(fileInput);
+        }
+      } catch (error) {
+        console.warn('Input 정리 실패:', error);
       }
     };
     
-    // 프로그래밍 방식으로 파일 선택 창 열기
-    fileInput.click();
+    // 이벤트 리스너 등록
+    fileInput.addEventListener('change', handleFileChange, { once: true });
+    
+    // DOM에 추가하고 클릭 (스크롤 문제 방지를 위해 focus 제거)
+    document.body.appendChild(fileInput);
+    
+    try {
+      fileInput.click(); // focus() 제거로 스크롤 문제 해결
+    } catch (error) {
+      console.error('파일 선택창 열기 실패:', error);
+      errorMessage = '파일 선택창을 열 수 없습니다.';
+      setTimeout(() => errorMessage = '', 3000);
+      cleanup();
+    }
+    
+    // 안전장치: 10초 후 자동 정리
+    setTimeout(cleanup, 10000);
+  }
+
+  // 추가적인 iOS Safari 호환성 개선을 위한 유틸리티 함수들
+
+  // FilePond 상태 리셋 함수 (필요 시 사용)
+  function resetFilePondState() {
+    if (pond && typeof pond.setOptions === 'function') {
+      try {
+        console.log('🔄 FilePond 상태 리셋');
+        pond.setOptions({
+          allowMultiple: maxFiles > 1,
+          maxFiles: maxFiles,
+          allowBrowse: true,
+          allowDrop: true
+        });
+      } catch (error) {
+        console.warn('⚠️ FilePond 리셋 실패:', error);
+      }
+    }
+  }
+
+  // iOS Safari 감지 및 특별 처리
+  const isIOSSafari = () => {
+    const ua = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(ua);
+    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|OPiOS|mercury/.test(ua);
+    return isIOS && isSafari;
+  };
+
+  // onMount에서 호출할 iOS Safari 초기화
+  function initIOSSafariCompatibility() {
+    if (isIOSSafari()) {
+      console.log('🍎 iOS Safari 감지됨 - 특별 호환성 모드 활성화');
+      
+      // 터치 이벤트 최적화
+      document.addEventListener('touchstart', function() {}, { passive: true });
+      
+      // FilePond가 준비되면 iOS Safari 설정 적용
+      if (pond) {
+        // iOS Safari에서 문제가 되는 설정들 조정
+        pond.setOptions({
+          dropOnPage: false, // iOS Safari에서 문제 방지
+          dropValidation: true,
+          allowReorder: false, // 터치 이벤트 충돌 방지
+        });
+      }
+    }
+  }
+
+  // 추가적인 iOS Safari 호환성 개선
+  // 컴포넌트 마운트 시 실행할 추가 설정
+  function setupIOSCompatibility() {
+    // iOS Safari 감지
+    const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && 
+                        /Safari/.test(navigator.userAgent) && 
+                        !/CriOS|FxiOS|OPiOS|mercury/.test(navigator.userAgent);
+    
+    if (isIOSSafari) {
+      console.log('iOS Safari 감지됨 - 호환성 모드 활성화');
+      
+      // 전역 터치 이벤트 최적화
+      document.addEventListener('touchstart', function() {}, { passive: true });
+      
+      // 파일 선택 버튼에 추가 속성 설정
+      const addButton = document.querySelector('[data-add-button]');
+      if (addButton) {
+        addButton.style.cursor = 'pointer';
+        addButton.style.webkitTouchCallout = 'none';
+        addButton.style.webkitUserSelect = 'none';
+      }
+    }
+  }
+
+  // onMount에서 호출
+  // onMount(() => {
+  //   setupIOSCompatibility();
+  //   // ... 기존 코드
+  // });
+
+  // 기존 함수를 대체하는 완전한 버전
+  export function createIOSCompatibleFileInput(options = {}) {
+    const {
+      accept = 'image/*',
+      multiple = true,
+      onFileSelect,
+      onError,
+      maxFileSize = 10 * 1024 * 1024,
+      maxTotalSize = 50 * 1024 * 1024
+    } = options;
+    
+    return function triggerFileSelection() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = accept;
+      input.multiple = multiple;
+      
+      // 스타일 설정 (iOS 호환)
+      Object.assign(input.style, {
+        position: 'absolute',
+        left: '-9999px',
+        top: '-9999px',
+        width: '1px',
+        height: '1px',
+        opacity: '0.01',
+        zIndex: '-1'
+      });
+      
+      const cleanup = () => {
+        if (input.parentNode) {
+          input.parentNode.removeChild(input);
+        }
+      };
+      
+      input.addEventListener('change', (event) => {
+        const files = Array.from(event.target.files || []);
+        if (files.length > 0 && onFileSelect) {
+          onFileSelect(files);
+        }
+        cleanup();
+      }, { once: true });
+      
+      input.addEventListener('cancel', cleanup, { once: true });
+      
+      document.body.appendChild(input);
+      
+      try {
+        input.click();
+      } catch (error) {
+        if (onError) onError(error);
+        cleanup();
+      }
+      
+      // 안전장치
+      setTimeout(cleanup, 10000);
+    };
   }
   
   function handleImageClick(index) {
+    if (Date.now() - lastDragEndTime < 300) {
+      return;
+    }
+    
     selectedImageIndex = selectedImageIndex === index ? null : index;
   }
   
@@ -408,7 +1030,6 @@
     selectedImageIndex = null;
   }
   
-  // 파일 드래그 (+ 버튼에서만)
   function handleAddButtonDragEnter(event) {
     if (disabled || !isLibraryLoaded) return;
     if (!event.dataTransfer?.types?.includes('Files')) return;
@@ -450,47 +1071,16 @@
       return;
     }
     
-    if (allImages.length + imageFiles.length > maxFiles) {
-      errorMessage = `최대 ${maxFiles}개의 파일만 업로드 가능합니다.`;
-      setTimeout(() => errorMessage = '', 3000);
-      return;
-    }
-    
-    // 개별 파일 크기 체크 (10MB = 10 * 1024 * 1024 bytes)
-    const maxFileSize = 10 * 1024 * 1024; // 100MB → 10MB로 변경
-    const oversizedFiles = imageFiles.filter(file => file.size > maxFileSize);
-    
-    if (oversizedFiles.length > 0) {
-      errorMessage = `다음 파일이 10MB를 초과합니다: ${oversizedFiles.map(f => f.name).join(', ')}`;
-      setTimeout(() => errorMessage = '', 5000);
-      return;
-    }
-    
-    // 전체 용량 체크 수정 (기존 이미지는 제외하고 새 이미지만 계산)
-    const currentNewFilesSize = newImages.reduce((total, img) => total + (img.size || 0), 0);
-    const newFilesSize = imageFiles.reduce((total, file) => total + file.size, 0);
-    const totalNewSize = currentNewFilesSize + newFilesSize; // 새 파일들만의 총 크기
-    const maxTotalNewSize = 50 * 1024 * 1024; // 새 파일들 총 제한을 50MB로 변경
-    
-    if (totalNewSize > maxTotalNewSize) {
-      errorMessage = `새 파일들의 총 크기가 ${formatFileSize(maxTotalNewSize)}를 초과합니다. 현재: ${formatFileSize(totalNewSize)}`;
-      setTimeout(() => errorMessage = '', 5000);
-      return;
-    }
-    
     try {
       imageFiles.forEach(file => {
-        console.log(`파일 추가: ${file.name} (${formatFileSize(file.size)})`);
         pond.addFile(file);
       });
-      console.log(`총 ${imageFiles.length}개 파일 추가 완료. 새 파일 총 용량: ${formatFileSize(totalNewSize)}`);
     } catch (error) {
       errorMessage = '파일 추가에 실패했습니다.';
       setTimeout(() => errorMessage = '', 3000);
     }
   }
   
-  // 이미지 순서 변경
   function handleDragStart(event, index) {
     event.dataTransfer.setData('text/plain', index.toString());
     event.dataTransfer.effectAllowed = 'move';
@@ -548,89 +1138,6 @@
     allImages = newAllImages;
   }
   
-  // 터치 기반 순서 변경
-  function handleTouchStart(event, index) {
-    if (event.target.closest('button')) return;
-    
-    const touch = event.touches[0];
-    touchStartX = touch.clientX;
-    touchStartY = touch.clientY;
-    draggedIndex = index;
-    isDragging = false;
-  }
-  
-  function handleTouchMove(event) {
-    if (draggedIndex === null) return;
-    
-    const touch = event.touches[0];
-    const deltaY = Math.abs(touch.clientY - touchStartY);
-    const deltaX = Math.abs(touch.clientX - touchStartX);
-    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    
-    if (!isDragging && distance > 10) {
-      isDragging = true;
-      const element = document.querySelector(`[data-image-index="${draggedIndex}"]`);
-      if (element) {
-        element.style.opacity = '0.7';
-      }
-    }
-    
-    if (isDragging) {
-      event.preventDefault();
-    }
-  }
-  
-  function handleTouchEnd(event) {
-    if (draggedIndex === null) return;
-    
-    let dropIndex = null;
-    
-    if (isDragging) {
-      const touch = event.changedTouches[0];
-      dropIndex = getDropTargetIndex(touch.clientX, touch.clientY);
-    }
-    
-    document.querySelectorAll('[data-image-index]').forEach(el => {
-      el.style.opacity = '';
-    });
-    
-    if (isDragging && dropIndex !== null && draggedIndex !== dropIndex) {
-      reorderImages(draggedIndex, dropIndex);
-    }
-    
-    isDragging = false;
-    draggedIndex = null;
-  }
-  
-  function getDropTargetIndex(x, y) {
-    const elements = document.querySelectorAll('[data-image-index]');
-    let closestIndex = null;
-    let closestDistance = Infinity;
-    
-    elements.forEach(el => {
-      const index = parseInt(el.getAttribute('data-image-index'));
-      if (index === draggedIndex) return;
-      
-      const rect = el.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      
-      const distance = Math.sqrt(
-        Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2)
-      );
-      
-      if (x >= rect.left && x <= rect.right && 
-          y >= rect.top && y <= rect.bottom && 
-          distance < closestDistance) {
-        closestDistance = distance;
-        closestIndex = index;
-      }
-    });
-    
-    return closestIndex;
-  }
-  
-  // uploadToServer 함수 수정 - 단순하게
   async function uploadToServer() {
     if (!isLibraryLoaded || !imagGub1 || !imagGub2 || !imagCode) {
       dispatch('error', { message: '필수 파라미터가 누락되었습니다.' });
@@ -644,9 +1151,16 @@
     
     // 새 파일들의 총 크기 체크
     const newImageFiles = allImages.filter(img => !img.isExisting && img.file);
-    const totalNewFileSize = newImageFiles.reduce((total, img) => total + (img.file?.size || 0), 0);
-    const maxUploadSize = 50 * 1024 * 1024; // 50MB 제한
     
+    // ✅ 수정 (리사이즈된 파일 크기):
+    const totalNewFileSize = newImageFiles.reduce((total, img) => {
+      const processedFile = processedFiles.get(img.name);
+      const fileSize = processedFile ? processedFile.size : (img.file?.size || 0);
+      return total + fileSize;
+    }, 0);
+    const maxUploadSize = 50 * 1024 * 1024; // 50MB 제한 (전체)
+
+
     if (totalNewFileSize > maxUploadSize) {
       dispatch('error', { 
         message: `업로드할 파일 크기가 너무 큽니다. 새 파일들의 총 크기: ${formatFileSize(totalNewFileSize)} (제한: ${formatFileSize(maxUploadSize)})` 
@@ -663,7 +1177,6 @@
       formData.append('IMAG_GUB2', imagGub2);
       formData.append('IMAG_CODE', imagCode);
       
-      // ✅ 핵심: 최종 순서 정보 (allImages 그대로)
       const finalOrder = allImages.map((img, index) => ({
         name: img.name,
         isExisting: img.isExisting,
@@ -671,18 +1184,20 @@
       }));
       
       formData.append('finalOrder', JSON.stringify(finalOrder));
-      console.log('📋 최종 순서 전송:', finalOrder);
+      console.log('최종 순서 전송:', finalOrder);
       
-      // ✅ 새 파일들만 files로 전송 (순서 유지됨)
+      // 새 파일들 추가 시 변환된 파일 사용
       const newFiles = allImages.filter(img => !img.isExisting && img.file);
       newFiles.forEach((img) => {
-        if (img.file) {
-          formData.append('files', img.file);
-          console.log(`📁 새 파일 추가: ${img.name}`);
+        // 변환된 파일이 있으면 그것을 사용, 없으면 원본 사용
+        const fileToUpload = processedFiles.get(img.name) || img.file;
+        if (fileToUpload) {
+          formData.append('files', fileToUpload);
+          console.log(`파일 추가: ${img.name} (크기: ${fileToUpload.size})`);
         }
       });
       
-      console.log(`📤 전송: 전체 ${allImages.length}개 (기존 ${allImages.filter(img => img.isExisting).length}개, 신규 ${newFiles.length}개)`);
+      console.log(`전송: 전체 ${allImages.length}개 (기존 ${allImages.filter(img => img.isExisting).length}개, 신규 ${newFiles.length}개)`);
       
       const response = await fetch('/api/images/upload', {
         method: 'POST',
@@ -699,18 +1214,18 @@
         successMessage = `이미지가 성공적으로 저장되었습니다!`;
         setTimeout(() => successMessage = '', 3000);
         
-        // ✅ 저장 완료 후 새로고침 (캐시 방지)
         setTimeout(async () => {
           try {
             if (pond && pond.removeFiles) {
               pond.removeFiles();
             }
-            // 캐시 방지를 위한 강제 새로고침
+            // processedFiles Map도 초기화
+            processedFiles.clear();
             await loadExistingImages();
           } catch (refreshError) {
             console.warn('새로고침 실패:', refreshError);
           }
-        }, 1000);
+        }, 100);
         
       } else {
         throw new Error(result.error || '저장 실패');
@@ -732,31 +1247,6 @@
     } finally {
       uploading = false;
       uploadProgress = 0;
-    }
-  }
-  
-  function toggleResize() {
-    enableResize = !enableResize;
-    
-    if (pond && typeof pond.setOptions === 'function') {
-      try {
-        if (enableResize) {
-          pond.setOptions({
-            imageResizeTargetWidth: defaultWidth,
-            imageResizeTargetHeight: defaultHeight,
-            imageResizeMode: 'cover',
-            imageTransformClientTransforms: ['resize', 'transform']
-          });
-        } else {
-          pond.setOptions({
-            imageResizeTargetWidth: null,
-            imageResizeTargetHeight: null,
-            imageTransformClientTransforms: ['transform']
-          });
-        }
-      } catch (error) {
-        // 무시
-      }
     }
   }
   
@@ -794,25 +1284,28 @@
   export { clearAll, destroy, toggleResize, uploadToServer, loadExistingImages };
   
   export function forceReload(newImagGub1, newImagGub2, newImagCode) {
+    console.log('강제 리로드 시작');
+    
     isLoadingImages = false;
     lastLoadedKey = '';
     
     allImages.forEach(img => {
-      if (!img.isExisting && img.url) {
+      if (!img.isExisting && img.url && img.url.startsWith('blob:')) {
         URL.revokeObjectURL(img.url);
       }
     });
     
     allImages = [];
-    draggedIndex = null;
-    isDragging = false;
+    resetTouchDragState();
     selectedImageIndex = null;
+    errorMessage = '';
+    successMessage = '';
     
     if (pond && typeof pond.removeFiles === 'function') {
       try {
         pond.removeFiles();
       } catch (error) {
-        // 무시
+        console.warn('FilePond 정리 실패:', error);
       }
     }
     
@@ -823,20 +1316,18 @@
     if (imagGub1 && imagGub2 && imagCode) {
       setTimeout(() => {
         loadExistingImages();
-      }, 100);
+      }, 200);
     }
   }
   
-  // 반응형 구문
   $: if (browser && isLibraryLoaded && imagGub1 && imagGub2 && imagCode) {
     const currentKey = `${imagGub1}-${imagGub2}-${imagCode}`;
     
-    if (!isLoadingImages && currentKey !== lastLoadedKey) {
+    if (currentKey !== lastLoadedKey && !isLoadingImages) {
       loadExistingImages();
     }
   }
   
-  // 외부 images 업데이트
   $: dispatch('images-updated', { 
     images: allImages, 
     existingCount: existingImages.length, 
@@ -1013,6 +1504,115 @@
     </div>
   </div>
   
+  <!-- 리사이즈 설정 패널 -->
+  {#if enableResize && isLibraryLoaded}
+    <div class="px-4 py-3 bg-blue-50 border-b border-blue-200">
+      <div class="space-y-3">
+        <!-- 리사이즈 모드 선택 -->
+        <div class="flex items-center gap-4">
+          <span class="text-sm font-medium text-gray-700">모드:</span>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input 
+              type="radio" 
+              bind:group={resizeMode} 
+              value="contain"
+              on:change={() => changeResizeMode('contain')}
+              class="w-4 h-4 text-blue-600"
+            />
+            <span class="text-sm">축소 (전체보존)</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input 
+              type="radio" 
+              bind:group={resizeMode} 
+              value="cover"
+              on:change={() => changeResizeMode('cover')}
+              class="w-4 h-4 text-blue-600"
+            />
+            <span class="text-sm">자르기 (정확한크기)</span>
+          </label>
+        </div>
+        
+        <!-- 크기 선택 버튼들 -->
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-sm font-medium text-gray-700">크기:</span>
+          
+          {#each quickSizes as size}
+            <button
+              class="px-3 py-1 text-sm rounded border transition-colors"
+              class:bg-blue-500={selectedWidth === size.width && selectedHeight === size.height}
+              class:text-white={selectedWidth === size.width && selectedHeight === size.height}
+              class:border-blue-500={selectedWidth === size.width && selectedHeight === size.height}
+              class:bg-white={selectedWidth !== size.width || selectedHeight !== size.height}
+              class:text-gray-700={selectedWidth !== size.width || selectedHeight !== size.height}
+              class:border-gray-300={selectedWidth !== size.width || selectedHeight !== size.height}
+              on:click={() => selectQuickSize(size)}
+            >
+              {size.label}
+            </button>
+          {/each}
+          
+          <button
+            class="px-3 py-1 text-sm rounded border transition-colors"
+            class:bg-purple-500={showCustomSize}
+            class:text-white={showCustomSize}
+            class:border-purple-500={showCustomSize}
+            class:bg-white={!showCustomSize}
+            class:text-gray-700={!showCustomSize}
+            class:border-gray-300={!showCustomSize}
+            on:click={() => showCustomSize = !showCustomSize}
+          >
+            사용자 정의
+          </button>
+        </div>
+        
+        <!-- 사용자 정의 입력 -->
+        {#if showCustomSize}
+          <div class="flex items-center gap-2 p-3 bg-white rounded border border-purple-200">
+            <span class="text-sm text-gray-600">크기:</span>
+            <input
+              type="number"
+              bind:value={customWidth}
+              min="50"
+              max="2000"
+              class="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
+            />
+            <span class="text-sm text-gray-500">×</span>
+            <input
+              type="number"
+              bind:value={customHeight}
+              min="50"
+              max="2000"
+              class="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
+            />
+            <span class="text-sm text-gray-500">px</span>
+            <button
+              class="px-3 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600"
+              on:click={applyCustomSize}
+            >
+              적용
+            </button>
+            <button
+              class="px-2 py-1 text-sm bg-gray-400 text-white rounded hover:bg-gray-500"
+              on:click={() => showCustomSize = false}
+            >
+              취소
+            </button>
+          </div>
+        {/if}
+        
+        <!-- 현재 설정 표시 -->
+        <div class="flex items-center justify-between text-xs text-gray-600">
+          <span>
+            현재 설정: <strong>{selectedWidth}×{selectedHeight}</strong> 
+            ({resizeMode === 'contain' ? '축소모드' : '자르기모드'})
+          </span>
+          <span class="text-blue-600">품질: {Math.round(quality * 100)}%</span>
+        </div>
+      </div>
+    </div>
+  {/if}
+  
   <!-- 이미지 표시 영역 -->
   <div class="p-6">
     <div class="mb-6">
@@ -1029,7 +1629,7 @@
         <!-- 통합 이미지 리스트 -->
         {#each allImages as image, index}
           <div 
-            class="relative group bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer"
+            class="relative group bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer touch-manipulation"
             class:ring-2={selectedImageIndex === index}
             class:ring-blue-500={selectedImageIndex === index && image.isExisting}
             class:ring-green-500={selectedImageIndex === index && !image.isExisting}
@@ -1042,6 +1642,7 @@
             on:touchmove={(e) => handleTouchMove(e)}
             on:touchend={(e) => handleTouchEnd(e)}
             on:click={() => handleImageClick(index)}
+            style="touch-action: manipulation; -webkit-user-select: none; user-select: none;"
           >
             <!-- 이미지 -->
             <div class="aspect-square">
@@ -1051,7 +1652,7 @@
                 class="w-full h-full object-cover"
                 loading="lazy"
                 on:error={(e) => {
-                  e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMiA4VjE2TTggMTJIMTYiIHN0cm9rZT0iIzlDQTNBRiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KPFRLEDU+PC90ZXh0Pgo8L3N2Zz4=';
+                  e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMiA4VjE2TTggMTJIMTYiIHN0cm9rZT0iIzlDQTNBRiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KPHRLEDU+PC90ZXh0Pgo8L3N2Zz4=';
                   e.target.classList.add('opacity-50');
                 }}
                 on:load={(e) => handleImageLoad(e, index)}
@@ -1086,6 +1687,13 @@
                   <span>NEW</span>
                 </div>
               {/if}
+            </div>
+            
+            <!-- 드래그 안내 (모바일) -->
+            <div class="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div class="bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+                길게 누르고 드래그
+              </div>
             </div>
             
             <!-- 파일 정보 -->
@@ -1179,7 +1787,8 @@
       <!-- 안내 문구 -->
       {#if allImages.length > 1}
         <p class="text-xs text-gray-500 mt-2">
-          이미지를 드래그하여 순서를 변경할 수 있습니다
+          <strong>PC:</strong> 이미지를 드래그하여 순서를 변경할 수 있습니다<br/>
+          <strong>모바일:</strong> 이미지를 길게 누른 후 드래그하여 순서를 변경할 수 있습니다
         </p>
       {/if}
       
@@ -1193,15 +1802,13 @@
 </div>
 
 <style>
-  [data-image-index] {
+  .touch-manipulation {
     touch-action: manipulation;
     -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
     user-select: none;
-    position: relative;
-  }
-  
-  [data-image-index]:active {
-    transform: scale(0.98);
-    transition: transform 0.1s ease;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
   }
 </style>

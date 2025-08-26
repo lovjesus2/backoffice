@@ -2,9 +2,16 @@
 <script>
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  
+  import { simpleCache } from '$lib/utils/simpleImageCache';
+  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
+  import ImageModalStock from '$lib/components/ImageModalStock.svelte';
+  import ImageUploader from '$lib/components/ImageUploader.svelte';
+
   export let data;
   
+  // ImageUploader 컴포넌트 참조 변수 선언
+  let imageUploader;
+
   // 상태 관리
   let majrList = [];
   let selectedMajr = null;
@@ -18,10 +25,24 @@
   let registrationList = []; // 등록구분 목록  
   let productTypeList = []; // 제품구분 목록 (상세구분에서 변경)
   
-  let selectedCompany = ''; // 선택된 회사구분
-  let selectedRegistration = ''; // 선택된 등록구분
-  let selectedProductType = ''; // 선택된 제품구분 (상세구분에서 변경)
+  let selectedCompany = ''; // 선택된 회사구분 (MINR_CODE)
+  let selectedRegistration = ''; // 선택된 등록구분 (MINR_CODE)
+  let selectedProductType = ''; // 선택된 제품구분 (MINR_CODE)
   let searchKeyword = ''; // 검색어
+  let searchType = 'name'; // 검색 타입 (name: 제품명, code: 코드)
+  
+  // 조회된 제품 목록
+  let products = [];
+  let selectedProduct = null;
+  let searchLoading = false;
+  let searchError = '';
+  
+  
+  // ✅ 수정: MINR_CODE를 그대로 사용
+  $: currentCompanyCode = selectedCompany;        // MINR_CODE 그대로
+  $: currentRegistrationCode = selectedRegistration; // MINR_CODE 그대로
+  $: currentRegistrationName = registrationList.find(r => r.MINR_CODE === selectedRegistration)?.MINR_NAME || '';
+  $: isProductInfo = currentRegistrationName === '제품정보';
   
   // 제품구분 표시 여부 (등록구분이 "제품정보"일 때만)
   $: showProductType = registrationList.find(item => item.MINR_CODE === selectedRegistration)?.MINR_NAME === '제품정보';
@@ -42,16 +63,47 @@
   // 모바일에서 백오피스 메뉴 상태 감지
   let backofficeMenuOpen = false;
   
+  // 이미지 캐싱
+  async function cacheImage(event) {
+    await simpleCache.handleImage(event.target);
+  }
+
+  // 이미지 클릭 핸들러
+  function handleImageClick(productCode, productName) {
+    const imageSrc = getProxyImageUrl(productCode);
+    if (imageSrc) {
+      openImageModal(imageSrc, productName, productCode);
+    }
+  }
+
+  // 재고 업데이트 이벤트 처리
+  function handleStockUpdated(event) {
+    const { productCode, newStock } = event.detail;
+    products = products.map(p => 
+      p.code === productCode 
+        ? { ...p, stock: newStock }
+        : p
+    );
+  }
+
+  function handleDiscontinuedUpdated(event) {
+    console.log('단종 상태 업데이트:', event.detail);
+  }
+  
+  // 엔터키 검색 핸들러
+  function handleSearchKeydown(event) {
+    if (event.key === 'Enter') {
+      handleSearch();
+    }
+  }
+  
   // 페이지 로드 시 초기화
   onMount(async () => {
     // 모바일에서는 초기에 대분류 패널 숨김, PC에서는 표시
     leftPanelVisible = window.innerWidth > 768;
     
-    // 회사구분 목록과 카테고리 목록 동시 로드
-    await Promise.all([
-      loadCompanyList(),
-      loadMajrList()
-    ]);
+    // 회사구분 목록 로드
+    await loadCompanyList();
     
     // 백오피스 메뉴 상태 감지
     const detectBackofficeMenu = () => {
@@ -109,7 +161,7 @@
         companyList = result.data.sort((a, b) => parseInt(a.MINR_SORT) - parseInt(b.MINR_SORT));
         // 첫 번째 항목 자동 선택
         if (companyList.length > 0) {
-          selectedCompany = companyList[0].MINR_CODE;
+          selectedCompany = companyList[0].MINR_CODE; // ✅ MINR_CODE 선택
           await handleCompanyChange();
         }
       } else {
@@ -120,7 +172,7 @@
     }
   }
 
-  // 등록구분 목록 조회 (선택된 회사구분의 MINR_BIGO 값으로 조회)
+  // ✅ 수정: 등록구분 목록 조회 (선택된 회사구분의 MINR_BIGO 값으로 조회)
   async function loadRegistrationList(companyBigo) {
     try {
       if (!companyBigo) {
@@ -128,17 +180,18 @@
         return;
       }
       
+      // MINR_BIGO를 참조 코드로 사용해서 해당 카테고리의 하위 항목들 조회
       const response = await fetch(`/api/common-codes/minr?majr_code=${companyBigo}`);
       const result = await response.json();
       
       if (result.success) {
         registrationList = result.data.sort((a, b) => parseInt(a.MINR_SORT) - parseInt(b.MINR_SORT));
         
-        // 첫 번째 항목 자동 선택
+        // 첫 번째 항목의 MINR_CODE를 선택 (MINR_BIGO 아님!)
         if (registrationList.length > 0) {
-          selectedRegistration = registrationList[0].MINR_CODE;
+          selectedRegistration = registrationList[0].MINR_CODE;  // ✅ 핵심 수정!
           
-          // 선택된 항목이 제품정보인 경우 제품구분 로드
+          // 제품정보인지 확인할 때는 MINR_NAME 사용
           if (registrationList[0].MINR_NAME === '제품정보') {
             await loadProductTypeList();
           } else {
@@ -183,10 +236,11 @@
     }
   }
 
-  // 회사구분 선택 시 처리
+  // ✅ 수정: 회사구분 선택 시 처리
   async function handleCompanyChange() {
     const selectedCompanyItem = companyList.find(item => item.MINR_CODE === selectedCompany);
     if (selectedCompanyItem && selectedCompanyItem.MINR_BIGO) {
+      // MINR_BIGO를 참조 코드로 사용해서 등록구분 목록 로드
       await loadRegistrationList(selectedCompanyItem.MINR_BIGO);
     } else {
       registrationList = [];
@@ -194,6 +248,11 @@
       selectedProductType = '';
       productTypeList = [];
     }
+    
+    // 검색 결과 초기화
+    products = [];
+    selectedProduct = null;
+    searchError = '';
   }
 
   // 등록구분 선택 시 처리
@@ -207,17 +266,135 @@
       productTypeList = [];
       selectedProductType = '';
     }
+    
+    // 검색 결과 초기화
+    products = [];
+    selectedProduct = null;
+    searchError = '';
   }
 
-  // 검색 실행
-  function handleSearch() {
+  // ✅ 수정: 검색 실행 (검색어 없어도 가능)
+  async function handleSearch() {
+    console.log('=== 제품 검색 시작 ===');
     console.log('검색 조건:', {
-      company: selectedCompany,
-      registration: selectedRegistration,
-      productType: selectedProductType,
-      keyword: searchKeyword
+      searchKeyword: searchKeyword.trim(),
+      currentCompanyCode,      // 이제 MINR_CODE
+      currentRegistrationCode, // 이제 MINR_CODE
+      currentRegistrationName,
+      isProductInfo,
+      selectedProductType
     });
-    // 여기에 실제 검색 로직 구현
+
+    if (!currentCompanyCode || !currentRegistrationCode) {
+      searchError = '회사구분과 등록구분을 선택해주세요.';
+      return;
+    }
+
+    searchLoading = true;
+    searchError = '';
+    products = [];
+
+    try {
+      const params = new URLSearchParams({
+        search_term: searchKeyword.trim() || '', // 빈 문자열도 허용
+        search_type: searchType, // 검색 타입 추가
+        discontinued_filter: 'all',
+        company_code: currentCompanyCode,        // MINR_CODE 전송
+        registration_code: currentRegistrationCode, // MINR_CODE 전송
+        registration_name: currentRegistrationName
+      });
+
+      // 제품구분이 선택된 경우 추가
+      if (isProductInfo && selectedProductType && selectedProductType !== 'ALL') {
+        params.append('product_type', selectedProductType);
+      }
+
+      const apiUrl = `/api/product-management/product-registration/search?${params}`;
+      console.log('API 요청 URL:', apiUrl);
+      
+      const response = await fetch(apiUrl);
+      console.log('API 응답 상태:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('API 응답 데이터:', result);
+
+      if (result.success) {
+        products = result.data;
+        console.log('조회된 제품 수:', products.length);
+        
+        if (products.length === 0) {
+          searchError = '검색 결과가 없습니다.';
+        }
+      } else {
+        console.error('API 에러:', result.message);
+        searchError = result.message || '검색 실패';
+        products = [];
+      }
+    } catch (err) {
+      console.error('네트워크 에러:', err);
+      searchError = `검색 중 오류가 발생했습니다: ${err.message}`;
+      products = [];
+    } finally {
+      searchLoading = false;
+      console.log('=== 제품 검색 완료 ===');
+    }
+  }
+  
+  // 제품 선택
+  function selectProduct(product) {
+    selectedProduct = product;
+    console.log('선택된 제품:', product);
+    
+    // 제품 선택 시 이미지 업로더에 기존 이미지 로드
+
+    if (imageUploader) {
+      imageUploader.forceReload();
+    }
+  }
+  
+  // 단종 처리 (제품정보일 때만)
+  async function toggleDiscontinued(productCode) {
+    if (!isProductInfo) return;
+
+    try {
+      const response = await fetch('/api/product-management/product-registration/discontinued', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          product_code: productCode,
+          company_code: currentCompanyCode,
+          registration_code: currentRegistrationCode,
+          registration_name: currentRegistrationName
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        products = products.map(p => 
+          p.code === productCode 
+            ? { ...p, discontinued: result.action === 'discontinued' }
+            : p
+        );
+        
+        if (selectedProduct && selectedProduct.code === productCode) {
+          selectedProduct = { ...selectedProduct, discontinued: result.action === 'discontinued' };
+        }
+        
+        alert(result.message);
+      } else {
+        alert(result.message || '처리 실패');
+      }
+    } catch (err) {
+      console.error('단종 처리 오류:', err);
+      alert('단종 처리 중 오류가 발생했습니다.');
+    }
   }
   
   // 카테고리 목록 조회 (임시 데이터)
@@ -230,7 +407,7 @@
         { MAJR_CODE: 'ELEC', MAJR_NAME: '전자제품', MAJR_BIGO: '전자기기', MAJR_BIG2: '' },
         { MAJR_CODE: 'FURN', MAJR_NAME: '가구', MAJR_BIGO: '가정용 가구', MAJR_BIG2: '' },
         { MAJR_CODE: 'CLTH', MAJR_NAME: '의류', MAJR_BIGO: '패션 의류', MAJR_BIG2: '' },
-        { MAJR_CODE: 'BOOK', MAJR_NAME: '도서', MAJR_BIGO: '서적 및 잡지', MAJR_BIG2: '' },
+        { MAJR_CODE: 'BOOK', MAJR_NAME: '도서', MAJR_BIGO: '서점 및 잡지', MAJR_BIG2: '' },
         { MAJR_CODE: 'SPRT', MAJR_NAME: '스포츠용품', MAJR_BIGO: '운동용품', MAJR_BIG2: '' }
       ];
       
@@ -364,8 +541,6 @@
     }
   }
   
-  // 검색 처리 (handleMajrSearch 제거)
-  
   // 메시지 자동 숨김
   $: if (success) {
     setTimeout(() => success = '', 3000);
@@ -421,7 +596,7 @@
     
     const touchDuration = Date.now() - touchStartTime;
     
-    // 스크롤 중이거나 너무 오래 눌렀으면 선택 안함
+    // 스크롤 중이거나 너무 오래 눌렸으면 선택 안함
     if (!isTouchScrolling && touchDuration < 500) {
       selectMajr(majr);
     }
@@ -475,8 +650,9 @@
       </div>
     {/if}
 
-    <div class="flex w-full relative flex-1">
-      <!-- 모바일 오버레이 배경 - 전체 화면을 덮되 패널 영역만 제외 -->
+    <!-- 반응형 레이아웃 -->
+    <div class="flex flex-1 relative">
+      <!-- 모바일 오버레이 배경 -->
       {#if typeof window !== 'undefined' && window.innerWidth <= 1024 && leftPanelVisible}
         <div 
           class="fixed inset-0 bg-black bg-opacity-50 z-20"
@@ -487,7 +663,7 @@
         ></div>
       {/if}
 
-      <!-- 왼쪽 패널: 검색 및 카테고리 목록 -->
+      <!-- 제품 조회 패널 (왼쪽) -->
       <div class="transition-all duration-300 {leftPanelVisible ? 'opacity-100' : 'opacity-0'} lg:relative lg:ml-2.5 {leftPanelVisible ? '' : 'hidden'}" 
            style="flex: 0 0 {leftPanelVisible ? '350px' : '0px'}; background: transparent; z-index: 25;"
            class:fixed={typeof window !== 'undefined' && window.innerWidth <= 1024}
@@ -499,7 +675,7 @@
            style:transform={typeof window !== 'undefined' && window.innerWidth <= 1024 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
            on:click={handlePanelClick}>
         
-        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);" 
+        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? '1px' : '8px'};" 
              on:click={handlePanelClick}>
           
           <!-- 패널 헤더 -->
@@ -514,20 +690,16 @@
               </button>
             {/if}
             
-            <div class="flex items-center gap-2.5">
-              <h2 class="text-gray-800 m-0" style="font-size: 1.1rem;">검색 및 선택</h2>
-            </div>
-            
             <!-- 검색 필터 -->
             <div class="space-y-3">
               <!-- 회사구분 -->
-              <div class="flex flex-col">
-                <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.85rem;">회사구분</label>
+              <div class="flex flex-row items-center gap-2">
+                <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">회사구분</label>
                 <select 
                   bind:value={selectedCompany}
                   on:change={handleCompanyChange}
-                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                  style="padding: 6px 10px; font-size: 0.85rem;"
+                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 flex-1"
+                  style="padding: 5px 8px; font-size: 0.75rem;"
                 >
                   {#each companyList as company}
                     <option value={company.MINR_CODE}>{company.MINR_NAME}</option>
@@ -536,14 +708,14 @@
               </div>
 
               <!-- 등록구분 -->
-              <div class="flex flex-col">
-                <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.85rem;">등록구분</label>
+              <div class="flex flex-row items-center gap-2">
+                <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">등록구분</label>
                 <select 
                   bind:value={selectedRegistration}
                   on:change={handleRegistrationChange}
                   disabled={registrationList.length === 0}
-                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-100"
-                  style="padding: 6px 10px; font-size: 0.85rem;"
+                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-100 flex-1"
+                  style="padding: 5px 8px; font-size: 0.75rem;"
                 >
                   {#each registrationList as registration}
                     <option value={registration.MINR_CODE}>{registration.MINR_NAME}</option>
@@ -553,12 +725,12 @@
 
               <!-- 제품구분 (등록구분이 "제품정보"일 때만 표시) -->
               {#if showProductType}
-                <div class="flex flex-col">
-                  <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.85rem;">제품구분</label>
+                <div class="flex flex-row items-center gap-2">
+                  <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">제품구분</label>
                   <select 
                     bind:value={selectedProductType}
-                    class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                    style="padding: 6px 10px; font-size: 0.85rem;"
+                    class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 flex-1"
+                    style="padding: 5px 8px; font-size: 0.75rem;"
                   >
                     {#each productTypeList as productType}
                       <option value={productType.MINR_CODE}>{productType.MINR_NAME}</option>
@@ -567,238 +739,414 @@
                 </div>
               {/if}
 
-              <!-- 검색어 -->
-              <div class="flex flex-col">
-                <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.85rem;">검색어</label>
-                <div class="flex gap-2">
-                  <input 
-                    type="text" 
-                    placeholder="검색어 입력..."
-                    bind:value={searchKeyword}
-                    class="flex-1 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                    style="padding: 6px 10px; font-size: 0.85rem;"
-                    on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
-                    on:blur={(e) => e.target.style.boxShadow = 'none'}
-                    on:click|stopPropagation
-                  />
-                  <button 
-                    class="text-white border-none rounded cursor-pointer transition-colors text-sm hover:bg-blue-600"
-                    style="padding: 6px 12px; background-color: #007bff; font-size: 0.85rem;"
-                    on:click|stopPropagation={handleSearch}
-                  >
-                    조회
-                  </button>
-                </div>
+              <!-- 검색 -->
+              <div class="flex gap-1">
+                <select 
+                  bind:value={searchType}
+                  class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  style="padding: 5px 6px; font-size: 0.75rem; min-width: 65px;"
+                >
+                  <option value="name">제품명</option>
+                  <option value="code">코드</option>
+                </select>
+                <input 
+                  type="text" 
+                  placeholder="검색어 입력 (선택사항)..."
+                  bind:value={searchKeyword}
+                  class="flex-1 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  style="padding: 5px 8px; font-size: 0.75rem;"
+                  on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
+                  on:blur={(e) => e.target.style.boxShadow = 'none'}
+                  on:keydown={handleSearchKeydown}
+                  on:click|stopPropagation
+                />
+                <button 
+                  class="text-white border-none rounded cursor-pointer transition-colors hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
+                  style="padding: 5px 8px; background-color: #007bff; min-width: 32px;"
+                  on:click|stopPropagation={handleSearch}
+                  disabled={searchLoading}
+                  title={searchLoading ? '검색중' : '조회'}
+                >
+                  {#if searchLoading}
+                    <div class="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"></div>
+                  {:else}
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  {/if}
+                </button>
               </div>
             </div>
           </div>
           
-          <!-- 목록 - 화면 맨 아래까지 -->
+          <!-- 목록 -->
           <div class="overflow-y-auto" style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - env(safe-area-inset-top, 0px) - 380px)' : 'calc(100vh - 310px)'};">
-            {#if loading}
+            {#if searchError}
+              <div class="text-center text-red-600 bg-red-50" style="padding: 30px 15px;">
+                {searchError}
+              </div>
+            {:else if searchLoading}
               <div class="text-center text-gray-600" style="padding: 30px 15px;">
                 <div class="mx-auto mb-2.5 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin" style="width: 25px; height: 25px;"></div>
-                로딩 중...
+                검색 중...
               </div>
-            {:else if majrList.length === 0}
-              <div class="text-center text-gray-600" style="padding: 30px 15px; font-size: 0.9rem;">
-                등록된 카테고리가 없습니다.
+            {:else if products.length > 0}
+              <div style="padding: 10px;">
+                {#each products as product}
+                  <div 
+                    class="relative bg-white rounded-lg border border-gray-200 overflow-hidden cursor-pointer transition-colors hover:bg-gray-50 {selectedProduct?.code === product.code ? 'border-blue-500 bg-blue-50' : ''} {product.discontinued ? 'opacity-60 bg-gray-50' : ''}"
+                    style="margin-bottom: 12px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
+                    on:click|stopPropagation={() => selectProduct(product)}
+                  >
+                    <!-- 이미지 및 기본 정보 -->
+                    <div class="flex" style="gap: 12px;">
+                      <!-- 상품 이미지 -->
+                      <div class="flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden" style="width: 80px; height: 80px;">
+                        <img 
+                          src={getProxyImageUrl(product.code)} 
+                          alt={product.name}
+                          class="w-full h-full object-cover cursor-pointer"
+                          on:click|stopPropagation={() => handleImageClick(product.code, product.name)}
+                          on:load={cacheImage}
+                          on:error={(e) => {
+                            e.target.src = '/placeholder.png';
+                            e.target.style.background = '#f0f0f0';
+                          }}
+                        />
+                      </div>
+
+                      <!-- 상품 정보 -->
+                      <div class="flex-1 min-w-0">
+                        <h3 class="font-semibold text-gray-900 mb-1" style="font-size: 0.7rem; line-height: 1.3; word-break: break-all;">{product.name}</h3>
+                        <div class="text-blue-600 font-bold" style="font-size: 0.65rem;">{product.code}</div>
+                      </div>
+                    </div>
+                  </div>
+                {/each}
               </div>
             {:else}
-              {#each majrList as majr}
-                <div 
-                  class="border-b border-gray-200 cursor-pointer transition-colors hover:bg-gray-50 {selectedMajr && selectedMajr.MAJR_CODE === majr.MAJR_CODE ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''}"
-                  style="padding: 10px 15px;"
-                  on:click|stopPropagation={() => selectMajr(majr)}
-                  on:touchstart={(e) => handleMajrTouchStart(e, majr)}
-                  on:touchmove={handleMajrTouchMove}
-                  on:touchend={(e) => handleMajrTouchEnd(e, majr)}
-                >
-                  <div class="font-semibold text-gray-900" style="font-size: 0.9rem;">{majr.MAJR_CODE}</div>
-                  <div class="text-gray-600 mt-0.5" style="font-size: 0.8rem;">{majr.MAJR_NAME}</div>
-                </div>
-              {/each}
+              <div class="text-center text-gray-600" style="padding: 30px 15px; font-size: 0.9rem;">
+                조회 버튼을 클릭하여 제품을 조회하세요.
+              </div>
             {/if}
           </div>
         </div>
       </div>
 
-      <!-- 오른쪽 패널: 컨텐츠 -->
+      <!-- 메인 콘텐츠 영역 (flex-1) -->
       <div class="flex-1 min-w-0 px-2">
-        <!-- 카테고리 편집 폼 -->
-        <div class="bg-white rounded-lg overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          <div class="border-b border-gray-200 flex justify-between items-center flex-wrap" style="padding: 15px 20px; gap: 15px;">
-            <div class="flex items-center gap-2.5">
-              <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">카테고리 {majrEditForm.isNew ? '신규등록' : '수정'}</h3>
-            </div>
-          </div>
+        <!-- 반응형 레이아웃: 모바일/PC 모두 세로배치 -->
+        <div class="flex flex-col gap-5">
           
-          <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-            <div class="flex flex-col">
-              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">카테고리 코드</label>
-              <input 
-                type="text" 
-                bind:value={majrEditForm.MAJR_CODE}
-                maxlength="10"
-                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                style="padding: 8px 12px; font-size: 0.9rem;"
-                placeholder="카테고리 코드 입력"
-                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
-                on:blur={(e) => e.target.style.boxShadow = 'none'}
-              />
-            </div>
-            <div class="flex flex-col">
-              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">카테고리 명칭</label>
-              <input 
-                type="text" 
-                bind:value={majrEditForm.MAJR_NAME}
-                maxlength="200"
-                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                style="padding: 8px 12px; font-size: 0.9rem;"
-                placeholder="카테고리 명칭 입력"
-                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
-                on:blur={(e) => e.target.style.boxShadow = 'none'}
-              />
-            </div>
-            <div class="flex flex-col">
-              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">비고1</label>
-              <input 
-                type="text" 
-                bind:value={majrEditForm.MAJR_BIGO}
-                maxlength="200"
-                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                style="padding: 8px 12px; font-size: 0.9rem;"
-                placeholder="비고1 입력"
-                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
-                on:blur={(e) => e.target.style.boxShadow = 'none'}
-              />
-            </div>
-            <div class="flex flex-col">
-              <label class="mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.9rem;">비고2</label>
-              <input 
-                type="text" 
-                bind:value={majrEditForm.MAJR_BIG2}
-                maxlength="200"
-                class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                style="padding: 8px 12px; font-size: 0.9rem;"
-                placeholder="비고2 입력"
-                on:focus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(0,123,255,0.25)'}
-                on:blur={(e) => e.target.style.boxShadow = 'none'}
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- 제품 관리 -->
-        <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          <div class="border-b border-gray-200 flex justify-between items-center flex-wrap relative" style="padding: 15px 20px; gap: 15px;">
-            <div class="flex items-center gap-2.5">
-              <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">제품 관리 {currentMajrCode ? `(${currentMajrCode})` : ''}</h3>
-            </div>
-            <div class="flex gap-2">
-              <button 
-                class="text-white border-none rounded cursor-pointer transition-colors hover:bg-gray-700"
-                style="padding: 6px 12px; background-color: #6c757d; font-size: 0.9rem;"
-                on:click={addNewRow}
-              >
-                행추가
-              </button>
-              <button 
-                class="text-white border-none rounded cursor-pointer transition-colors hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed"
-                style="padding: 6px 12px; background-color: #007bff; font-size: 0.9rem;"
-                on:click={saveAll}
-                disabled={loading}
-              >
-                {#if loading}
-                  <span class="inline-block border-2 border-white border-t-transparent rounded-full animate-spin mr-2" style="width: 12px; height: 12px;"></span>
-                {/if}
-                저장
-              </button>
-            </div>
-          </div>
-          
-          <div class="p-5">
-            {#if loading}
-              <div class="text-center text-gray-600" style="padding: 30px 15px;">
-                <div class="mx-auto mb-2.5 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin" style="width: 25px; height: 25px;"></div>
-                불러오는 중...
-              </div>
-            {:else if currentMajrCode}
-              {#if visibleMinrList.length === 0}
-                <div class="text-center text-gray-500" style="padding: 30px 15px; font-size: 0.9rem;">
-                  등록된 제품이 없습니다.<br>
-                  "행추가" 버튼을 눌러 추가해보세요.
+          <!-- 카테고리 관리 섹션 (항상 위) -->
+          <div class="w-full">
+            <!-- 첫 번째 카드: 기본 정보 -->
+            <div class="bg-white rounded-lg overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+              <!-- 헤더 -->
+              <div class="border-b border-gray-200 flex justify-between items-center flex-wrap" style="padding: 15px 20px; gap: 15px;">
+                <div class="flex items-center gap-2.5">
+                  <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">카테고리 신규등록</h3>
                 </div>
-              {:else}
-                <!-- 제품 테이블 -->
-                <div class="overflow-x-auto">
-                  <table class="w-full border-collapse" style="font-size: 0.9rem;">
-                    <thead>
-                      <tr class="bg-gray-50">
-                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">제품코드</th>
-                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">제품명</th>
-                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">비고1</th>
-                        <th class="border border-gray-300 text-left text-gray-800 font-semibold" style="padding: 8px; color: #333;">비고2</th>
-                        <th class="border border-gray-300 text-center text-gray-800 font-semibold" style="padding: 8px; color: #333;">삭제</th>
+                <div class="flex gap-2">
+                  <button 
+                    class="text-white border-none rounded cursor-pointer transition-colors hover:bg-green-600"
+                    style="padding: 6px 12px; background-color: #28a745; font-size: 0.9rem;"
+                  >
+                    저장
+                  </button>
+                  <button 
+                    class="text-gray-700 border border-gray-300 rounded cursor-pointer transition-colors hover:bg-gray-100"
+                    style="padding: 6px 12px; background-color: white; font-size: 0.9rem;"
+                  >
+                    Clear
+                  </button>
+                  <button 
+                    class="text-white border-none rounded cursor-pointer transition-colors hover:bg-red-600"
+                    style="padding: 6px 12px; background-color: #dc3545; font-size: 0.9rem;"
+                  >
+                    삭제
+                  </button>
+                </div>
+              </div>
+              
+              <!-- 폼 컨텐츠 -->
+              <div class="p-5">
+                <!-- 회사구분, 등록구분 -->
+                <div class="space-y-3 mb-4">
+                  <div class="flex flex-row items-center gap-2">
+                    <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">회사구분</label>
+                    <select 
+                      bind:value={selectedCompany}
+                      class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 flex-1" 
+                      style="padding: 5px 8px; font-size: 0.75rem;"
+                    >
+                      {#each companyList as company}
+                        <option value={company.MINR_CODE}>{company.MINR_NAME}</option>
+                      {/each}
+                    </select>
+                  </div>
+                  
+                  <div class="flex flex-row items-center gap-2">
+                    <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">등록구분</label>
+                    <select 
+                      bind:value={selectedRegistration}
+                      disabled={registrationList.length === 0}
+                      class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-100 flex-1" 
+                      style="padding: 5px 8px; font-size: 0.75rem;"
+                    >
+                      {#each registrationList as registration}
+                        <option value={registration.MINR_CODE}>{registration.MINR_NAME}</option>
+                      {/each}
+                    </select>
+                  </div>
+                </div>
+
+                <!-- 코드, 명칭, 외부코드 -->
+                <div class="flex gap-2 mb-4">
+                  <div class="flex-1">
+                    <label class="block mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.75rem;">코드</label>
+                    <input type="text" class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500" style="padding: 5px 8px; font-size: 0.75rem;" />
+                  </div>
+                  <div class="flex-1">
+                    <label class="block mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.75rem;">명칭</label>
+                    <input type="text" class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500" style="padding: 5px 8px; font-size: 0.75rem;" />
+                  </div>
+                  <div class="flex-1">
+                    <label class="block mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.75rem;">외부코드</label>
+                    <input type="text" class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500" style="padding: 5px 8px; font-size: 0.75rem;" />
+                  </div>
+                </div>
+
+                <!-- 제품설명 -->
+                <div class="mb-4">
+                  <label class="block mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.75rem;">제품설명</label>
+                  <textarea class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500" rows="3" style="padding: 5px 8px; font-size: 0.75rem;"></textarea>
+                </div>
+
+                <!-- 바코드 -->
+                <div class="flex items-center gap-2">
+                  <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">바코드</label>
+                  <input type="text" value="1" class="border border-gray-300 rounded focus:outline-none focus:border-blue-500" style="padding: 5px 8px; font-size: 0.75rem; width: 60px;" />
+                  <button class="text-white border-none rounded cursor-pointer transition-colors hover:bg-blue-600" style="padding: 5px 10px; background-color: #007bff; font-size: 0.75rem;">
+                    바코드 출력
+                  </button>
+                  <button class="text-white border-none rounded cursor-pointer transition-colors hover:bg-green-600" style="padding: 5px 10px; background-color: #28a745; font-size: 0.75rem;">
+                    단가입력
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 두 번째 카드: 가격 정보 -->
+            <div class="bg-white rounded-lg overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+              <div class="border-b border-gray-200" style="padding: 15px 20px;">
+                <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">가격 정보</h3>
+              </div>
+              
+              <div class="p-5">
+                <!-- 상세내역 테이블 1 -->
+                <div class="mb-4">
+                  <div class="border border-gray-300 rounded overflow-hidden">
+                    <table class="w-full" style="font-size: 0.75rem;">
+                      <thead class="bg-gray-100">
+                        <tr>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 40px;">✓</th>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px;">원가</th>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px;">카드가</th>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px;">현금가</th>
+                          <th class="text-center" style="padding: 6px;">납품가</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td class="border-r border-gray-300 text-center" style="padding: 6px;">
+                            <input type="checkbox" />
+                          </td>
+                          <td class="border-r border-gray-300" style="padding: 2px;">
+                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          </td>
+                          <td class="border-r border-gray-300" style="padding: 2px;">
+                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          </td>
+                          <td class="border-r border-gray-300" style="padding: 2px;">
+                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          </td>
+                          <td style="padding: 2px;">
+                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- 상세내역 테이블 2 -->
+                <div>
+                  <div class="border border-gray-300 rounded overflow-hidden">
+                    <table class="w-full" style="font-size: 0.75rem;">
+                      <thead class="bg-gray-100">
+                        <tr>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 40px;">✓</th>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px;">현금</th>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px;">할인수량</th>
+                          <th class="text-center" style="padding: 6px;">할인금액</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td class="border-r border-gray-300 text-center" style="padding: 6px;">
+                            <input type="checkbox" />
+                          </td>
+                          <td class="border-r border-gray-300" style="padding: 2px;">
+                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          </td>
+                          <td class="border-r border-gray-300" style="padding: 2px;">
+                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          </td>
+                          <td style="padding: 2px;">
+                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 세 번째 카드: 상세내역 -->
+            <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+              <div class="border-b border-gray-200" style="padding: 15px 20px;">
+                <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">상세내역 (6개)</h3>
+              </div>
+              
+              <div class="p-5">
+                <div class="border border-gray-300 rounded overflow-hidden">
+                  <table class="w-full" style="font-size: 0.75rem;">
+                    <thead class="bg-gray-100">
+                      <tr>
+                        <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 40px;">✓</th>
+                        <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 60px;">코드</th>
+                        <th class="border-r border-gray-300 text-center" style="padding: 6px;">명칭</th>
+                        <th class="border-r border-gray-300 text-center" style="padding: 6px;">입력</th>
+                        <th class="border-r border-gray-300 text-center" style="padding: 6px;">입력명</th>
+                        <th class="text-center" style="padding: 6px;">CLICK</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {#each visibleMinrList as item, index}
-                        <tr class="hover:bg-gray-50 {item.isNew ? 'bg-yellow-50' : 'bg-white'}">
-                          <td class="border border-gray-300" style="padding: 8px;">
-                            <input 
-                              type="text" 
-                              bind:value={item.MINR_CODE}
-                              maxlength="10"
-                              class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                              style="padding: 4px 6px; font-size: 0.85rem;"
-                            />
-                          </td>
-                          <td class="border border-gray-300" style="padding: 8px;">
-                            <input 
-                              type="text" 
-                              bind:value={item.MINR_NAME}
-                              maxlength="200"
-                              class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                              style="padding: 4px 6px; font-size: 0.85rem;"
-                            />
-                          </td>
-                          <td class="border border-gray-300" style="padding: 8px;">
-                            <input 
-                              type="text" 
-                              bind:value={item.MINR_BIGO}
-                              maxlength="200"
-                              class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                              style="padding: 4px 6px; font-size: 0.85rem;"
-                            />
-                          </td>
-                          <td class="border border-gray-300" style="padding: 8px;">
-                            <input 
-                              type="text" 
-                              bind:value={item.MINR_BIG2}
-                              maxlength="200"
-                              class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                              style="padding: 4px 6px; font-size: 0.85rem;"
-                            />
-                          </td>
-                          <td class="border border-gray-300 text-center" style="padding: 8px;">
-                            <button 
-                              class="bg-transparent border border-gray-300 rounded cursor-pointer text-red-600 hover:bg-red-100 transition-all"
-                              style="padding: 4px 8px; font-size: 0.8rem; color: #dc3545;"
-                              on:click={() => deleteRow(index)}
-                            >
-                              삭제
-                            </button>
-                          </td>
-                        </tr>
-                      {/each}
+                      <tr>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
+                          <input type="checkbox" checked />
+                        </td>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L1</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;">제품구분</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="text-center" style="padding: 6px;">
+                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
+                          <input type="checkbox" checked />
+                        </td>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L2</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;">생산구분</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="text-center" style="padding: 6px;">
+                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
+                          <input type="checkbox" checked />
+                        </td>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L3</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;">현금세팅</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="text-center" style="padding: 6px;">
+                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
+                          <input type="checkbox" checked />
+                        </td>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L4</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;">카탈로그</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="text-center" style="padding: 6px;">
+                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
+                          <input type="checkbox" checked />
+                        </td>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L5</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;">단종구분</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="text-center" style="padding: 6px;">
+                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
+                          <input type="checkbox" checked />
+                        </td>
+                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L6</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;">재고관리</td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
+                        <td class="text-center" style="padding: 6px;">
+                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
-              {/if}
+              </div>
+            </div>
+          </div>
+
+          <!-- 이미지 관리 섹션 (항상 아래) -->
+          <div class="w-full">
+            {#if selectedProduct}
+              <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <!-- 헤더 -->
+                <div class="border-b border-gray-200 flex justify-between items-center flex-wrap" style="padding: 15px 20px; gap: 15px;">
+                  <div class="flex items-center gap-2.5">
+                    <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">
+                      📷 이미지 관리 - {selectedProduct.name}
+                    </h3>
+                    <span class="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                      {selectedProduct.code}
+                    </span>
+                  </div>
+                </div>
+                
+                <!-- 이미지 업로더 -->
+                <div class="p-5">
+                  <ImageUploader
+                    bind:this={imageUploader}
+                    imagGub1={currentCompanyCode}
+                    imagGub2={currentRegistrationCode}
+                    imagCode={selectedProduct.code}
+                  />
+                </div>
+              </div>
             {:else}
-              <div class="text-center text-gray-500" style="padding: 30px 15px; font-size: 0.9rem;">
-                카테고리를 선택하거나 신규 등록해주세요.
+              <!-- 제품 미선택 안내 -->
+              <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div class="p-5 text-center text-gray-500">
+                  <div class="text-4xl mb-3">📷</div>
+                  <h3 class="text-lg font-medium mb-2">이미지 관리</h3>
+                  <p class="text-sm">왼쪽에서 제품을 선택하면 이미지를 업로드할 수 있습니다.</p>
+                </div>
               </div>
             {/if}
           </div>
@@ -807,3 +1155,9 @@
     </div>
   </div>
 </div>
+
+<!-- 이미지 모달 -->
+<ImageModalStock 
+  on:stockUpdated={handleStockUpdated}
+  on:discontinuedUpdated={handleDiscontinuedUpdated}
+/>
