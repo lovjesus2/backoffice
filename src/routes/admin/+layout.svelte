@@ -60,63 +60,20 @@
       cleanupImageModal = initAutoImageModal(true); // 프록시 이미지 사용
     }
     
+    // PC 사이드바 상태 복원
+    if (browser) {
+      const savedPcSidebar = localStorage.getItem('pcSidebarOpen');
+      if (savedPcSidebar) {
+        isPcSidebarOpen = JSON.parse(savedPcSidebar);
+      }
+    }
+    
     // 초기 로드 시 상태 복원
     const restoredPath = await stateManager.restoreState();
-    if (restoredPath && restoredPath !== $page.url.pathname && restoredPath !== '/admin') {
-      console.log('초기 상태 복원:', restoredPath);
+    if (restoredPath && restoredPath !== $page.url.pathname) {
       goto(restoredPath);
     }
-    
-    // 백그라운드 복원 감지
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('pageshow', handlePageShow);
-    
-    // 앱 종료 시 저장
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    // 디버깅용 (개발 시에만)
-    if (import.meta.env.DEV) {
-      window.getStorageInfo = () => stateManager.getStorageInfo();
-      window.clearPWAState = () => stateManager.clearAll();
-    }
-    
-    // 정리 함수
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('pageshow', handlePageShow);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('resize', handleResize);
-      clearTimeout(saveTimeout);
-      
-      // 이미지 모달 정리
-      if (cleanupImageModal) {
-        cleanupImageModal();
-      }
-    };
   });
-
-  // 백그라운드에서 포그라운드로 복원
-  async function handleVisibilityChange() {
-    if (document.visibilityState === 'visible') {
-      console.log('PWA 포그라운드 복원');
-      const restoredPath = await stateManager.restoreState();
-      if (restoredPath && restoredPath !== $page.url.pathname && restoredPath !== '/admin') {
-        console.log('백그라운드 복원:', restoredPath);
-        goto(restoredPath);
-      }
-    }
-  }
-
-  // iOS PWA 전용: 페이지 복원 감지
-  async function handlePageShow(event) {
-    if (event.persisted) {
-      console.log('iOS PWA 캐시 복원');
-      const restoredPath = await stateManager.restoreState();
-      if (restoredPath && restoredPath !== $page.url.pathname) {
-        goto(restoredPath);
-      }
-    }
-  }
 
   // 앱 종료 시 현재 상태 저장
   async function handleBeforeUnload() {
@@ -133,9 +90,14 @@
     isMobileMenuOpen = false;
   }
 
-  // PC 사이드바 토글 함수 추가
+  // PC 사이드바 토글 함수 + localStorage 저장
   function togglePcSidebar() {
     isPcSidebarOpen = !isPcSidebarOpen;
+    
+    // localStorage에 저장
+    if (browser) {
+      localStorage.setItem('pcSidebarOpen', JSON.stringify(isPcSidebarOpen));
+    }
   }
 
   // 로그아웃 시 상태 정리
@@ -145,6 +107,12 @@
       if (response.ok) {
         // 저장된 상태 모두 정리
         await stateManager.clearAll();
+        
+        // PC 사이드바 상태도 초기화
+        if (browser) {
+          localStorage.removeItem('pcSidebarOpen');
+        }
+        
         await goto('/');
       }
     } catch (error) {

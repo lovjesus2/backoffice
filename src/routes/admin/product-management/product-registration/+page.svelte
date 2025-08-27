@@ -1,11 +1,12 @@
 <!-- src/routes/admin/product-management/product-registration/+page.svelte -->
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';  // tick 추가
   import { page } from '$app/stores';
   import { simpleCache } from '$lib/utils/simpleImageCache';
   import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
   import ImageModalStock from '$lib/components/ImageModalStock.svelte';
   import ImageUploader from '$lib/components/ImageUploader.svelte';
+  
 
   export let data;
   
@@ -36,7 +37,24 @@
   let selectedProduct = null;
   let searchLoading = false;
   let searchError = '';
-  
+
+  // 단가정보
+  let priceInfo = {};
+  let priceHistory = [];
+  let activePriceTab = 'current'; // 'current' 또는 'history'
+
+  // 수량할인정보
+  let discountInfo = [];
+
+  // 상세정보
+  let productDetailInfo = {};
+  let productDetailItems = [];
+  let loadingDetailInfo = false;
+
+  // 상세정보 히스토리
+  let detailHistory = [];
+  let activeDetailTab = 'info'; // 'info' 또는 'history'
+    
   
   // ✅ 수정: MINR_CODE를 그대로 사용
   $: currentCompanyCode = selectedCompany;        // MINR_CODE 그대로
@@ -189,7 +207,7 @@
         
         // 첫 번째 항목의 MINR_CODE를 선택 (MINR_BIGO 아님!)
         if (registrationList.length > 0) {
-          selectedRegistration = registrationList[0].MINR_CODE;  // ✅ 핵심 수정!
+          selectedRegistration = registrationList[0].MINR_CODE;
           
           // 제품정보인지 확인할 때는 MINR_NAME 사용
           if (registrationList[0].MINR_NAME === '제품정보') {
@@ -198,6 +216,10 @@
             productTypeList = [];
             selectedProductType = '';
           }
+          
+          // Svelte reactive 업데이트를 기다린 후 상세내역 구조 조회
+          await tick(); // Svelte의 tick() 함수로 DOM 업데이트 대기
+          await loadDetailStructure();
         }
       } else {
         console.error('등록구분 조회 실패:', result.message);
@@ -257,7 +279,10 @@
 
   // 등록구분 선택 시 처리
   async function handleRegistrationChange() {
+    console.log('🔍 handleRegistrationChange 호출됨');
+    
     const selectedRegistrationItem = registrationList.find(item => item.MINR_CODE === selectedRegistration);
+    console.log('🔍 선택된 등록구분:', selectedRegistrationItem);
     
     // 제품정보가 선택된 경우에만 제품구분 로드
     if (selectedRegistrationItem && selectedRegistrationItem.MINR_NAME === '제품정보') {
@@ -267,10 +292,82 @@
       selectedProductType = '';
     }
     
+    // 상세내역 구조 조회 추가
+    console.log('🔍 상세내역 구조 조회 시작');
+    await loadDetailStructure();
+    
     // 검색 결과 초기화
     products = [];
     selectedProduct = null;
     searchError = '';
+  }
+
+  // 상세내역 구조 조회 (제품 선택과 무관하게 등록구분별 구조 조회)
+  async function loadDetailStructure() {
+    console.log('🔍 loadDetailStructure 호출됨');
+    console.log('🔍 조건 확인:', { 
+      currentCompanyCode, 
+      currentRegistrationCode,
+      selectedRegistration,
+      registrationListLength: registrationList.length
+    });
+
+    if (!currentCompanyCode || !currentRegistrationCode) {
+      console.log('❌ 상세내역 구조 조회 조건 부족');
+      productDetailItems = [];
+      return;
+    }
+
+    try {
+      loadingDetailInfo = true;
+      
+      // 선택된 등록구분의 MINR_BIGO 찾기
+      const selectedRegistrationItem = registrationList.find(item => item.MINR_CODE === selectedRegistration);
+      console.log('🔍 선택된 등록구분 아이템:', selectedRegistrationItem);
+      
+      const categoryCode = selectedRegistrationItem?.MINR_BIGO || '';
+      console.log('🔍 categoryCode:', categoryCode);
+      
+      if (!categoryCode) {
+        console.log('❌ 등록구분의 MINR_BIGO가 없음');
+        productDetailItems = [];
+        loadingDetailInfo = false;
+        return;
+      }
+
+      console.log('🔍 API 호출 준비:', {
+        companyCode: currentCompanyCode,
+        registrationCode: currentRegistrationCode,
+        categoryCode: categoryCode
+      });
+
+      const params = new URLSearchParams({
+        company_code: currentCompanyCode,
+        registration_code: currentRegistrationCode,
+        product_code: '', // 빈 값으로 구조만 조회
+        category_code: categoryCode
+      });
+      
+      console.log('🔍 API URL:', `/api/product-management/product-registration/detail?${params}`);
+      
+      const response = await fetch(`/api/product-management/product-registration/detail?${params}`);
+      const result = await response.json();
+      
+      console.log('🔍 API 응답:', result);
+      
+      if (result.success) {
+        productDetailItems = result.detailItems || [];
+        console.log('✅ 상세내역 구조 조회 완료:', productDetailItems.length + '개');
+      } else {
+        console.error('❌ 상세내역 구조 조회 실패:', result.message);
+        productDetailItems = [];
+      }
+    } catch (err) {
+      console.error('❌ 상세내역 구조 조회 오류:', err);
+      productDetailItems = [];
+    } finally {
+      loadingDetailInfo = false;
+    }
   }
 
   // ✅ 수정: 검색 실행 (검색어 없어도 가능)
@@ -344,16 +441,19 @@
     }
   }
   
+
   // 제품 선택
-  function selectProduct(product) {
+  async function selectProduct(product) {
     selectedProduct = product;
     console.log('선택된 제품:', product);
     
     // 제품 선택 시 이미지 업로더에 기존 이미지 로드
-
     if (imageUploader) {
       imageUploader.forceReload();
     }
+
+    // 제품 상세 정보 조회 추가
+    await loadProductDetailInfo(product.code);
   }
   
   // 단종 처리 (제품정보일 때만)
@@ -606,6 +706,54 @@
     touchStartY = 0;
     isTouchScrolling = false;
   }
+
+  // 제품 상세 정보 조회
+  async function loadProductDetailInfo(productCode) {
+    if (!currentCompanyCode || !currentRegistrationCode) {
+      console.log('상세 정보 조회 조건 부족:', { currentCompanyCode, currentRegistrationCode });
+      return;
+    }
+
+    try {
+      loadingDetailInfo = true;
+      productDetailInfo = {};
+      productDetailItems = [];
+      
+      // 선택된 등록구분의 MINR_BIGO 찾기
+      const selectedRegistrationItem = registrationList.find(item => item.MINR_CODE === selectedRegistration);
+      const categoryCode = selectedRegistrationItem?.MINR_BIGO || '';
+
+      const params = new URLSearchParams({
+        company_code: currentCompanyCode,
+        registration_code: currentRegistrationCode,
+        product_code: productCode || '',
+        category_code: categoryCode  // 등록구분의 MINR_BIGO 값
+      });
+      
+      const response = await fetch(`/api/product-management/product-registration/detail?${params}`);
+      const result = await response.json();
+      
+      if (result.success) {
+        productDetailInfo = result.productInfo || {};
+        productDetailItems = result.detailItems || [];
+        detailHistory = result.detailHistory || [];
+        priceInfo = result.priceInfo || {};
+        priceHistory = result.priceHistory || [];
+        discountInfo = result.discountInfo || [];
+        
+        console.log('제품 상세 정보 조회 완료:', {
+          detailItemsCount: productDetailItems.length,
+          detailHistoryCount: detailHistory.length,
+          categoryCode: categoryCode
+        });
+      }
+    } catch (err) {
+      console.error('제품 상세 정보 조회 오류:', err);
+    } finally {
+      loadingDetailInfo = false;
+    }
+  }
+
 </script>
 
 <svelte:head>
@@ -675,8 +823,8 @@
            style:transform={typeof window !== 'undefined' && window.innerWidth <= 1024 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
            on:click={handlePanelClick}>
         
-        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? '1px' : '8px'};" 
-             on:click={handlePanelClick}>
+        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? '1px' : '8px'}; height: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? 'calc(100vh)' : 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 70px)'};"
+              on:click={handlePanelClick}>
           
           <!-- 패널 헤더 -->
           <div class="py-4 px-5 border-b border-gray-200 flex flex-col items-stretch gap-4 relative" style="gap: 15px;">
@@ -699,7 +847,7 @@
                   bind:value={selectedCompany}
                   on:change={handleCompanyChange}
                   class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 flex-1"
-                  style="padding: 5px 8px; font-size: 0.75rem;"
+                  style="padding: 5px 8px; font-size: 0.9rem;"
                 >
                   {#each companyList as company}
                     <option value={company.MINR_CODE}>{company.MINR_NAME}</option>
@@ -715,7 +863,7 @@
                   on:change={handleRegistrationChange}
                   disabled={registrationList.length === 0}
                   class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-100 flex-1"
-                  style="padding: 5px 8px; font-size: 0.75rem;"
+                  style="padding: 5px 8px; font-size: 0.9rem;"
                 >
                   {#each registrationList as registration}
                     <option value={registration.MINR_CODE}>{registration.MINR_NAME}</option>
@@ -730,7 +878,7 @@
                   <select 
                     bind:value={selectedProductType}
                     class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 flex-1"
-                    style="padding: 5px 8px; font-size: 0.75rem;"
+                    style="padding: 5px 8px; font-size: 0.9rem;"
                   >
                     {#each productTypeList as productType}
                       <option value={productType.MINR_CODE}>{productType.MINR_NAME}</option>
@@ -780,7 +928,7 @@
           </div>
           
           <!-- 목록 -->
-          <div class="overflow-y-auto" style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - env(safe-area-inset-top, 0px) - 380px)' : 'calc(100vh - 310px)'};">
+          <div class="overflow-y-auto" style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - env(safe-area-inset-top, 0px) - 250px)' : 'calc(100vh - 200px)'};">
             {#if searchError}
               <div class="text-center text-red-600 bg-red-50" style="padding: 30px 15px;">
                 {searchError}
@@ -842,111 +990,101 @@
           <div class="w-full">
             <!-- 첫 번째 카드: 기본 정보 -->
             <div class="bg-white rounded-lg overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-              <!-- 헤더 -->
-              <div class="border-b border-gray-200 flex justify-between items-center flex-wrap" style="padding: 15px 20px; gap: 15px;">
-                <div class="flex items-center gap-2.5">
-                  <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">카테고리 신규등록</h3>
-                </div>
-                <div class="flex gap-2">
-                  <button 
-                    class="text-white border-none rounded cursor-pointer transition-colors hover:bg-green-600"
-                    style="padding: 6px 12px; background-color: #28a745; font-size: 0.9rem;"
-                  >
-                    저장
-                  </button>
-                  <button 
-                    class="text-gray-700 border border-gray-300 rounded cursor-pointer transition-colors hover:bg-gray-100"
-                    style="padding: 6px 12px; background-color: white; font-size: 0.9rem;"
-                  >
-                    Clear
-                  </button>
-                  <button 
-                    class="text-white border-none rounded cursor-pointer transition-colors hover:bg-red-600"
-                    style="padding: 6px 12px; background-color: #dc3545; font-size: 0.9rem;"
-                  >
-                    삭제
-                  </button>
-                </div>
+              <div class="border-b border-gray-200" style="padding: 15px 20px;">
+                <h3 class="text-gray-800 m-0" style="font-size: 0.9rem;">기본 정보</h3>
               </div>
               
-              <!-- 폼 컨텐츠 -->
-              <div class="p-5">
-                <!-- 회사구분, 등록구분 -->
-                <div class="space-y-3 mb-4">
-                  <div class="flex flex-row items-center gap-2">
-                    <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">회사구분</label>
-                    <select 
-                      bind:value={selectedCompany}
-                      class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 flex-1" 
-                      style="padding: 5px 8px; font-size: 0.75rem;"
-                    >
-                      {#each companyList as company}
-                        <option value={company.MINR_CODE}>{company.MINR_NAME}</option>
-                      {/each}
-                    </select>
-                  </div>
-                  
-                  <div class="flex flex-row items-center gap-2">
-                    <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">등록구분</label>
-                    <select 
-                      bind:value={selectedRegistration}
-                      disabled={registrationList.length === 0}
-                      class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-100 flex-1" 
-                      style="padding: 5px 8px; font-size: 0.75rem;"
-                    >
-                      {#each registrationList as registration}
-                        <option value={registration.MINR_CODE}>{registration.MINR_NAME}</option>
-                      {/each}
-                    </select>
-                  </div>
-                </div>
-
-                <!-- 코드, 명칭, 외부코드 -->
-                <div class="flex gap-2 mb-4">
+              <div style="padding: 20px;">
+                <!-- 첫 번째 행: 코드, 명칭 -->
+                <div class="flex gap-4 mb-4">
                   <div class="flex-1">
                     <label class="block mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.75rem;">코드</label>
-                    <input type="text" class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500" style="padding: 5px 8px; font-size: 0.75rem;" />
+                    <input 
+                      type="text" 
+                      value={selectedProduct?.code || ''}
+                      readonly
+                      class="w-full border border-gray-300 rounded focus:outline-none bg-gray-50" 
+                      style="padding: 5px 8px; font-size: 0.75rem;" 
+                    />
                   </div>
                   <div class="flex-1">
                     <label class="block mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.75rem;">명칭</label>
-                    <input type="text" class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500" style="padding: 5px 8px; font-size: 0.75rem;" />
+                    <input 
+                      type="text" 
+                      value={selectedProduct?.name || ''}
+                      readonly
+                      class="w-full border border-gray-300 rounded focus:outline-none bg-gray-50" 
+                      style="padding: 5px 8px; font-size: 0.75rem;" 
+                    />
                   </div>
-                  <div class="flex-1">
-                    <label class="block mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.75rem;">외부코드</label>
-                    <input type="text" class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500" style="padding: 5px 8px; font-size: 0.75rem;" />
-                  </div>
+                </div>
+
+                <!-- 두 번째 행: 외부코드 -->
+                <div class="mb-4">
+                  <label class="block mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.75rem;">외부코드</label>
+                  <input 
+                    type="text" 
+                    value={productDetailInfo.PROH_CDOT || ''}
+                    readonly
+                    class="w-full border border-gray-300 rounded focus:outline-none bg-gray-50" 
+                    style="padding: 5px 8px; font-size: 0.75rem;" 
+                  />
+                </div>
+
+                <!-- QR코드 (새로 추가) -->
+                <div class="mb-4">
+                  <label class="block mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.75rem;">QR코드</label>
+                  <input 
+                    type="text" 
+                    value={productDetailInfo.PROH_QRCD || ''}
+                    readonly
+                    class="w-full border border-gray-300 rounded focus:outline-none bg-gray-50" 
+                    style="padding: 5px 8px; font-size: 0.75rem;" 
+                  />
                 </div>
 
                 <!-- 제품설명 -->
                 <div class="mb-4">
                   <label class="block mb-1 text-gray-600 font-medium" style="color: #555; font-weight: 500; font-size: 0.75rem;">제품설명</label>
-                  <textarea class="w-full border border-gray-300 rounded focus:outline-none focus:border-blue-500" rows="3" style="padding: 5px 8px; font-size: 0.75rem;"></textarea>
-                </div>
-
-                <!-- 바코드 -->
-                <div class="flex items-center gap-2">
-                  <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">바코드</label>
-                  <input type="text" value="1" class="border border-gray-300 rounded focus:outline-none focus:border-blue-500" style="padding: 5px 8px; font-size: 0.75rem; width: 60px;" />
-                  <button class="text-white border-none rounded cursor-pointer transition-colors hover:bg-blue-600" style="padding: 5px 10px; background-color: #007bff; font-size: 0.75rem;">
-                    바코드 출력
-                  </button>
-                  <button class="text-white border-none rounded cursor-pointer transition-colors hover:bg-green-600" style="padding: 5px 10px; background-color: #28a745; font-size: 0.75rem;">
-                    단가입력
-                  </button>
+                  <textarea 
+                    value={productDetailInfo.PROH_BIGO || ''}
+                    readonly
+                    class="w-full border border-gray-300 rounded focus:outline-none bg-gray-50" 
+                    rows="3" 
+                    style="padding: 5px 8px; font-size: 0.75rem;"
+                  ></textarea>
                 </div>
               </div>
             </div>
 
-            <!-- 두 번째 카드: 가격 정보 -->
+            <!-- 두 번째 카드: 가격 정보 (제품정보일 때만 표시) -->
+            {#if isProductInfo}
             <div class="bg-white rounded-lg overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
               <div class="border-b border-gray-200" style="padding: 15px 20px;">
-                <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">가격 정보</h3>
+                <h3 class="text-gray-800 m-0" style="font-size: 0.9rem;">가격 정보</h3>
               </div>
               
               <div class="p-5">
-                <!-- 상세내역 테이블 1 -->
-                <div class="mb-4">
-                  <div class="border border-gray-300 rounded overflow-hidden">
+                <!-- 탭 버튼 -->
+                <div class="flex mb-4" style="border-bottom: 1px solid #e5e7eb;">
+                  <button 
+                    class="px-2 py-1 text-sm font-medium border-b-2 transition-colors {activePriceTab === 'current' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+                    on:click={() => activePriceTab = 'current'}
+                  >
+                    가격
+                  </button>
+                  <button 
+                    class="px-2 py-1 text-sm font-medium border-b-2 transition-colors {activePriceTab === 'history' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+                    on:click={() => activePriceTab = 'history'}
+                  >
+                    이력
+                  </button>
+                </div>
+
+                <!-- 가격 탭 내용 -->
+                {#if activePriceTab === 'current'}
+                  <!-- 현재 가격 테이블 -->
+                  <div class="border border-gray-300 rounded overflow-hidden mb-4">
                     <table class="w-full" style="font-size: 0.75rem;">
                       <thead class="bg-gray-100">
                         <tr>
@@ -962,193 +1100,266 @@
                           <td class="border-r border-gray-300 text-center" style="padding: 6px;">
                             <input type="checkbox" />
                           </td>
-                          <td class="border-r border-gray-300" style="padding: 2px;">
-                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          <td class="border-r border-gray-300 text-right" style="padding: 8px; font-weight: 500;">
+                            {priceInfo.DPRC_BAPR ? Number(priceInfo.DPRC_BAPR).toLocaleString('ko-KR') : '-'}
                           </td>
-                          <td class="border-r border-gray-300" style="padding: 2px;">
-                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          <td class="border-r border-gray-300 text-right" style="padding: 8px; font-weight: 500;">
+                            {priceInfo.DPRC_SOPR ? Number(priceInfo.DPRC_SOPR).toLocaleString('ko-KR') : '-'}
                           </td>
-                          <td class="border-r border-gray-300" style="padding: 2px;">
-                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          <td class="border-r border-gray-300 text-right" style="padding: 8px; font-weight: 500;">
+                            {priceInfo.DPRC_DCPR ? Number(priceInfo.DPRC_DCPR).toLocaleString('ko-KR') : '-'}
                           </td>
-                          <td style="padding: 2px;">
-                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
+                          <td class="text-right" style="padding: 8px; font-weight: 500;">
+                            {priceInfo.DPRC_DEPR ? Number(priceInfo.DPRC_DEPR).toLocaleString('ko-KR') : '-'}
                           </td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
+
+                  <!-- 수량 할인 테이블 -->
+                  <div class="mt-4">
+                    <h4 class="text-gray-700 font-medium mb-2" style="font-size: 0.8rem;">수량 할인</h4>
+                    <div class="border border-gray-300 rounded overflow-hidden">
+                      <table class="w-full" style="font-size: 0.75rem;">
+                        <thead class="bg-gray-100">
+                          <tr>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 40px;">✓</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;" colspan="2">현금</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;">할인수량</th>
+                            <th class="text-center" style="padding: 6px;">할인금액</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td class="border-r border-gray-300 text-center" style="padding: 6px;">
+                              <input type="checkbox" />
+                            </td>
+                            <td class="border-r border-gray-300 text-center" style="padding: 6px; color: #2563eb; font-weight: 500;">
+                              {discountInfo[0]?.YOUL_GUBN || ''}
+                            </td>
+                            <td class="border-r border-gray-300" style="padding: 6px;">
+                              {discountInfo[0]?.MINR_NAME || ''}
+                            </td>
+                            <td class="border-r border-gray-300 text-right" style="padding: 6px; font-weight: 500;">
+                              {discountInfo[0]?.YOUL_QTY1 ? Number(discountInfo[0].YOUL_QTY1).toLocaleString('ko-KR') : '-'}
+                            </td>
+                            <td class="text-right" style="padding: 6px; font-weight: 500;">
+                              {discountInfo[0]?.YOUL_AMT1 ? Number(discountInfo[0].YOUL_AMT1).toLocaleString('ko-KR') : '-'}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- 이력 탭 내용 -->
+                {#if activePriceTab === 'history'}
+                  <div class="border border-gray-300 rounded overflow-hidden">
+                    {#if priceHistory.length > 0}
+                      <table class="w-full" style="font-size: 0.75rem;">
+                        <thead class="bg-gray-100">
+                          <tr>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;">일자</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;">원가</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;">카드가</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;">현금가</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;">납품가</th>
+                            <th class="text-center" style="padding: 6px;">등록자</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {#each priceHistory as history}
+                            <tr class="hover:bg-gray-50">
+                              <td class="border-r border-gray-300 text-center" style="padding: 6px; color: #2563eb;">
+                                {history.DPRC_DATE.substring(0,4)}-{history.DPRC_DATE.substring(4,6)}-{history.DPRC_DATE.substring(6,8)}
+                              </td>
+                              <td class="border-r border-gray-300 text-right" style="padding: 6px;">
+                                {history.DPRC_BAPR ? Number(history.DPRC_BAPR).toLocaleString('ko-KR') : '-'}
+                              </td>
+                              <td class="border-r border-gray-300 text-right" style="padding: 6px;">
+                                {history.DPRC_SOPR ? Number(history.DPRC_SOPR).toLocaleString('ko-KR') : '-'}
+                              </td>
+                              <td class="border-r border-gray-300 text-right" style="padding: 6px;">
+                                {history.DPRC_DCPR ? Number(history.DPRC_DCPR).toLocaleString('ko-KR') : '-'}
+                              </td>
+                              <td class="border-r border-gray-300 text-right" style="padding: 6px;">
+                                {history.DPRC_DEPR ? Number(history.DPRC_DEPR).toLocaleString('ko-KR') : '-'}
+                              </td>
+                              <td class="text-center" style="padding: 6px; color: #666; font-size: 0.7rem;">
+                                {history.DPRC_IUSR || '-'}
+                              </td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    {:else}
+                      <div class="text-center text-gray-500 py-8">
+                        가격 이력이 없습니다.
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            </div>
+            {/if}
+
+            <!-- 세 번째 카드: 상세내역 -->
+            <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+              <div class="border-b border-gray-200" style="padding: 15px 20px;">
+                <h3 class="text-gray-800 m-0" style="font-size: 0.9rem;">상세내역</h3>
+              </div>
+              
+              <div class="p-5">
+                <!-- 탭 버튼 -->
+                <div class="flex mb-4" style="border-bottom: 1px solid #e5e7eb;">
+                  <button 
+                    class="px-2 py-1 text-sm font-medium border-b-2 transition-colors {activeDetailTab === 'info' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+                    on:click={() => activeDetailTab = 'info'}
+                  >
+                    정보
+                  </button>
+                  <button 
+                    class="px-2 py-1 text-sm font-medium border-b-2 transition-colors {activeDetailTab === 'history' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+                    on:click={() => activeDetailTab = 'history'}
+                  >
+                    이력
+                  </button>
                 </div>
 
-                <!-- 상세내역 테이블 2 -->
-                <div>
+                <!-- 정보 탭 내용 -->
+                {#if activeDetailTab === 'info'}
                   <div class="border border-gray-300 rounded overflow-hidden">
                     <table class="w-full" style="font-size: 0.75rem;">
                       <thead class="bg-gray-100">
                         <tr>
                           <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 40px;">✓</th>
-                          <th class="border-r border-gray-300 text-center" style="padding: 6px;">현금</th>
-                          <th class="border-r border-gray-300 text-center" style="padding: 6px;">할인수량</th>
-                          <th class="text-center" style="padding: 6px;">할인금액</th>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 60px;">코드</th>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px;">명칭</th>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px;">입력</th>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px;">입력명</th>
+                          <th class="text-center" style="padding: 6px;">형태</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td class="border-r border-gray-300 text-center" style="padding: 6px;">
-                            <input type="checkbox" />
-                          </td>
-                          <td class="border-r border-gray-300" style="padding: 2px;">
-                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
-                          </td>
-                          <td class="border-r border-gray-300" style="padding: 2px;">
-                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
-                          </td>
-                          <td style="padding: 2px;">
-                            <input type="text" class="w-full border-0 focus:outline-none text-center" style="padding: 4px; font-size: 0.75rem;" />
-                          </td>
-                        </tr>
+                        {#each productDetailItems as item, index}
+                          <tr class="hover:bg-gray-50">
+                            <td class="border-r border-gray-300 text-center" style="padding: 6px;">
+                              <input type="checkbox" readonly />
+                            </td>
+                            <td class="border-r border-gray-300 text-center" style="padding: 6px; font-weight: 500; color: #2563eb;">
+                              {item.MINR_CODE}
+                            </td>
+                            <td class="border-r border-gray-300" style="padding: 6px;">
+                              {item.MINR_NAME}
+                            </td>
+                            <td class="border-r border-gray-300" style="padding: 6px; text-align: center;">
+                              {#if item.PROD_TXT1}
+                                <span class="text-gray-800 font-medium">{item.PROD_TXT1}</span>
+                              {:else if item.PROD_NUM1 && item.PROD_NUM1 > 0}
+                                <span class="text-blue-600 font-medium">{item.PROD_NUM1}</span>
+                              {:else}
+                                <span class="text-gray-400">-</span>
+                              {/if}
+                            </td>
+                            <td class="border-r border-gray-300" style="padding: 6px; color: #666;">
+                              {item.CODE_NAME || '-'}
+                            </td>
+                            <td class="border-r border-gray-300 text-center" style="padding: 6px; color: #666; font-size: 0.7rem;">
+                              {item.MINR_BIGO || '-'}
+                            </td>
+                          </tr>
+                        {/each}
                       </tbody>
                     </table>
                   </div>
-                </div>
-              </div>
-            </div>
+                {/if}
 
-            <!-- 세 번째 카드: 상세내역 -->
-            <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-              <div class="border-b border-gray-200" style="padding: 15px 20px;">
-                <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">상세내역 (6개)</h3>
-              </div>
-              
-              <div class="p-5">
-                <div class="border border-gray-300 rounded overflow-hidden">
-                  <table class="w-full" style="font-size: 0.75rem;">
-                    <thead class="bg-gray-100">
-                      <tr>
-                        <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 40px;">✓</th>
-                        <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 60px;">코드</th>
-                        <th class="border-r border-gray-300 text-center" style="padding: 6px;">명칭</th>
-                        <th class="border-r border-gray-300 text-center" style="padding: 6px;">입력</th>
-                        <th class="border-r border-gray-300 text-center" style="padding: 6px;">입력명</th>
-                        <th class="text-center" style="padding: 6px;">CLICK</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
-                          <input type="checkbox" checked />
-                        </td>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L1</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;">제품구분</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="text-center" style="padding: 6px;">
-                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
-                          <input type="checkbox" checked />
-                        </td>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L2</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;">생산구분</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="text-center" style="padding: 6px;">
-                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
-                          <input type="checkbox" checked />
-                        </td>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L3</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;">현금세팅</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="text-center" style="padding: 6px;">
-                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
-                          <input type="checkbox" checked />
-                        </td>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L4</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;">카탈로그</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="text-center" style="padding: 6px;">
-                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
-                          <input type="checkbox" checked />
-                        </td>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L5</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;">단종구분</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="text-center" style="padding: 6px;">
-                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">
-                          <input type="checkbox" checked />
-                        </td>
-                        <td class="border-r border-gray-300 text-center" style="padding: 6px;">L6</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;">재고관리</td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="border-r border-gray-300" style="padding: 6px;"></td>
-                        <td class="text-center" style="padding: 6px;">
-                          <button class="text-blue-600 hover:text-blue-800" style="font-size: 0.7rem;">CLICK</button>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                <!-- 이력 탭 내용 -->
+                {#if activeDetailTab === 'history'}
+                  <div class="border border-gray-300 rounded overflow-hidden">
+                    {#if detailHistory.length > 0}
+                      <table class="w-full" style="font-size: 0.75rem;">
+                        <thead class="bg-gray-100">
+                          <tr>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;">일자</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 60px;">코드</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;">명칭</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;">입력</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px;">입력명</th>
+                            <th class="text-center" style="padding: 6px;">형태</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {#each detailHistory as history}
+                            <tr class="hover:bg-gray-50">
+                              <td class="border-r border-gray-300 text-center" style="padding: 6px; color: #2563eb;">
+                                {history.PROT_DATE.substring(0,4)}-{history.PROT_DATE.substring(4,6)}-{history.PROT_DATE.substring(6,8)}
+                              </td>
+                              <td class="border-r border-gray-300 text-center" style="padding: 6px; font-weight: 500; color: #2563eb;">
+                                {history.MINR_CODE}
+                              </td>
+                              <td class="border-r border-gray-300" style="padding: 6px;">
+                                {history.MINR_NAME}
+                              </td>
+                              <td class="border-r border-gray-300" style="padding: 6px; text-align: center;">
+                                {#if history.PROT_TXT1}
+                                  <span class="text-gray-800 font-medium">{history.PROT_TXT1}</span>
+                                {:else if history.PROT_NUM1 && history.PROT_NUM1 > 0}
+                                  <span class="text-blue-600 font-medium">{history.PROT_NUM1}</span>
+                                {:else}
+                                  <span class="text-gray-400">-</span>
+                                {/if}
+                              </td>
+                              <td class="border-r border-gray-300" style="padding: 6px; color: #666;">
+                                {history.CODE_NAME || '-'}
+                              </td>
+                              <td class="text-center" style="padding: 6px; color: #666; font-size: 0.7rem;">
+                                {history.MINR_BIGO || '-'}
+                              </td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    {:else}
+                      <div class="text-center text-gray-500 py-8">
+                        상세 이력이 없습니다.
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
               </div>
             </div>
           </div>
 
           <!-- 이미지 관리 섹션 (항상 아래) -->
           <div class="w-full">
-            {#if selectedProduct}
-              <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <!-- 헤더 -->
-                <div class="border-b border-gray-200 flex justify-between items-center flex-wrap" style="padding: 15px 20px; gap: 15px;">
-                  <div class="flex items-center gap-2.5">
-                    <h3 class="text-gray-800 m-0" style="font-size: 1.1rem;">
-                      📷 이미지 관리 - {selectedProduct.name}
-                    </h3>
+            <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+              <!-- 헤더 -->
+              <div class="border-b border-gray-200 flex justify-between items-center flex-wrap" style="padding: 15px 20px; gap: 15px;">
+                <div class="flex items-center gap-2.5">
+                  <h3 class="text-gray-800 m-0" style="font-size: 0.8rem;">
+                    📷 이미지 관리{#if selectedProduct} - {selectedProduct.name}{/if}
+                  </h3>
+                  {#if selectedProduct}
                     <span class="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
                       {selectedProduct.code}
                     </span>
-                  </div>
-                </div>
-                
-                <!-- 이미지 업로더 -->
-                <div class="p-5">
-                  <ImageUploader
-                    bind:this={imageUploader}
-                    imagGub1={currentCompanyCode}
-                    imagGub2={currentRegistrationCode}
-                    imagCode={selectedProduct.code}
-                  />
+                  {/if}
                 </div>
               </div>
-            {:else}
-              <!-- 제품 미선택 안내 -->
-              <div class="bg-white rounded-lg overflow-hidden" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <div class="p-5 text-center text-gray-500">
-                  <div class="text-4xl mb-3">📷</div>
-                  <h3 class="text-lg font-medium mb-2">이미지 관리</h3>
-                  <p class="text-sm">왼쪽에서 제품을 선택하면 이미지를 업로드할 수 있습니다.</p>
-                </div>
-              </div>
-            {/if}
+                            
+              <!-- 이미지 업로더 -->
+              <div class="p-5">
+                <ImageUploader
+                  bind:this={imageUploader}
+                  imagGub1={currentCompanyCode}
+                  imagGub2={currentRegistrationCode}
+                  imagCode={selectedProduct?.code || ''}
+                />
+            </div>
+          </div>
           </div>
         </div>
       </div>
