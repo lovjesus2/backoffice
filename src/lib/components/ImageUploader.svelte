@@ -28,6 +28,13 @@
   let successMessage = '';
   let errorMessage = '';
   
+  let showResizeOptions = false; // 리사이즈 옵션 표시 여부 추가
+  
+  // 옵션 토글 함수 추가
+  function toggleResizeOptions() {
+    showResizeOptions = !showResizeOptions;
+  }
+
   // 리사이즈 설정
   let resizeMode = 'contain'; // 'contain' (축소) 또는 'cover' (자르기)
   let selectedWidth = defaultWidth;
@@ -1422,14 +1429,14 @@
             class="sr-only"
           />
           <div class="w-10 h-5 rounded-full transition-colors duration-300 cursor-pointer border-2" 
-               class:bg-blue-500={enableResize}
-               class:border-blue-500={enableResize}
-               class:bg-gray-200={!enableResize}
-               class:border-gray-300={!enableResize}
-               on:click={() => !disabled && toggleResize()}>
+              class:bg-blue-500={enableResize}
+              class:border-blue-500={enableResize}
+              class:bg-gray-200={!enableResize}
+              class:border-gray-300={!enableResize}
+              on:click={() => !disabled && toggleResize()}>
             <div class="w-3 h-3 bg-white rounded-full absolute top-0.5 transition-transform duration-300 transform shadow-sm" 
-                 class:translate-x-5={enableResize} 
-                 class:translate-x-0.5={!enableResize}></div>
+                class:translate-x-5={enableResize} 
+                class:translate-x-0.5={!enableResize}></div>
           </div>
         </div>
         <span class="text-xs font-medium transition-colors duration-200"
@@ -1438,6 +1445,24 @@
           리사이즈 {enableResize ? 'ON' : 'OFF'}
         </span>
       </label>
+
+      <!-- 옵션 버튼 추가 -->
+      {#if enableResize}
+        <button
+          class="px-2 py-1 text-xs rounded border transition-all duration-200"
+          class:bg-blue-500={showResizeOptions}
+          class:text-white={showResizeOptions}
+          class:border-blue-500={showResizeOptions}
+          class:bg-white={!showResizeOptions}
+          class:text-gray-700={!showResizeOptions}
+          class:border-gray-300={!showResizeOptions}
+          class:hover:bg-blue-50={!showResizeOptions}
+          on:click={toggleResizeOptions}
+          type="button"
+        >
+          옵션 {showResizeOptions ? '▲' : '▼'}
+        </button>
+      {/if}
     </div>
     
     <div class="flex items-center gap-2">
@@ -1505,7 +1530,7 @@
   </div>
   
   <!-- 리사이즈 설정 패널 -->
-  {#if enableResize && isLibraryLoaded}
+  {#if enableResize && isLibraryLoaded && showResizeOptions}
     <div class="px-4 py-3 bg-blue-50 border-b border-blue-200">
       <div class="space-y-3">
         <!-- 리사이즈 모드 선택 -->
@@ -1539,7 +1564,7 @@
           
           {#each quickSizes as size}
             <button
-              class="px-3 py-1 text-sm rounded border transition-colors"
+              class="px-2 py-0.5 text-sm rounded border transition-colors"
               class:bg-blue-500={selectedWidth === size.width && selectedHeight === size.height}
               class:text-white={selectedWidth === size.width && selectedHeight === size.height}
               class:border-blue-500={selectedWidth === size.width && selectedHeight === size.height}
@@ -1553,7 +1578,7 @@
           {/each}
           
           <button
-            class="px-3 py-1 text-sm rounded border transition-colors"
+            class="px-2 py-0.5 text-sm rounded border transition-colors"
             class:bg-purple-500={showCustomSize}
             class:text-white={showCustomSize}
             class:border-purple-500={showCustomSize}
@@ -1575,7 +1600,7 @@
               bind:value={customWidth}
               min="50"
               max="2000"
-              class="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
+              class="w-20 px-1 py-0.5 text-sm border border-gray-300 rounded"
             />
             <span class="text-sm text-gray-500">×</span>
             <input
@@ -1583,17 +1608,17 @@
               bind:value={customHeight}
               min="50"
               max="2000"
-              class="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
+              class="w-20 px-1 py-0.5 text-sm border border-gray-300 rounded"
             />
             <span class="text-sm text-gray-500">px</span>
             <button
-              class="px-3 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600"
+              class="px-1 py-0.5 text-sm bg-purple-500 text-white rounded hover:bg-purple-600"
               on:click={applyCustomSize}
             >
               적용
             </button>
             <button
-              class="px-2 py-1 text-sm bg-gray-400 text-white rounded hover:bg-gray-500"
+              class="px-1 py-0.5 text-sm bg-gray-400 text-white rounded hover:bg-gray-500"
               on:click={() => showCustomSize = false}
             >
               취소
