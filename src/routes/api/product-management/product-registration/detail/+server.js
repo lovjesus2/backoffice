@@ -73,8 +73,25 @@ export async function GET({ url, locals }) {
       priceHistory = historyResult || [];
       console.log('단가 히스토리 조회 완료:', priceHistory.length + '건');
     }
+
+    // 4. 할인구분 옵션 조회 (CD003 카테고리) - 항상 조회
+    let discountTypeOptions = [];
+    try {
+      const [discountTypes] = await db.execute(`
+        SELECT MINR_CODE, MINR_NAME
+        FROM BISH_MINR
+        WHERE MINR_MJCD = 'CD003'
+        ORDER BY MINR_SORT ASC
+      `);
+      
+      discountTypeOptions = discountTypes || [];
+      console.log('할인구분 옵션 조회 완료:', discountTypeOptions.length + '개');
+    } catch (err) {
+      console.error('할인구분 옵션 조회 오류:', err);
+      discountTypeOptions = [];
+    }
     
-    // 4. 수량 할인 정보 조회 (제품 코드가 있을 때만)
+    // 5. 수량 할인 정보 조회 (제품 코드가 있을 때만)
     let discountInfo = [];
     if (productCode) {
       const [discountResult] = await db.execute(`
@@ -90,7 +107,7 @@ export async function GET({ url, locals }) {
       console.log('수량 할인 정보 조회 완료:', discountInfo.length + '건');
     }
 
-    // 5. 상세 항목 조회 (항상 조회)
+    // 6. 상세 항목 조회 (항상 조회)
     let detailItems = [];
     let detailHistory = [];
 
@@ -100,42 +117,67 @@ export async function GET({ url, locals }) {
       // 상세 항목 조회
       const [details] = await db.execute(`
         SELECT T1.MINR_CODE, T1.MINR_NAME, T1.MINR_BIGO,
-               T1.MINR_BIG2, IFNULL(T2.MINR_NAME,'') AS CODE_NAME,
-               IFNULL(PROD_TXT1,'') AS PROD_TXT1, IFNULL(PROD_NUM1,0) AS PROD_NUM1
+              T1.MINR_BIG2, IFNULL(T2.MINR_NAME,'') AS CODE_NAME,
+              IFNULL(PROD_TXT1,'') AS PROD_TXT1, IFNULL(PROD_NUM1,0) AS PROD_NUM1
         FROM (SELECT MINR_CODE, MINR_NAME, MINR_BIGO, MINR_BIG2
               FROM BISH_MINR
               WHERE MINR_MJCD = ?
               ORDER BY MINR_SORT DESC) T1
         LEFT OUTER JOIN ASSE_PROD
           ON T1.MINR_CODE = PROD_COD2
-         AND PROD_GUB1 = ?
-         AND PROD_GUB2 = ?
-         AND PROD_CODE = ?
+        AND PROD_GUB1 = ?
+        AND PROD_GUB2 = ?
+        AND PROD_CODE = ?
         LEFT OUTER JOIN BISH_MINR T2
           ON T1.MINR_BIG2 = T2.MINR_MJCD
-         AND T2.MINR_CODE = PROD_TXT1
+        AND T2.MINR_CODE = PROD_TXT1
       `, [categoryCode, companyCode, registrationCode, productCode || '']);
       
-      detailItems = details;
-      
-      // 상세 히스토리 조회 (제품이 있을 때만)
+      // 🆕 각 항목별로 콤보박스 옵션 추가
+      detailItems = [];
+      for (const item of details) {
+        const detailItem = {
+          MINR_CODE: item.MINR_CODE,
+          MINR_NAME: item.MINR_NAME,
+          MINR_BIGO: item.MINR_BIGO,
+          MINR_BIG2: item.MINR_BIG2,
+          inputValue: item.PROD_TXT1 || '',
+          options: []
+        };
+        
+        // CODE 형태인 경우 콤보박스 옵션 조회
+        if (item.MINR_BIGO === 'CODE' && item.MINR_BIG2) {
+          const [options] = await db.execute(`
+            SELECT MINR_CODE, MINR_NAME
+            FROM BISH_MINR
+            WHERE MINR_MJCD = ?
+            ORDER BY MINR_SORT ASC
+          `, [item.MINR_BIG2]);
+          
+          detailItem.options = options || [];
+        }
+        
+        detailItems.push(detailItem);
+      }
+
+      // 상세 히스토리 조회 (제품이 있을 때만) - 기존 그대로 유지
       if (productCode) {
         const [history] = await db.execute(`
           SELECT T1.MINR_CODE, T1.MINR_NAME, T1.MINR_BIGO, PROT_DATE,
-                 T1.MINR_BIG2, IFNULL(T2.MINR_NAME,'') AS CODE_NAME,
-                 IFNULL(PROT_TXT1,'') AS PROT_TXT1, IFNULL(PROT_NUM1,0) AS PROT_NUM1
+                T1.MINR_BIG2, IFNULL(T2.MINR_NAME,'') AS CODE_NAME,
+                IFNULL(PROT_TXT1,'') AS PROT_TXT1, IFNULL(PROT_NUM1,0) AS PROT_NUM1
           FROM (SELECT MINR_CODE, MINR_NAME, MINR_BIGO, MINR_BIG2
                 FROM BISH_MINR
                 WHERE MINR_MJCD = ?
                 ORDER BY MINR_SORT DESC) T1
           INNER JOIN ASSE_PROT
             ON MINR_CODE = PROT_COD2
-           AND PROT_GUB1 = ?
-           AND PROT_GUB2 = ?
-           AND PROT_CODE = ?
+          AND PROT_GUB1 = ?
+          AND PROT_GUB2 = ?
+          AND PROT_CODE = ?
           LEFT OUTER JOIN BISH_MINR T2
             ON T1.MINR_BIG2 = T2.MINR_MJCD
-           AND T2.MINR_CODE = PROT_TXT1
+          AND T2.MINR_CODE = PROT_TXT1
           ORDER BY PROT_DATE DESC, T1.MINR_CODE
         `, [categoryCode, companyCode, registrationCode, productCode]);
         
@@ -153,6 +195,7 @@ export async function GET({ url, locals }) {
       priceInfo: priceInfo,
       priceHistory: priceHistory,
       discountInfo: discountInfo,
+      discountTypeOptions: discountTypeOptions,  //수량할인 현금 구분
       message: '제품 상세 정보 조회 완료'
     });
     
