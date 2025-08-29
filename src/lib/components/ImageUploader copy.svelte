@@ -1234,12 +1234,6 @@
           }
         }, 100);
         
-        // 모든 업로드 성공 후 불필요한 이미지 삭제
-        const savedImageCount = allImages.length;
-        
-        if (savedImageCount > 0 && savedImageCount < 10) {
-          await deleteUnnecessaryImages(savedImageCount);
-        }
       } else {
         throw new Error(result.error || '저장 실패');
       }
@@ -1260,28 +1254,6 @@
     } finally {
       uploading = false;
       uploadProgress = 0;
-    }
-  }
-
-  // 불필요한 이미지 삭제 함수
-  async function deleteUnnecessaryImages(keepCount) {
-    if (!imagCode || keepCount >= 10) return;
-    
-    try {
-      const response = await fetch('/api/images/delete', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          product_code: imagCode,
-          keep_count: keepCount
-        })
-      });
-      
-      const result = await response.json();
-      console.log('불필요한 이미지 삭제 결과:', result);
-      //clearImageCache(keepCount);
-    } catch (error) {
-      console.error('불필요한 이미지 삭제 오류:', error);
     }
   }
   
