@@ -299,7 +299,7 @@ export async function PUT({ request, locals }) {
 // 연번 생성 함수 (트랜잭션 외부)
 async function generatePriceSeqNo(db, user) {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const gubn = 'PRICE'; // 가격 구분
+  const gubn = 'DC'; // 연번생성 구분
   
   console.log('🔢 연번 생성 시작:', { gubn, today });
   
@@ -382,13 +382,14 @@ async function savePriceInfo(db, { productCode, priceInfo, user, seqNo }) {
     // 기존 가격 수정
     await db.execute(`
       UPDATE BISH_DPRC 
-      SET DPRC_BAPR = ?, DPRC_SOPR = ?, DPRC_DCPR = ?, DPRC_DEPR = ?
+      SET DPRC_BAPR = ?, DPRC_SOPR = ?, DPRC_DCPR = ?, DPRC_DEPR = ?, DPRC_IDAT = NOW(), DPRC_IUSR = ?
       WHERE DPRC_CODE = ?
     `, [
-      priceInfo.basePriceChecked ? priceInfo.basePrice : 0,
-      priceInfo.cardPriceChecked ? priceInfo.cardPrice : 0,
-      priceInfo.cashPriceChecked ? priceInfo.cashPrice : 0,
-      priceInfo.deliveryPriceChecked ? priceInfo.deliveryPrice : 0,
+      priceInfo.basePrice || 0,
+      priceInfo.cardPrice || 0,
+      priceInfo.cashPrice || 0,
+      priceInfo.deliveryPrice || 0,
+      user,
       productCode
     ]);
     
@@ -397,14 +398,15 @@ async function savePriceInfo(db, { productCode, priceInfo, user, seqNo }) {
     // 신규 가격 생성
     await db.execute(`
       INSERT INTO BISH_DPRC 
-      (DPRC_CODE, DPRC_BAPR, DPRC_SOPR, DPRC_DCPR, DPRC_DEPR)
-      VALUES (?, ?, ?, ?, ?)
+      (DPRC_CODE, DPRC_BAPR, DPRC_SOPR, DPRC_DCPR, DPRC_DEPR, DPRC_IUSR)
+      VALUES (?, ?, ?, ?, ?, ?)
     `, [
       productCode,
-      priceInfo.basePriceChecked ? priceInfo.basePrice : 0,
-      priceInfo.cardPriceChecked ? priceInfo.cardPrice : 0,
-      priceInfo.cashPriceChecked ? priceInfo.cashPrice : 0,
-      priceInfo.deliveryPriceChecked ? priceInfo.deliveryPrice : 0
+      priceInfo.basePrice || 0,
+      priceInfo.cardPrice || 0,
+      priceInfo.cashPrice || 0,
+      priceInfo.deliveryPrice || 0,
+      user
     ]);
     
     console.log('🆕 가격정보 생성 완료');
@@ -420,10 +422,10 @@ async function savePriceInfo(db, { productCode, priceInfo, user, seqNo }) {
     today,
     seqNo,
     productCode, // DPRC_CDNM에 제품코드 저장
-    priceInfo.basePriceChecked ? priceInfo.basePrice : 0,
-    priceInfo.cardPriceChecked ? priceInfo.cardPrice : 0,
-    priceInfo.cashPriceChecked ? priceInfo.cashPrice : 0,
-    priceInfo.deliveryPriceChecked ? priceInfo.deliveryPrice : 0,
+    priceInfo.basePrice || 0,
+    priceInfo.cardPrice || 0,
+    priceInfo.cashPrice || 0,
+    priceInfo.deliveryPrice || 0,
     user
   ]);
   
@@ -443,12 +445,13 @@ async function saveDiscountInfo(db, { productCode, discountInfo, user }) {
     // 기존 할인정보 수정
     await db.execute(`
       UPDATE BISH_YOUL 
-      SET YOUL_GUBN = ?, YOUL_QTY1 = ?, YOUL_AMT1 = ?
+      SET YOUL_GUBN = ?, YOUL_QTY1 = ?, YOUL_AMT1 = ?, YOUL_IDAT = NOW(), YOUL_IUSR = ?
       WHERE YOUL_ITEM = ?
     `, [
       discountInfo.discountType,
       discountInfo.quantity || 0,
       discountInfo.amount || 0,
+      user,
       productCode
     ]);
     
@@ -457,13 +460,14 @@ async function saveDiscountInfo(db, { productCode, discountInfo, user }) {
     // 신규 할인정보 생성
     await db.execute(`
       INSERT INTO BISH_YOUL 
-      (YOUL_GUBN, YOUL_QTY1, YOUL_AMT1, YOUL_ITEM)
-      VALUES (?, ?, ?, ?)
+      (YOUL_GUBN, YOUL_QTY1, YOUL_AMT1, YOUL_ITEM, YOUL_IUSR)
+      VALUES (?, ?, ?, ?, ?)
     `, [
       discountInfo.discountType,
       discountInfo.quantity || 0,
       discountInfo.amount || 0,
-      productCode
+      productCode,
+      user
     ]);
     
     console.log('🆕 할인정보 생성 완료');

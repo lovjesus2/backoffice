@@ -1,6 +1,6 @@
 <!-- src/routes/admin/product-management/product-registration/+page.svelte -->
 <script>
-  import { onMount, tick } from 'svelte';  // tick 추가
+  import { onMount, tick } from 'svelte';
   import { page } from '$app/stores';
   import { simpleCache } from '$lib/utils/simpleImageCache';
   import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
@@ -12,6 +12,7 @@
   
   // ImageUploader 컴포넌트 참조 변수 선언
   let imageUploader;
+  let imageCode = '';  // 이미지 코드 별도 관리
 
   // 상태 관리
   let leftPanelVisible = true;
@@ -35,20 +36,20 @@
   let searchLoading = false;
   let searchError = '';
 
-  // 단가정보
+  // 단가 정보
   let priceInfo = {};
   let priceHistory = [];
   let activePriceTab = 'current'; // 'current' 또는 'history'
 
-  // 수량할인정보
+  // 수량할인 정보
   let discountInfo = [];
 
-  // 상세정보
+  // 상세 정보
   let productDetailInfo = {};
   let productDetailItems = [];
   let loadingDetailInfo = false;
 
-  // 상세정보 히스토리
+  // 상세 정보 히스토리
   let detailHistory = [];
   let activeDetailTab = 'info'; // 'info' 또는 'history'
     
@@ -285,10 +286,9 @@
 
   // 등록구분 선택 시 처리
   async function handleRegistrationChange() {
-    console.log('🔍 handleRegistrationChange 호출됨');
-    
+    // 등록구분 변경 시 초기화
+    resetAll();
     const selectedRegistrationItem = registrationList.find(item => item.MINR_CODE === selectedRegistration);
-    console.log('🔍 선택된 등록구분:', selectedRegistrationItem);
     
     // 제품정보가 선택된 경우에만 제품구분 로드
     if (selectedRegistrationItem && selectedRegistrationItem.MINR_NAME === '제품정보') {
@@ -321,7 +321,7 @@
     });
 
     if (!currentCompanyCode || !currentRegistrationCode) {
-      console.log('⌛ 상세내역 구조 조회 조건 부족');
+      console.log('⏰ 상세내역 구조 조회 조건 부족');
       productDetailItems = [];
       return;
     }
@@ -337,7 +337,7 @@
       console.log('🔍 categoryCode:', categoryCode);
       
       if (!categoryCode) {
-        console.log('⌛ 등록구분의 MINR_BIGO가 없음');
+        console.log('⏰ 등록구분의 MINR_BIGO가 없음');
         productDetailItems = [];
         loadingDetailInfo = false;
         return;
@@ -367,11 +367,11 @@
         productDetailItems = result.detailItems || [];
         console.log('✅ 상세내역 구조 조회 완료:', productDetailItems.length + '개');
       } else {
-        console.error('⌛ 상세내역 구조 조회 실패:', result.message);
+        console.error('⏰ 상세내역 구조 조회 실패:', result.message);
         productDetailItems = [];
       }
     } catch (err) {
-      console.error('⌛ 상세내역 구조 조회 오류:', err);
+      console.error('⏰ 상세내역 구조 조회 오류:', err);
       productDetailItems = [];
     } finally {
       loadingDetailInfo = false;
@@ -450,60 +450,53 @@
   }
   
 
-  // 제품 선택
+  // 제품 선택 - 간단하게 수정
+  // ✅ 해결책 2: selectProduct() 함수 수정
   async function selectProduct(product) {
+    // 새로 추가: 제품 선택 시 먼저 초기화
+    resetAll();
+
     selectedProduct = product;
-    priceDataInitialized = false; // 플래그 리셋
+    priceDataInitialized = false;
     console.log('선택된 제품:', product);
     
-    // 제품 선택 시 이미지 업로더에 기존 이미지 로드
+    // 한번만 기본 정보 설정
+    basicInfo.code = product.code || '';
+    basicInfo.name = product.name || '';
+    
+    // ✅ 핵심 수정: 이미지 코드 설정 및 업로더 리로드
+    imageCode = product.code || '';
+    
+    // 이미지 업로더 리로드 (파라미터 없이 호출)
+    // props가 이미 reactive하게 업데이트되므로 forceReload만 호출
     if (imageUploader) {
       imageUploader.forceReload();
     }
 
-    // 제품 상세 정보 조회 추가
+    // 제품 상세 정보 조회
     await loadProductDetailInfo(product.code);
   }
-  
-  // 단종 처리 (제품정보일 때만)
-  async function toggleDiscontinued(productCode) {
-    if (!isProductInfo) return;
 
-    try {
-      const response = await fetch('/api/product-management/product-registration/discontinued', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          product_code: productCode,
-          company_code: currentCompanyCode,
-          registration_code: currentRegistrationCode,
-          registration_name: currentRegistrationName
-        })
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        products = products.map(p => 
-          p.code === productCode 
-            ? { ...p, discontinued: result.action === 'discontinued' }
-            : p
-        );
-        
-        if (selectedProduct && selectedProduct.code === productCode) {
-          selectedProduct = { ...selectedProduct, discontinued: result.action === 'discontinued' };
-        }
-        
-        alert(result.message);
-      } else {
-        alert(result.message || '처리 실패');
-      }
-    } catch (err) {
-      console.error('단종 처리 오류:', err);
-      alert('단종 처리 중 오류가 발생했습니다.');
+  // ✅ 해결책 4: 디버깅을 위한 로그 추가
+  function debugImageUploader() {
+    console.log('🔍 이미지 업로더 디버깅 정보:');
+    console.log('- currentCompanyCode:', currentCompanyCode);
+    console.log('- currentRegistrationCode:', currentRegistrationCode);  
+    console.log('- imageCode:', imageCode);
+    console.log('- basicInfo.code:', basicInfo.code);
+    console.log('- imageUploader 존재 여부:', !!imageUploader);
+    
+    if (imageUploader) {
+      // ImageUploader 컴포넌트의 상태도 확인
+      console.log('- 이미지 업로더 준비 상태 확인 필요');
     }
+  }
+
+  // 입력 변경 감지 - 단순화
+  function handleBasicInfoChange() {
+    basicInfoChanged = true;
+    saveSuccess = '';
+    saveError = '';
   }
   
   // 메시지 자동 숨김
@@ -563,6 +556,34 @@
         priceHistory = result.priceHistory || [];
         discountInfo = result.discountInfo || [];
         
+        // 상세 정보 직접 설정 (reactive statement 없이)
+        if (productDetailInfo && Object.keys(productDetailInfo).length > 0) {
+          basicInfo.externalCode = productDetailInfo.PROH_CDOT || '';
+          basicInfo.qrCode = productDetailInfo.PROH_QRCD || '';
+          basicInfo.description = productDetailInfo.PROH_BIGO || '';
+        }
+        
+        // 가격 데이터 직접 설정
+        if (priceInfo && Object.keys(priceInfo).length > 0 && !priceDataInitialized) {
+          priceData.basePrice = priceInfo.DPRC_BAPR || 0;
+          priceData.cardPrice = priceInfo.DPRC_SOPR || 0;
+          priceData.cashPrice = priceInfo.DPRC_DCPR || 0;
+          priceData.deliveryPrice = priceInfo.DPRC_DEPR || 0;
+          
+          // 체크박스 체크안함.
+          priceData.priceEnabled = false;
+          
+          priceDataInitialized = true;
+        }
+        
+        // 할인 데이터 직접 설정
+        if (discountInfo && discountInfo.length > 0) {
+          discountData.discountType = discountInfo[0].YOUL_GUBN || '';
+          discountData.quantity = discountInfo[0].YOUL_QTY1 || 0;
+          discountData.amount = discountInfo[0].YOUL_AMT1 || 0;
+          discountData.isChecked = false;
+        }
+        
         console.log('제품 상세 정보 조회 완료:', {
           detailItemsCount: productDetailItems.length,
           detailHistoryCount: detailHistory.length,
@@ -593,31 +614,79 @@
   let saveSuccess = '';
   let saveError = '';
   
+  // 🔥 완전 해결: reactive statement 모두 제거
+  // $: 구문들이 계속 값을 덮어쓰고 있었음
+
   // 전체 변경 상태 (하나라도 변경되면 true)
   $: hasChanges = basicInfoChanged || priceChanged || detailChanged;
   
-  // 기존 데이터와 연동 (기존 reactive statements 수정)
-  $: if (selectedProduct) {
-    basicInfo.code = selectedProduct.code || '';
-    basicInfo.name = selectedProduct.name || '';
+  // 초기화 함수
+  // ✅ 해결책 5: 완전한 resetAll() 함수
+  function resetAll() {
+    if (hasChanges && !confirm('모든 변경사항이 초기화됩니다. 계속하시겠습니까?')) {
+      return;
+    }
+    
+    // 기본 정보 완전 초기화
+    basicInfo = {
+      code: '',
+      name: '',
+      externalCode: '',
+      qrCode: '',
+      description: ''
+    };
+    
+    // 가격 정보 초기화
+    priceData = {
+      basePrice: 0,
+      cardPrice: 0,
+      cashPrice: 0,
+      deliveryPrice: 0,
+      priceEnabled: false
+    };
+    
+    // 할인 정보 초기화
+    discountData = {
+      discountType: '',
+      quantity: 0,
+      amount: 0,
+      isChecked: false
+    };
+    
+    // 상세내역 초기화
+    productDetailItems = productDetailItems.map(item => ({
+      ...item,
+      inputValue: ''
+    }));
+    
+    // 이력 정보 초기화
+    priceHistory = [];
+    detailHistory = [];
+
+    // ✅ 이미지 관련 초기화 개선
+    imageCode = '';  // 이미지 코드도 초기화
+    
+    // 이미지 업로더 초기화
+    if (imageUploader) {
+      imageUploader.clearAll(); // 기존 이미지들 제거
+      imageUploader.forceReload(); // 강제 리로드
+    }
+    
+    // 변경 상태 초기화
     basicInfoChanged = false;
-  }
-  
-  $: if (productDetailInfo) {
-    basicInfo.externalCode = productDetailInfo.PROH_CDOT || '';
-    basicInfo.qrCode = productDetailInfo.PROH_QRCD || '';
-    basicInfo.description = productDetailInfo.PROH_BIGO || '';
-    basicInfoChanged = false;
-  }
-  
-  // 입력 변경 감지
-  function handleBasicInfoChange() {
-    basicInfoChanged = true;
+    priceChanged = false;
+    detailChanged = false;
+    priceDataInitialized = false;
+    
+    // 메시지 초기화
     saveSuccess = '';
     saveError = '';
+    
+    console.log('모든 데이터가 초기화되었습니다.');
   }
-  
+
   // 통합 저장 함수
+  // ✅ 해결책 1: saveAll() 함수 수정
   async function saveAll() {
     if (!basicInfo.code.trim()) {
       saveError = '제품 코드를 입력해주세요.';
@@ -652,15 +721,11 @@
           qrCode: basicInfo.qrCode.trim() || '',
           description: basicInfo.description.trim() || ''
         },
-        priceInfo: isProductInfo ? {
+        priceInfo: isProductInfo && priceData.priceEnabled ? {
           basePrice: priceData.basePrice || 0,
           cardPrice: priceData.cardPrice || 0,
           cashPrice: priceData.cashPrice || 0,
           deliveryPrice: priceData.deliveryPrice || 0,
-          basePriceChecked: priceData.basePriceChecked,
-          cardPriceChecked: priceData.cardPriceChecked,
-          cashPriceChecked: priceData.cashPriceChecked,
-          deliveryPriceChecked: priceData.deliveryPriceChecked
         } : null,
         discountInfo: isProductInfo && discountData.isChecked ? {
           discountType: discountData.discountType || '',
@@ -712,6 +777,19 @@
         saveSuccess = result.message || '제품이 성공적으로 등록되었습니다.';
       }
       
+      // ✅ 핵심 수정: DB 저장 완료 후 이미지 저장 로직 개선
+      if (imageUploader) {
+        imageCode = basicInfo.code.trim();
+        await tick(); // Svelte 업데이트 대기
+        
+        try {
+          await imageUploader.uploadToServer();
+          console.log('이미지 저장 성공');
+        } catch (error) {
+          console.log('이미지 저장 실패:', error.message);
+        }
+      }
+      
       // 변경 상태 초기화
       basicInfoChanged = false;
       priceChanged = false;
@@ -751,10 +829,7 @@
     cashPrice: 0,     // 현금가
     deliveryPrice: 0, // 납품가
     // 체크박스 상태
-    basePriceChecked: false,
-    cardPriceChecked: false, 
-    cashPriceChecked: false,
-    deliveryPriceChecked: false
+    priceEnabled: false
   };
 
   // 초기화 플래그
@@ -771,21 +846,7 @@
   // CD003 콤보박스 옵션들 (서버에서 동적으로 로드)
   let discountTypeOptions = [];
 
-  // 기존 데이터와 연동 (한 번만 실행되도록)
-  $: if (priceInfo && !priceDataInitialized) {
-    priceData.basePrice = priceInfo.DPRC_BAPR || 0;
-    priceData.cardPrice = priceInfo.DPRC_SOPR || 0;
-    priceData.cashPrice = priceInfo.DPRC_DCPR || 0;
-    priceData.deliveryPrice = priceInfo.DPRC_DEPR || 0;
-    
-    priceDataInitialized = true;
-  }
 
-  $: if (discountInfo && discountInfo.length > 0) {
-    discountData.discountType = discountInfo[0].YOUL_GUBN || '';
-    discountData.quantity = discountInfo[0].YOUL_QTY1 || 0;
-    discountData.amount = discountInfo[0].YOUL_AMT1 || 0;
-  }
 
   // 숫자와 콤마만 허용하는 입력 검증 함수
   function validateNumberInput(value, allowNegative = false) {
@@ -805,53 +866,61 @@
     return cleaned;
   }
 
-  // 가격 입력 처리 함수들 (콤마 포맷팅 유지)
+  // 🔥 문제 3 해결: 모든 가격 입력 시 체크박스 자동 체크
   function handleBasePriceInput(e) {
-    let value = validateNumberInput(e.target.value, false); // 음수 불허
+    let value = validateNumberInput(e.target.value, false);
     const numValue = parseNumber(value);
     
     priceData.basePrice = numValue;
-    e.target.value = value; // 검증된 값으로 업데이트
+    e.target.value = value;
     
+    // 값이 0보다 크면 체크박스 자동 체크
     if (numValue > 0) {
-      priceData.basePriceChecked = true;
+      priceData.priceEnabled  = true;
     }
+    priceChanged = true;
   }
 
   function handleCardPriceInput(e) {
-    let value = validateNumberInput(e.target.value, false); // 음수 불허
+    let value = validateNumberInput(e.target.value, false);
     const numValue = parseNumber(value);
     
     priceData.cardPrice = numValue;
     e.target.value = value;
     
+    // 값이 0보다 크면 체크박스 자동 체크
     if (numValue > 0) {
-      priceData.cardPriceChecked = true;
+      priceData.priceEnabled  = true;
     }
+    priceChanged = true;
   }
 
   function handleCashPriceInput(e) {
-    let value = validateNumberInput(e.target.value, false); // 음수 불허
+    let value = validateNumberInput(e.target.value, false);
     const numValue = parseNumber(value);
     
     priceData.cashPrice = numValue;
     e.target.value = value;
     
+    // 값이 0보다 크면 체크박스 자동 체크
     if (numValue > 0) {
-      priceData.cashPriceChecked = true;
+      priceData.priceEnabled  = true;
     }
+    priceChanged = true;
   }
 
   function handleDeliveryPriceInput(e) {
-    let value = validateNumberInput(e.target.value, false); // 음수 불허
+    let value = validateNumberInput(e.target.value, false);
     const numValue = parseNumber(value);
     
     priceData.deliveryPrice = numValue;
     e.target.value = value;
     
+    // 값이 0보다 크면 체크박스 자동 체크
     if (numValue > 0) {
-      priceData.deliveryPriceChecked = true;
+      priceData.priceEnabled  = true;
     }
+    priceChanged = true;
   }
 
   // 포맷팅 처리 함수들 (콤마 표시 복원)
@@ -881,10 +950,11 @@
     if (discountData.discountType) {
       discountData.isChecked = true;
     }
+    priceChanged = true;
   }
 
   function handleDiscountQuantityInput(e) {
-    let value = validateNumberInput(e.target.value, false); // 음수 불허
+    let value = validateNumberInput(e.target.value, false);
     const numValue = parseNumber(value);
     
     discountData.quantity = numValue;
@@ -893,11 +963,12 @@
     if (numValue > 0) {
       discountData.isChecked = true;
     }
+    priceChanged = true;
   }
 
   // 할인금액만 음수 허용
   function handleDiscountAmountInput(e) {
-    let value = validateNumberInput(e.target.value, true); // 음수 허용
+    let value = validateNumberInput(e.target.value, true);
     const numValue = parseNumber(value);
     
     discountData.amount = numValue;
@@ -906,6 +977,7 @@
     if (numValue !== 0) {
       discountData.isChecked = true;
     }
+    priceChanged = true;
   }
 
   function formatDiscountQuantityOnBlur(e) {
@@ -1176,24 +1248,35 @@
                     {/if}
                   </div>
                   
-                  <button 
-                    type="button"
-                    on:click={saveAll}
-                    disabled={isSaving || !hasChanges}
-                    class="px-3 py-1 text-xs rounded transition-colors duration-200 
-                          {hasChanges && !isSaving 
-                            ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'}"
-                  >
-                    {#if isSaving}
-                      <div class="flex items-center gap-1">
-                        <div class="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"></div>
-                        저장중
-                      </div>
-                    {:else}
-                      저장
-                    {/if}
-                  </button>
+                  <div class="flex gap-2">
+                    <button 
+                      type="button"
+                      on:click={saveAll}
+                      disabled={isSaving || !hasChanges}
+                      class="px-3 py-1 text-xs rounded transition-colors duration-200 
+                            {hasChanges && !isSaving 
+                              ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'}"
+                    >
+                      {#if isSaving}
+                        <div class="flex items-center gap-1">
+                          <div class="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"></div>
+                          저장중
+                        </div>
+                      {:else}
+                        저장
+                      {/if}
+                    </button>
+                    
+                    <button 
+                      type="button"
+                      on:click={resetAll}
+                      disabled={isSaving}
+                      class="px-3 py-1 text-xs rounded transition-colors duration-200 bg-gray-500 text-white hover:bg-gray-600 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                    >
+                      초기화
+                    </button>
+                  </div>
                 </div>
               </div>
               
@@ -1322,12 +1405,12 @@
 
                 <!-- 가격 탭 내용 -->
                 {#if activePriceTab === 'current'}
-                  <!-- 현재 가격 테이블 (수정된 버전) -->
+                  <!-- 현재 가격 테이블 -->
                   <div class="border border-gray-300 rounded overflow-hidden mb-4">
                     <table class="w-full" style="font-size: 0.75rem;">
                       <thead class="bg-gray-100">
                         <tr>
-                          <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 40px;">✔</th>
+                          <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 40px;">✓</th>
                           <th class="border-r border-gray-300 text-center" style="padding: 6px;">원가</th>
                           <th class="border-r border-gray-300 text-center" style="padding: 6px;">카드가</th>
                           <th class="border-r border-gray-300 text-center" style="padding: 6px;">현금가</th>
@@ -1336,11 +1419,11 @@
                       </thead>
                       <tbody>
                         <tr>
-                          <!-- 원가 체크박스 -->
+                          <!-- 체크박스 하나만 -->
                           <td class="border-r border-gray-300 text-center" style="padding: 6px;">
                             <input 
                               type="checkbox" 
-                              bind:checked={priceData.basePriceChecked}
+                              bind:checked={priceData.priceEnabled}
                             />
                           </td>
                           
@@ -1400,15 +1483,15 @@
                     </table>
                   </div>
 
-                  <!-- 수량 할인 테이블 (수정된 버전) -->
+                  <!-- 수량 할인 테이블 -->
                   <div class="mt-4">
                     <h4 class="text-gray-700 font-medium mb-2" style="font-size: 0.8rem;">수량 할인</h4>
                     <div class="border border-gray-300 rounded overflow-hidden">
                       <table class="w-full" style="font-size: 0.75rem;">
                         <thead class="bg-gray-100">
                           <tr>
-                            <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 40px;">✔</th>
-                            <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 120px;">할인구분</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 40px;">✓</th>
+                            <th class="border-r border-gray-300 text-center" style="padding: 6px; width: 120px;">현금</th>
                             <th class="border-r border-gray-300 text-center" style="padding: 6px;">할인수량</th>
                             <th class="text-center" style="padding: 6px;">할인금액</th>
                           </tr>
@@ -1423,7 +1506,7 @@
                               />
                             </td>
                             
-                            <!-- 할인구분 콤보박스 (기존 현금 두칸 → 한칸 콤보박스) -->
+                            <!-- 할인구분 콤보박스 -->
                             <td class="border-r border-gray-300" style="padding: 6px;">
                               <select
                                 value={discountData.discountType}
@@ -1470,7 +1553,7 @@
                   </div>
                 {/if}
 
-                <!-- 이력 탭 내용 (기존과 동일) -->
+                <!-- 이력 탭 내용 -->
                 {#if activePriceTab === 'history'}
                   <div class="border border-gray-300 rounded overflow-hidden">
                     {#if priceHistory.length > 0}
@@ -1521,7 +1604,7 @@
             </div>
             {/if}
 
-            <!-- 세 번째 카드: 상세내역 (저장 버튼 제거) -->
+            <!-- 세 번째 카드: 상세내역 -->
             <div class="bg-white rounded-lg overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
               <div class="border-b border-gray-200" style="padding: 15px 20px;">
                 <h3 class="text-gray-800 m-0" style="font-size: 0.9rem;">상세내역</h3>
@@ -1675,13 +1758,11 @@
               <div class="border-b border-gray-200 flex justify-between items-center flex-wrap" style="padding: 15px 20px; gap: 15px;">
                 <div class="flex items-center gap-2.5">
                   <h3 class="text-gray-800 m-0" style="font-size: 0.8rem;">
-                    📷 이미지 관리{#if selectedProduct} - {selectedProduct.name}{/if}
+                    📷 이미지 관리 - {basicInfo.name}
                   </h3>
-                  {#if selectedProduct}
-                    <span class="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                      {selectedProduct.code}
-                    </span>
-                  {/if}
+                  <span class="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                    {basicInfo.code}
+                  </span>
                 </div>
               </div>
                             
@@ -1691,7 +1772,7 @@
                   bind:this={imageUploader}
                   imagGub1={currentCompanyCode}
                   imagGub2={currentRegistrationCode}
-                  imagCode={selectedProduct?.code || ''}
+                  imagCode={imageCode}
                 />
             </div>
           </div>

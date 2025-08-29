@@ -102,7 +102,7 @@ export async function GET({ url, locals }) {
           AND p.PROH_GUB2 = prod_l5.PROD_GUB2
           AND p.PROH_CODE = prod_l5.PROD_CODE
           AND prod_l5.PROD_COD2 = 'L5'
-        INNER JOIN BISH_DPRC d
+         LEFT JOIN BISH_DPRC d
            ON p.PROH_CODE = d.DPRC_CODE
         LEFT JOIN STOK_HYUN h
            ON p.PROH_CODE = h.HYUN_ITEM
