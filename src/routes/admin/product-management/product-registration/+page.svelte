@@ -770,11 +770,37 @@
           }
           
           saveSuccess = updateResult.message || '제품이 성공적으로 수정되었습니다.';
+          // 제품 목록에서 해당 제품 정보 업데이트
+          products = products.map(product => 
+            product.code === basicInfo.code.trim() 
+              ? {
+                  ...product,
+                  name: basicInfo.name.trim(),
+                  cost: priceData.basePrice || 0,
+                  price: priceData.cardPrice || 0,
+                  // stock은 그대로 유지
+                  discontinued: product.discontinued
+                }
+              : product
+          );
+
         } else {
           return; // 사용자가 취소함
         }
       } else {
         saveSuccess = result.message || '제품이 성공적으로 등록되었습니다.';
+
+        // 신규 제품을 목록 맨 앞에 추가
+        const newProduct = {
+          code: basicInfo.code.trim(),
+          name: basicInfo.name.trim(),
+          cost: priceData.basePrice || 0,
+          price: priceData.cardPrice || 0,
+          stock: 0,
+          discontinued: false,
+          isProductInfo: isProductInfo
+        };
+        products = [newProduct, ...products];
       }
       
       // ✅ 핵심 수정: DB 저장 완료 후 이미지 저장 로직 개선
@@ -811,6 +837,62 @@
       isSaving = false;
     }
   }
+
+  // 제품 삭제 함수 - 기존 함수들 아래에 추가
+  async function deleteProduct() {
+    if (!basicInfo.code.trim()) {
+      saveError = '삭제할 제품 코드가 없습니다.';
+      setTimeout(() => saveError = '', 3000);
+      return;
+    }
+    
+    if (!currentCompanyCode || !currentRegistrationCode) {
+      saveError = '회사구분과 등록구분을 선택해주세요.';
+      setTimeout(() => saveError = '', 3000);
+      return;
+    }
+    
+    const confirmMessage = `정말로 "${basicInfo.name}" (${basicInfo.code}) 제품을 완전히 삭제하시겠습니까?\n\n⚠️ 주의사항:\n- 삭제된 데이터는 복구할 수 없습니다\n- 모든 관련 정보(가격, 이미지 등)가 함께 삭제됩니다`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+    
+    try {
+      isSaving = true;
+      saveError = '';
+      saveSuccess = '';
+      
+      const response = await fetch('/api/product-management/product-registration/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_code: basicInfo.code.trim(),
+          company_code: currentCompanyCode,
+          registration_code: currentRegistrationCode
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        saveSuccess = result.message;
+        if (selectedProduct && selectedProduct.code === basicInfo.code.trim()) {
+          selectedProduct = null;
+        }
+        products = products.filter(p => p.code !== basicInfo.code.trim());
+        resetAll();
+      } else {
+        saveError = result.message || '삭제 실패';
+      }
+      
+    } catch (err) {
+      saveError = '삭제 중 오류가 발생했습니다: ' + err.message;
+    } finally {
+      isSaving = false;
+    }
+  }
+
   //-----------------------------------------------------------------
   //상세내역
   // 상세내역 입력값 변경 시 처리 (변경 추적 추가)
@@ -1249,6 +1331,17 @@
                   </div>
                   
                   <div class="flex gap-2">
+                    <!-- 1. 초기화 버튼 -->
+                    <button 
+                      type="button"
+                      on:click={resetAll}
+                      disabled={isSaving}
+                      class="px-3 py-1 text-xs rounded transition-colors duration-200 bg-gray-500 text-white hover:bg-gray-600 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                    >
+                      초기화
+                    </button>
+                    
+                    <!-- 2. 저장 버튼 -->
                     <button 
                       type="button"
                       on:click={saveAll}
@@ -1268,13 +1361,18 @@
                       {/if}
                     </button>
                     
+                    <!-- 3. 삭제 버튼 (새로 추가) -->
                     <button 
                       type="button"
-                      on:click={resetAll}
-                      disabled={isSaving}
-                      class="px-3 py-1 text-xs rounded transition-colors duration-200 bg-gray-500 text-white hover:bg-gray-600 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                      on:click={deleteProduct}
+                      disabled={isSaving || !basicInfo.code.trim()}
+                      class="px-3 py-1 text-xs rounded transition-colors duration-200 
+                            {!isSaving && basicInfo.code.trim()
+                              ? 'bg-red-600 text-white hover:bg-red-700' 
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'}"
+                      title={basicInfo.code.trim() ? '현재 제품 완전 삭제' : '삭제할 제품이 없습니다'}
                     >
-                      초기화
+                      삭제
                     </button>
                   </div>
                 </div>
