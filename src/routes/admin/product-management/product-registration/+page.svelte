@@ -863,6 +863,10 @@
       saveError = '';
       saveSuccess = '';
       
+      console.log('제품 삭제 시작:', basicInfo.code);
+      
+      // 🔥 1단계: 제품 데이터 삭제
+      console.log('제품 데이터 삭제 중...');
       const response = await fetch('/api/product-management/product-registration/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -876,17 +880,42 @@
       const result = await response.json();
       
       if (result.success) {
+        // 삭제 성공
         saveSuccess = result.message;
+
+        // 🔥 2단계: 이미지 먼저 삭제
+        if (imageUploader) {
+          imageCode = basicInfo.code.trim();
+          await tick();
+          try {
+            await imageUploader.deleteAllImages();
+            console.log('이미지 삭제 성공');
+          } catch (error) {
+            console.log('이미지 삭제 실패:', error.message);
+          }
+        }
+        
+        // 선택된 제품 해제
         if (selectedProduct && selectedProduct.code === basicInfo.code.trim()) {
           selectedProduct = null;
         }
+        
+        // 제품 목록에서 제거
         products = products.filter(p => p.code !== basicInfo.code.trim());
+        
+        // 모든 입력 내용 초기화
         resetAll();
+        
+        console.log('제품 완전 삭제 성공:', result.deleted_product);
+        
       } else {
-        saveError = result.message || '삭제 실패';
+        // 제품 삭제 실패
+        saveError = result.message || '제품 삭제 실패';
+        console.error('제품 삭제 실패:', result.message);
       }
       
     } catch (err) {
+      console.error('제품 삭제 오류:', err);
       saveError = '삭제 중 오류가 발생했습니다: ' + err.message;
     } finally {
       isSaving = false;

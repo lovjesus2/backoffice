@@ -33,7 +33,7 @@ export async function DELETE({ request, locals }) {
       }, { status: 400 });
     }
     
-    if (!keep_count || keep_count < 0 || keep_count > 10) {
+    if (keep_count == null || keep_count < 0 || keep_count > 10) {
       return json({
         success: false,
         message: '유지할 이미지 개수가 올바르지 않습니다.'
