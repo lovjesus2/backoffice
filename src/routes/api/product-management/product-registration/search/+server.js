@@ -89,8 +89,9 @@ export async function GET({ url, locals }) {
       // 제품정보인 경우 - 가격, 재고, 단종 정보 포함
       sql = `
         SELECT p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, 
-               prod_l5.PROD_TXT1 as discontinued_status,
-               COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK
+              prod_l5.PROD_TXT1 as discontinued_status,
+              COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
+              COALESCE(prod_l6.PROD_TXT1, '0') as STOCK_MANAGED
         FROM ASSE_PROH p
         INNER JOIN ASSE_PROD prod_l1
            ON p.PROH_GUB1 = prod_l1.PROD_GUB1
@@ -105,7 +106,12 @@ export async function GET({ url, locals }) {
          LEFT JOIN BISH_DPRC d
            ON p.PROH_CODE = d.DPRC_CODE
         LEFT JOIN STOK_HYUN h
-           ON p.PROH_CODE = h.HYUN_ITEM
+          ON p.PROH_CODE = h.HYUN_ITEM
+        LEFT JOIN ASSE_PROD prod_l6
+          ON p.PROH_GUB1 = prod_l6.PROD_GUB1
+        AND p.PROH_GUB2 = prod_l6.PROD_GUB2
+        AND p.PROH_CODE = prod_l6.PROD_CODE
+        AND prod_l6.PROD_COD2 = 'L6'
         WHERE p.PROH_GUB1 = ?
           AND p.PROH_GUB2 = ?
           AND (${searchSQL})
@@ -144,7 +150,8 @@ export async function GET({ url, locals }) {
         cost: parseInt(row.DPRC_BAPR) || 0,
         price: parseInt(row.DPRC_SOPR) || 0,
         stock: parseInt(row.CURRENT_STOCK) || 0,
-        discontinued: row.PROD_TXT1 === '1',
+        discontinued: row.discontinued_status === '1',
+        stockManaged: row.STOCK_MANAGED === '1',
         isProductInfo: true
       }));
     } else {

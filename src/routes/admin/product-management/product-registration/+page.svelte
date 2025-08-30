@@ -570,8 +570,8 @@
           priceData.cashPrice = priceInfo.DPRC_DCPR || 0;
           priceData.deliveryPrice = priceInfo.DPRC_DEPR || 0;
           
-          // 체크박스 체크안함.
-          priceData.priceEnabled = false;
+          // 체크박스 체크함.
+          priceData.priceEnabled = true;
           
           priceDataInitialized = true;
         }
@@ -771,18 +771,20 @@
           
           saveSuccess = updateResult.message || '제품이 성공적으로 수정되었습니다.';
           // 제품 목록에서 해당 제품 정보 업데이트
-          products = products.map(product => 
-            product.code === basicInfo.code.trim() 
-              ? {
-                  ...product,
-                  name: basicInfo.name.trim(),
-                  cost: priceData.basePrice || 0,
-                  price: priceData.cardPrice || 0,
-                  // stock은 그대로 유지
-                  discontinued: product.discontinued
-                }
-              : product
-          );
+          setTimeout(() => {
+            products = products.map(product => 
+              product.code === basicInfo.code.trim() 
+                ? {
+                    ...product,
+                    name: basicInfo.name.trim(),
+                    cost: priceData.basePrice || 0,
+                    price: priceData.cardPrice || 0,
+                    // stock은 그대로 유지
+                    discontinued: product.discontinued
+                  }
+                : product
+            );
+          }, 500);
 
         } else {
           return; // 사용자가 취소함
@@ -791,16 +793,18 @@
         saveSuccess = result.message || '제품이 성공적으로 등록되었습니다.';
 
         // 신규 제품을 목록 맨 앞에 추가
-        const newProduct = {
-          code: basicInfo.code.trim(),
-          name: basicInfo.name.trim(),
-          cost: priceData.basePrice || 0,
-          price: priceData.cardPrice || 0,
-          stock: 0,
-          discontinued: false,
-          isProductInfo: isProductInfo
-        };
-        products = [newProduct, ...products];
+        setTimeout(() => {
+          const newProduct = {
+            code: basicInfo.code.trim(),
+            name: basicInfo.name.trim(),
+            cost: priceData.basePrice || 0,
+            price: priceData.cardPrice || 0,
+            stock: 0,
+            discontinued: false,
+            isProductInfo: isProductInfo
+          };
+          products = [newProduct, ...products];
+        }, 500);  
       }
       
       // ✅ 핵심 수정: DB 저장 완료 후 이미지 저장 로직 개선
@@ -1138,7 +1142,7 @@
               <span class="block bg-gray-600 rounded transition-all" style="width: 18px; height: 2px;"></span>
             </div>
           </button>
-          <h1 class="text-gray-800 font-semibold m-0" style="font-size: 1.375rem;">제품등록</h1>
+          <h1 class="text-gray-800 font-semibold m-0" style="font-size: 1rem;">제품등록</h1>
         </div>
       </div>
     </div>
@@ -1298,6 +1302,7 @@
               </div>
             {:else if products.length > 0}
               <div style="padding: 10px;">
+                <!-- 제품 목록 부분 (기존 코드에서 교체할 부분) -->
                 {#each products as product}
                   <div 
                     class="relative bg-white rounded-lg border border-gray-200 overflow-hidden cursor-pointer transition-colors hover:bg-gray-50 {selectedProduct?.code === product.code ? 'border-blue-500 bg-blue-50' : ''} {product.discontinued ? 'opacity-60 bg-gray-50' : ''}"
@@ -1307,7 +1312,7 @@
                     <!-- 이미지 및 기본 정보 -->
                     <div class="flex" style="gap: 12px;">
                       <!-- 상품 이미지 -->
-                      <div class="flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden" style="width: 80px; height: 80px;">
+                      <div class="flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden relative" style="width: 80px; height: 80px;">
                         <img 
                           src={getProxyImageUrl(product.code)} 
                           alt={product.name}
@@ -1319,12 +1324,25 @@
                             e.target.style.background = '#f0f0f0';
                           }}
                         />
+                        
+                        <!-- 재고 배지 (매출조회와 완전 동일) -->
+                        {#if isProductInfo && product.stockManaged}
+                          <span class="absolute top-0.5 right-0.5 {product.stock === 0 ? 'bg-gray-500 text-white' : 'bg-yellow-400 text-gray-800'} px-1 py-0.5 rounded-lg text-xs font-bold min-w-6 text-center md:text-[10px]">
+                            {product.stock || 0}
+                          </span>
+                        {/if}
                       </div>
 
-                      <!-- 상품 정보 -->
+                      <!-- 상품 정보 (제품검색&재고관리와 완전 동일) -->
                       <div class="flex-1 min-w-0">
                         <h3 class="font-semibold text-gray-900 mb-1" style="font-size: 0.7rem; line-height: 1.3; word-break: break-all;">{product.name}</h3>
-                        <div class="text-blue-600 font-bold" style="font-size: 0.65rem;">{product.code}</div>
+                        <div class="text-blue-600 font-bold mb-1" style="font-size: 0.7rem;">코드: {product.code}</div>
+                        
+                        <!-- 가격 정보 (제품정보일 때만) -->
+                        {#if isProductInfo}
+                          <div class="text-gray-600" style="font-size: 0.7rem;">원가: {product.cost ? product.cost.toLocaleString('ko-KR') : '0'}원</div>
+                          <div class="text-gray-700" style="font-size: 0.7rem;">금액: {product.price ? product.price.toLocaleString('ko-KR') : '0'}원</div>
+                        {/if}
                       </div>
                     </div>
                   </div>
