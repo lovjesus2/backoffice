@@ -588,7 +588,7 @@
                   style="padding: 0.25rem 0.5rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);"
                   on:click={() => toggleDiscontinued(productData.code)}
                 >
-                  {productData.discontinued ? '단종 취소' : '단종 처리'}
+                  {productData.discontinued ? '단종' : '정상'}
                 </button>
               </div>
             {/if}

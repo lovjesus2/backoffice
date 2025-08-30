@@ -569,6 +569,7 @@
       return;
     }
     
+    //중복 로딩 방지 및 상태 초기화
     if (isLoadingImages) {
       console.warn('이미 로딩 중', '강제 초기화');
       isLoadingImages = false;
@@ -1145,6 +1146,7 @@
     allImages = newAllImages;
   }
   
+  //업로드 함수
   async function uploadToServer() {
     if (!isLibraryLoaded || !imagGub1 || !imagGub2 || !imagCode) {
       dispatch('error', { message: '필수 파라미터가 누락되었습니다.' });
@@ -1235,11 +1237,11 @@
         }, 100);
         
         // 모든 업로드 성공 후 불필요한 이미지 삭제
-        const savedImageCount = allImages.length;
+        //const savedImageCount = allImages.length;
         
-        if (savedImageCount > 0 && savedImageCount < 10) {
-          await deleteUnnecessaryImages(savedImageCount);
-        }
+        //if (savedImageCount > 0 && savedImageCount < 10) {
+        //  await deleteUnnecessaryImages(savedImageCount);
+       // }
       } else {
         throw new Error(result.error || '저장 실패');
       }
@@ -1284,6 +1286,47 @@
       console.error('불필요한 이미지 삭제 오류:', error);
     }
   }
+
+  // 모든 이미지 삭제 함수 (외부에서 호출 가능)
+  export async function deleteAllImages() {
+    if (!imagCode) {
+      console.log('제품코드가 없어서 이미지 삭제를 건너뜀');
+      return { success: true, message: '삭제할 제품코드가 없습니다.' };
+    }
+    
+    try {
+      console.log(`${imagCode} 제품의 모든 이미지 삭제 시작`);
+      
+      // 1-10번 모든 이미지 삭제 API 호출
+      const response = await fetch('/api/images/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          product_code: imagCode,
+          keep_count: 0  // 0개 유지 = 모든 이미지 삭제
+        })
+      });
+      
+      const result = await response.json();
+      console.log('모든 이미지 삭제 결과:', result);
+      
+      // 모든 캐시도 클리어
+      //clearAllImageCache();
+      
+      // UI도 초기화
+      allImages = [];
+      
+      return result;
+      
+    } catch (error) {
+      console.error('모든 이미지 삭제 오류:', error);
+      return { 
+        success: false, 
+        message: '이미지 삭제 중 오류가 발생했습니다: ' + error.message 
+      };
+    }
+  }
+
   
   function clearAll() {
     if (pond && pond.removeFiles) {
