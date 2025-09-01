@@ -126,7 +126,7 @@
             <!-- 부모 메뉴 -->
             <div class="w-full">
               <button
-                class="flex items-center justify-between px-4 py-3 text-gray-700 bg-transparent border-0 rounded-md transition-all duration-200 text-base w-full cursor-pointer text-left font-medium
+                class="flex items-center justify-between px-4 py-3 text-gray-700 bg-transparent border-0 rounded-md transition-all duration-200 text-xs w-full cursor-pointer text-left font-medium
                        hover:bg-blue-50 hover:text-blue-600
                        {menu.href && isActive(menu.href) ? 'bg-blue-600 text-white border-l-4 border-blue-800 font-semibold' : ''}
                        {hasActiveChild(menu) && !(menu.href && isActive(menu.href)) ? 'bg-blue-50 text-blue-600 border-l-[3px] border-blue-300' : ''}"
@@ -147,7 +147,7 @@
                     <li class="mb-1">
                       <a 
                         href={child.href}
-                        class="flex items-center px-4 py-2 pl-6 text-gray-600 no-underline rounded-md transition-all duration-200 text-base font-normal
+                        class="flex items-center px-4 py-2 pl-6 text-gray-600 no-underline rounded-md transition-all duration-200 text-xs font-normal
                                hover:bg-purple-50 hover:text-purple-700
                                {currentPath === child.href ? 'bg-purple-50 text-purple-700 border-l-[3px] border-purple-400 font-medium' : ''}"
                         on:click={() => {
@@ -169,7 +169,7 @@
             <!-- 단독 메뉴 -->
             <a 
               href={menu.href}
-              class="flex items-center px-4 py-3 text-gray-700 no-underline rounded-md transition-all duration-200 text-base
+              class="flex items-center px-4 py-3 text-gray-700 no-underline rounded-md transition-all duration-200 text-xs
                      hover:bg-blue-50 hover:text-blue-600
                      {currentPath === menu.href ? 'bg-blue-600 text-white border-l-4 border-blue-800 font-semibold' : ''}"
               on:click={() => {

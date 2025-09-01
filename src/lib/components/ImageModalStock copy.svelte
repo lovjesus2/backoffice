@@ -240,45 +240,30 @@
   // 단종 처리
   async function toggleDiscontinued(productCode) {
     try {
-      console.log('단종 토글 시작, 현재 상태:', productData?.discontinued); // 디버그 로그
-      
-      const response = await fetch('/api/product-management/product-stock/toggle-attribute', {
+      const response = await fetch('/api/product-management/product-stock/discontinued', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          product_code: productCode, 
-          attribute_code: 'L5'  // 단종
+          product_code: productCode
         })
       });
       
       const result = await response.json();
-      console.log('API 응답:', result); // 디버그 로그
       
       if (result.success) {
-        // ✅ 강제 반응성 트리거를 위한 방법
-        const isDiscontinued = result.new_status === '1';
-        console.log('새로운 단종 상태:', isDiscontinued); // 디버그 로그
-        
-        // 제품 데이터 업데이트 (강제 재할당으로 반응성 보장)
+        // 제품 데이터 업데이트
         if (productData && productData.code === productCode) {
-          productData = {
-            ...productData,
-            discontinued: isDiscontinued
-          };
-          // 강제 반응성 트리거
-          productData = productData;
+          productData = { ...productData, discontinued: result.action === 'discontinued' };
         }
-        
-        console.log('업데이트된 productData:', productData); // 디버그 로그
         
         showToast(result.message, 'success');
         
         // 부모 컴포넌트에 변경 사항 알림
         dispatch('discontinuedUpdated', {
           productCode,
-          discontinued: isDiscontinued
+          discontinued: result.action === 'discontinued'
         });
         
       } else {
@@ -286,59 +271,6 @@
       }
     } catch (err) {
       console.error('단종 처리 오류:', err);
-      showToast('처리 중 오류가 발생했습니다.', 'error');
-    }
-  }
-  
-  // ✅ 재고사용 처리 함수 수정
-  async function toggleStockUsage(productCode) {
-    try {
-      console.log('재고사용 토글 시작, 현재 상태:', productData?.stock_usage); // 디버그 로그
-      
-      const response = await fetch('/api/product-management/product-stock/toggle-attribute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          product_code: productCode, 
-          attribute_code: 'L6'  // 재고사용
-        })
-      });
-      
-      const result = await response.json();
-      console.log('API 응답:', result); // 디버그 로그
-      
-      if (result.success) {
-        // ✅ 강제 반응성 트리거를 위한 방법
-        const isStockUsage = result.new_status === '1';
-        console.log('새로운 재고사용 상태:', isStockUsage); // 디버그 로그
-        
-        // 제품 데이터 업데이트 (강제 재할당으로 반응성 보장)
-        if (productData && productData.code === productCode) {
-          productData = {
-            ...productData,
-            stock_usage: isStockUsage
-          };
-          // 강제 반응성 트리거
-          productData = productData;
-        }
-        
-        console.log('업데이트된 productData:', productData); // 디버그 로그
-        
-        showToast(result.message, 'success');
-        
-        // 부모 컴포넌트에 변경 사항 알림
-        dispatch('stockUsageUpdated', {
-          productCode,
-          stock_usage: isStockUsage
-        });
-        
-      } else {
-        showToast(result.message || '처리 실패', 'error');
-      }
-    } catch (err) {
-      console.error('재고사용 처리 오류:', err);
       showToast('처리 중 오류가 발생했습니다.', 'error');
     }
   }
@@ -550,118 +482,116 @@
       {/if}
       
       <!-- 제품 정보 카드 (productCode가 있고 이미지 로딩 완료 시) -->
-      <!-- ✅ 1개 통합 카드 - 좌우 영역 분할 -->
-      {#if productData && !productDataError}
-        <div class="mt-4 w-full max-w-[600px] bg-white border border-gray-300 rounded-lg shadow-sm">
-          
-          <!-- 좌우 영역 컨테이너 -->
-          <div class="flex">
+      {#if productCode && actualSrc && !error && !loading}
+        <div class="mt-4 w-full flex justify-center px-4">
+          <div class="bg-white rounded-lg shadow-lg border border-gray-200 relative overflow-hidden w-full max-w-lg">
             
-            <!-- 왼쪽 영역: 제품 정보 (기준 높이) -->
-            <div class="w-1/2 p-4 border-r border-gray-200">
-              <div class="text-gray-800 font-medium mb-3" style="font-size: 0.85rem; line-height: 1.4;">
-                {productData.name || '제품명 없음'}
+            <!-- 제품 정보 로딩 중 -->
+            {#if loadingProductData}
+              <div class="p-6 text-center">
+                <div class="w-8 h-8 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mx-auto mb-3"></div>
+                <p class="text-gray-600">제품 정보 로딩 중...</p>
               </div>
-              <div class="text-gray-700 mb-3" style="font-size: 0.8rem; line-height: 1.3;">
-                코드: {productData.code || ''}
-              </div>
-              <div class="text-gray-700 mb-3" style="font-size: 0.8rem; line-height: 1.3;">
-                원가: {productData.cost ? productData.cost.toLocaleString() : '0'}원
-              </div>
-              <div class="text-gray-700" style="font-size: 0.8rem; line-height: 1.3;">
-                금액: {productData.price ? productData.price.toLocaleString() : '0'}원
-              </div>
-            </div>
             
-            <!-- 오른쪽 영역: 기능 그룹 (왼쪽 높이에 맞춤) -->
-            <div class="w-1/2 p-4 flex flex-col justify-between">
-              
-              <!-- 1줄: 재고 표시 + 수량 입력 -->
-              <div class="flex items-center gap-2 mb-3">
-                <div class="text-gray-600 font-medium" style="font-size: 0.8rem; white-space: nowrap;">
+            <!-- 제품 정보 에러 -->
+            {:else if productDataError}
+              <div class="p-6 text-center">
+                <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <p class="text-gray-600">제품 정보를 불러올 수 없습니다</p>
+                <button 
+                  class="mt-3 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  on:click={() => loadProductData(productCode)}
+                >
+                  다시 시도
+                </button>
+              </div>
+            
+            <!-- 제품 정보 표시 -->
+            {:else if productData}
+              <!-- 제품 정보 메인 영역 -->
+              <div class="p-3">
+                <!-- 품목명 -->
+                <div class="font-bold text-gray-800 mb-2 leading-tight" style="font-size: 1rem;">
+                  {productData.name}
+                </div>
+                
+                <!-- 품목코드 -->
+                <div class="text-blue-600 font-bold mb-2" style="font-size: 0.8rem;">
+                  코드: {productData.code}
+                </div>
+                
+                <!-- 가격 정보 (위아래 배치) -->
+                <div class="text-gray-700 mb-1" style="font-size: 0.75rem;">
+                  원가: {productData.cost ? productData.cost.toLocaleString() : '0'}원
+                </div>
+                <div class="text-gray-700 mb-2" style="font-size: 0.75rem;">
+                  금액: {productData.price ? productData.price.toLocaleString() : '0'}원
+                </div>
+              </div>
+
+              <!-- 재고 컨트롤 (오른쪽 위 absolute) -->
+              <div class="absolute bg-white border border-gray-300 rounded-lg" style="top: 8px; right: 8px; background: rgba(255, 255, 255, 0.95); padding: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); min-width: 100px;">
+                <!-- 현재 재고 표시 -->
+                <div class="text-center text-gray-600 mb-1" style="font-size: 11px;">
                   재고: {productData.stock || 0}개
                 </div>
-                <input 
-                  type="number" 
-                  class="flex-1 border border-gray-300 rounded text-center py-1 px-2"
-                  style="font-size: 0.75rem; min-width: 60px;"
-                  placeholder="±수량"
-                  data-code={productData.code}
-                  on:keydown={(e) => handleStockInput(e, productData.code)}
-                />
+                
+                <!-- 재고 조정 입력 -->
+                <div class="flex items-center" style="gap: 4px;">
+                  <input 
+                    type="number" 
+                    class="border border-gray-300 rounded text-center"
+                    style="width: 50px; padding: 3px; font-size: 12px;"
+                    placeholder="±수량"
+                    data-code={productData.code}
+                    on:keydown={(e) => handleStockInput(e, productData.code)}
+                  >
+                  <button 
+                    type="button"
+                    class="bg-green-500 text-white border-0 rounded cursor-pointer hover:bg-green-600 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                    style="padding: 3px 6px; font-size: 11px; min-width: 35px;"
+                    disabled={adjustingStock.has(productData.code)}
+                    on:click={(e) => {
+                      const input = e.target.previousElementSibling;
+                      adjustStock(productData.code, input.value);
+                    }}
+                  >
+                    저장
+                  </button>
+                </div>
               </div>
-              
-              <!-- 2줄: 저장/출력 버튼 -->
-              <div class="flex gap-2 mb-3">
+
+              <!-- 하단 버튼들 -->
+              <div class="absolute flex" style="bottom: 6px; right: 6px; gap: 4px;">
+                <!-- 바코드 출력 버튼 -->
                 <button 
                   type="button"
-                  class="flex-1 bg-green-500 text-white border-0 rounded cursor-pointer hover:bg-green-600 disabled:bg-gray-500 disabled:cursor-not-allowed transition-all duration-200 py-2"
-                  style="font-size: 0.7rem; font-weight: 600;"
-                  disabled={adjustingStock.has(productData.code)}
-                  on:click={() => {
-                    const input = document.querySelector(`input[data-code="${productData.code}"]`);
-                    adjustStock(productData.code, input?.value || '');
-                  }}
-                >
-                  💾 저장
-                </button>
-                <button 
-                  type="button"
-                  class="flex-1 bg-purple-500 text-white border-0 rounded cursor-pointer hover:bg-purple-600 transition-all duration-200 py-2"
-                  style="font-size: 0.7rem; font-weight: 600;"
+                  class="bg-purple-500 text-white border-0 rounded cursor-pointer hover:bg-purple-600 transition-all duration-200"
+                  style="padding: 0.25rem 0.5rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);"
                   on:click={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     printBarcode(productData);
                   }}
                 >
-                  🖨️ 바코드 출력
-                </button>
-              </div>
-              
-              <!-- 3줄: 단종/사용 토글 버튼들 -->
-              <div class="flex gap-2">
-                <!-- 단종/정상 토글 -->
-                <button 
-                  type="button"
-                  class="flex-1 border-0 rounded cursor-pointer transition-all duration-200 py-2 {productData.discontinued ? 'bg-gray-400 text-white hover:bg-gray-500' : 'bg-red-500 text-white hover:bg-red-600'}"
-                  style="font-size: 0.7rem; font-weight: 600;"
-                  on:click={() => toggleDiscontinued(productData.code)}
-                >
-                  {productData.discontinued ? '정상' : '단종'}
+                  🖨️ 출력
                 </button>
                 
-                <!-- 사용/미사용 토글 -->
+                <!-- 단종 처리 버튼 -->
                 <button 
                   type="button"
-                  class="flex-1 border-0 rounded cursor-pointer transition-all duration-200 py-2 {productData.stock_usage ? 'bg-gray-400 text-white hover:bg-gray-500' : 'bg-blue-500 text-white hover:bg-blue-600'}"
-                  style="font-size: 0.7rem; font-weight: 600;"
-                  on:click={() => toggleStockUsage(productData.code)}
+                  class="border-0 rounded cursor-pointer transition-all duration-200 {productData.discontinued ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-gray-400 text-white hover:bg-gray-500'}"
+                  style="padding: 0.25rem 0.5rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);"
+                  on:click={() => toggleDiscontinued(productData.code)}
                 >
-                  {productData.stock_usage ? '미사용' : '재고사용'}
+                  {productData.discontinued ? '단종' : '정상'}
                 </button>
               </div>
-              
-            </div>
-            
-          </div>
-          
-        </div>
-      {/if}
-
-      <!-- 로딩 및 에러 상태 -->
-      {#if loadingProductData}
-        <div class="mt-4 w-full max-w-[600px] bg-white border border-gray-300 rounded-lg shadow-sm p-4">
-          <div class="text-center text-gray-500" style="font-size: 0.8rem;">
-            제품 정보를 불러오는 중...
-          </div>
-        </div>
-      {/if}
-
-      {#if productDataError}
-        <div class="mt-4 w-full max-w-[600px] bg-white border border-gray-300 rounded-lg shadow-sm p-4">
-          <div class="text-center text-red-500" style="font-size: 0.8rem;">
-            제품 정보를 불러올 수 없습니다.
+            {/if}
           </div>
         </div>
       {/if}
