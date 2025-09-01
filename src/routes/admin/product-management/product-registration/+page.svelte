@@ -1,13 +1,12 @@
 <!-- src/routes/admin/product-management/product-registration/+page.svelte -->
 <script>
   import { onMount, tick } from 'svelte';
-  import { page } from '$app/stores';
   import { simpleCache } from '$lib/utils/simpleImageCache';
   import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
   import ImageModalStock from '$lib/components/ImageModalStock.svelte';
   import ImageUploader from '$lib/components/ImageUploader.svelte';
+  import { getLayoutConstants } from '$lib/utils/deviceUtils';  // 이 줄 추가
   
-
   export let data;
   
   // ImageUploader 컴포넌트 참조 변수 선언
@@ -52,6 +51,8 @@
   // 상세 정보 히스토리
   let detailHistory = [];
   let activeDetailTab = 'info'; // 'info' 또는 'history'
+
+  let layoutConstants = [];
     
   
   // ✅ 수정: MINR_CODE를 그대로 사용
@@ -101,8 +102,43 @@
     }
   }
   
+  // 스크롤 이벤트 전파 차단 함수들 (script 태그 안에 추가)
+  function handlePanelWheel(event) {
+    const target = event.currentTarget;
+    const { scrollTop, scrollHeight, clientHeight } = target;
+    
+    const isScrollable = scrollHeight > clientHeight;
+    
+    if (!isScrollable) {
+      // 스크롤할 내용이 없을 때만 완전 차단
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    
+    const delta = event.deltaY;
+    
+    // 경계에서는 전파만 차단, 스크롤 동작은 허용
+    if (scrollTop === 0 && delta < 0) {
+      // 맨 위에서 더 위로 스크롤 시도 - 전파만 차단
+      event.stopPropagation();
+    } else if (scrollTop >= scrollHeight - clientHeight && delta > 0) {
+      // 맨 아래에서 더 아래로 스크롤 시도 - 전파만 차단  
+      event.stopPropagation();
+    }
+    // preventDefault() 제거 - 정상 스크롤 동작은 유지
+  }
+
+  function handlePanelTouchMove(event) {
+    // 패널 내부에서는 터치 이벤트 전파 차단
+    event.stopPropagation();
+  }  
+
   // 페이지 로드 시 초기화
   onMount(async () => {
+    
+    layoutConstants = getLayoutConstants();
+
     // 모바일에서는 초기에 대분류 패널 숨김, PC에서는 표시
     leftPanelVisible = window.innerWidth > 768;
     
@@ -1124,25 +1160,75 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<div class="min-h-screen relative" style="background-color: #f5f5f5;">
+<div class="min-h-screen relative" style="background-color: #f5f5f5;" >
   <!-- 메인 컨텐츠 -->
   <div class="flex flex-col" style="padding: 0; min-height: calc(100vh - 70px);">
-    <!-- 헤더 -->
-    <div class="bg-white border-b sticky top-0 mb-2.5" style="border-color: #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 10;">
+    <!-- 헤더 (고정 + 버튼 오른쪽 정렬) -->
+    <div class="bg-white border-b mb-2.5" style="position: fixed; top: calc(env(safe-area-inset-top, 0px) + 70px); left: 0; right: 0; border-color: #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 50;">
       <div style="padding: 15px 8px;">
-        <div class="flex items-center gap-4">
-          <button 
-            class="bg-transparent border border-gray-300 rounded p-2 cursor-pointer transition-all duration-300 hover:bg-gray-50 hover:border-gray-400 flex items-center justify-center"
-            style="padding: 8px;"
-            on:click|stopPropagation={() => leftPanelVisible = !leftPanelVisible}
-          >
-            <div class="flex flex-col gap-1">
-              <span class="block bg-gray-600 rounded transition-all" style="width: 18px; height: 2px;"></span>
-              <span class="block bg-gray-600 rounded transition-all" style="width: 18px; height: 2px;"></span>
-              <span class="block bg-gray-600 rounded transition-all" style="width: 18px; height: 2px;"></span>
-            </div>
-          </button>
-          <h1 class="text-gray-800 font-semibold m-0" style="font-size: 1rem;">제품등록</h1>
+        <div class="flex items-center justify-between">
+          <!-- 왼쪽: 햄버거 메뉴 + 제목 -->
+          <div class="flex items-center gap-4">
+            <button 
+              class="bg-transparent border border-gray-300 rounded p-2 cursor-pointer transition-all duration-300 hover:bg-gray-50 hover:border-gray-400 flex items-center justify-center"
+              style="padding: 8px;"
+              on:click|stopPropagation={() => leftPanelVisible = !leftPanelVisible}
+            >
+              <div class="flex flex-col gap-1">
+                <span class="block bg-gray-600 rounded transition-all" style="width: 18px; height: 2px;"></span>
+                <span class="block bg-gray-600 rounded transition-all" style="width: 18px; height: 2px;"></span>
+                <span class="block bg-gray-600 rounded transition-all" style="width: 18px; height: 2px;"></span>
+              </div>
+            </button>
+            <h1 class="text-gray-800 font-semibold m-0" style="font-size: 1rem;">제품등록</h1>
+          </div>
+          
+          <!-- 오른쪽: 초기화, 저장, 삭제 버튼들 -->
+          <div class="flex gap-2">
+            <!-- 1. 초기화 버튼 -->
+            <button 
+              type="button"
+              on:click={resetAll}
+              disabled={isSaving}
+              class="px-3 py-1 text-xs rounded transition-colors duration-200 bg-gray-500 text-white hover:bg-gray-600 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+            >
+              초기화
+            </button>
+            
+            <!-- 2. 저장 버튼 -->
+            <button 
+              type="button"
+              on:click={saveAll}
+              disabled={isSaving || !hasChanges}
+              class="px-3 py-1 text-xs rounded transition-colors duration-200 
+                    {hasChanges && !isSaving 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'}"
+            >
+              {#if isSaving}
+                <div class="flex items-center gap-1">
+                  <div class="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"></div>
+                  저장중
+                </div>
+              {:else}
+                저장
+              {/if}
+            </button>
+            
+            <!-- 3. 삭제 버튼 -->
+            <button 
+              type="button"
+              on:click={deleteProduct}
+              disabled={isSaving || !basicInfo.code.trim()}
+              class="px-3 py-1 text-xs rounded transition-colors duration-200 
+                    {!isSaving && basicInfo.code.trim()
+                      ? 'bg-red-600 text-white hover:bg-red-700' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'}"
+              title={basicInfo.code.trim() ? '현재 제품 완전 삭제' : '삭제할 제품이 없습니다'}
+            >
+              삭제
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1161,7 +1247,7 @@
     {/if}
 
     <!-- 반응형 레이아웃 -->
-    <div class="flex flex-1 relative">
+    <div class="flex flex-1 relative" style="padding-top: {layoutConstants.safeAreaTop};">
       <!-- 모바일 오버레이 배경 -->
       {#if typeof window !== 'undefined' && window.innerWidth <= 1024 && leftPanelVisible}
         <div 
@@ -1179,14 +1265,16 @@
            class:fixed={typeof window !== 'undefined' && window.innerWidth <= 1024}
            class:left-0={typeof window !== 'undefined' && window.innerWidth <= 1024}
            class:bg-white={typeof window !== 'undefined' && window.innerWidth <= 1024}
-           style:top={typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(env(safe-area-inset-top, 0px) + 70px)' : 'auto'}
-           style:height={typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - env(safe-area-inset-top, 0px) - 70px)' : 'auto'}
+           style:top={typeof window !== 'undefined' && window.innerWidth <= 1024 ? layoutConstants.sideMenuTop : 'auto'}
+           style:height={typeof window !== 'undefined' && window.innerWidth <= 1024 ? layoutConstants.sideMenuHeight : 'auto'}
            style:box-shadow={typeof window !== 'undefined' && window.innerWidth <= 1024 ? '2px 0 8px rgba(0,0,0,0.1)' : 'none'}
            style:transform={typeof window !== 'undefined' && window.innerWidth <= 1024 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
            on:click={handlePanelClick}>
         
-        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? '1px' : '8px'}; height: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? 'calc(100vh)' : 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 70px)'};"
-              on:click={handlePanelClick}>
+        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? '1px' : '8px'}; height: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? 'calc(100vh + 20px)' : layoutConstants.sideMenuHeight};"
+              on:click={handlePanelClick}
+              on:wheel={handlePanelWheel}
+              on:touchmove|nonpassive={handlePanelTouchMove}>
           
           <!-- 패널 헤더 -->
           <div class="py-4 px-5 border-b border-gray-200 flex flex-col items-stretch gap-4 relative" style="gap: 15px;">
@@ -1209,7 +1297,7 @@
                   bind:value={selectedCompany}
                   on:change={handleCompanyChange}
                   class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 flex-1"
-                  style="padding: 5px 8px; font-size: 0.9rem;"
+                  style="padding: 5px 8px; font-size: 0.8rem;"
                 >
                   {#each companyList as company}
                     <option value={company.MINR_CODE}>{company.MINR_NAME}</option>
@@ -1225,7 +1313,7 @@
                   on:change={handleRegistrationChange}
                   disabled={registrationList.length === 0}
                   class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-100 flex-1"
-                  style="padding: 5px 8px; font-size: 0.9rem;"
+                  style="padding: 5px 8px; font-size: 0.8rem;"
                 >
                   {#each registrationList as registration}
                     <option value={registration.MINR_CODE}>{registration.MINR_NAME}</option>
@@ -1240,7 +1328,7 @@
                   <select 
                     bind:value={selectedProductType}
                     class="border border-gray-300 rounded focus:outline-none focus:border-blue-500 flex-1"
-                    style="padding: 5px 8px; font-size: 0.9rem;"
+                    style="padding: 5px 8px; font-size: 0.8rem;"
                   >
                     {#each productTypeList as productType}
                       <option value={productType.MINR_CODE}>{productType.MINR_NAME}</option>
@@ -1290,7 +1378,12 @@
           </div>
           
           <!-- 목록 -->
-          <div class="overflow-y-auto" style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 ? 'calc(100vh - env(safe-area-inset-top, 0px) - 250px)' : 'calc(100vh - 200px)'};">
+          <div 
+            class="overflow-y-auto" 
+            style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 ? layoutConstants.listMaxHeight : 'calc(100vh - 200px)'}; overscroll-behavior: contain;"
+            on:wheel={handlePanelWheel}
+            on:touchmove={handlePanelTouchMove}
+          >
             {#if searchError}
               <div class="text-center text-red-600 bg-red-50" style="padding: 30px 15px;">
                 {searchError}
@@ -1360,7 +1453,7 @@
       <!-- 메인 콘텐츠 영역 (flex-1) -->
       <div class="flex-1 min-w-0 px-2">
         <!-- 반응형 레이아웃: 모바일/PC 모두 세로배치 -->
-        <div class="flex flex-col gap-5">
+        <div class="flex flex-col gap-1">
           
           <!-- 카테고리 관리 섹션 (항상 위) -->
           <div class="w-full">
@@ -1375,52 +1468,6 @@
                         변경됨
                       </span>
                     {/if}
-                  </div>
-                  
-                  <div class="flex gap-2">
-                    <!-- 1. 초기화 버튼 -->
-                    <button 
-                      type="button"
-                      on:click={resetAll}
-                      disabled={isSaving}
-                      class="px-3 py-1 text-xs rounded transition-colors duration-200 bg-gray-500 text-white hover:bg-gray-600 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
-                    >
-                      초기화
-                    </button>
-                    
-                    <!-- 2. 저장 버튼 -->
-                    <button 
-                      type="button"
-                      on:click={saveAll}
-                      disabled={isSaving || !hasChanges}
-                      class="px-3 py-1 text-xs rounded transition-colors duration-200 
-                            {hasChanges && !isSaving 
-                              ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'}"
-                    >
-                      {#if isSaving}
-                        <div class="flex items-center gap-1">
-                          <div class="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"></div>
-                          저장중
-                        </div>
-                      {:else}
-                        저장
-                      {/if}
-                    </button>
-                    
-                    <!-- 3. 삭제 버튼 (새로 추가) -->
-                    <button 
-                      type="button"
-                      on:click={deleteProduct}
-                      disabled={isSaving || !basicInfo.code.trim()}
-                      class="px-3 py-1 text-xs rounded transition-colors duration-200 
-                            {!isSaving && basicInfo.code.trim()
-                              ? 'bg-red-600 text-white hover:bg-red-700' 
-                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'}"
-                      title={basicInfo.code.trim() ? '현재 제품 완전 삭제' : '삭제할 제품이 없습니다'}
-                    >
-                      삭제
-                    </button>
                   </div>
                 </div>
               </div>
@@ -1933,3 +1980,15 @@
   on:stockUpdated={handleStockUpdated}
   on:discontinuedUpdated={handleDiscontinuedUpdated}
 />
+<style>
+  /* 사이드 메뉴 스크롤 제어 */
+  .panel-scroll-container {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 모바일에서 바운스 효과 방지 */
+  .no-bounce {
+    overscroll-behavior-y: contain;
+  }
+</style>

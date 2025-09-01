@@ -145,31 +145,88 @@
     if (!authenticated) return;
     
     try {
-      const response = await fetch('/api/product-management/product-stock/discontinue', {
+      console.log('단종 토글 시작, 제품코드:', productCode);
+      
+      const response = await fetch('/api/product-management/product-stock/toggle-attribute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          product_code: productCode
+          product_code: productCode, 
+          attribute_code: 'L5'  // 단종
         })
       });
       
       const result = await response.json();
+      console.log('API 응답:', result);
       
       if (result.success) {
+        const isDiscontinued = result.new_status === '1';
+        console.log('새로운 단종 상태:', isDiscontinued);
+        
+        // ✅ products 배열 업데이트 (제품검색&재고관리 페이지용)
         products = products.map(p => 
           p.code === productCode 
-            ? { ...p, discontinued: result.action === 'discontinued' }
+            ? { ...p, discontinued: isDiscontinued }
             : p
         );
-        alert(result.message);
+        
+        console.log('업데이트된 products 배열');
+        
+        showToast(result.message, 'success');
+        
       } else {
-        alert(result.message || '처리 실패');
+        showToast(result.message || '처리 실패', 'error');
       }
     } catch (err) {
       console.error('단종 처리 오류:', err);
-      alert('처리 중 오류가 발생했습니다.');
+      showToast('처리 중 오류가 발생했습니다.', 'error');
+    }
+  }
+  
+  // ✅ 재고사용 처리 함수 수정
+  async function toggleStockUsage(productCode) {
+    if (!authenticated) return;
+    
+    try {
+      console.log('재고사용 토글 시작, 제품코드:', productCode);
+      
+      const response = await fetch('/api/product-management/product-stock/toggle-attribute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          product_code: productCode, 
+          attribute_code: 'L6'  // 재고사용
+        })
+      });
+      
+      const result = await response.json();
+      console.log('API 응답:', result);
+      
+      if (result.success) {
+        const isStockUsage = result.new_status === '1';
+        console.log('새로운 재고사용 상태:', isStockUsage);
+        
+        // ✅ products 배열 업데이트 (제품검색&재고관리 페이지용)
+        products = products.map(p => 
+          p.code === productCode 
+            ? { ...p, stock_usage: isStockUsage }
+            : p
+        );
+        
+        console.log('업데이트된 products 배열');
+        
+        showToast(result.message, 'success');
+        
+      } else {
+        showToast(result.message || '처리 실패', 'error');
+      }
+    } catch (err) {
+      console.error('재고사용 처리 오류:', err);
+      showToast('처리 중 오류가 발생했습니다.', 'error');
     }
   }
   
@@ -390,7 +447,7 @@
     {:else if products.length > 0}
       <div class="grid gap-3" style="margin: 0.2rem; grid-template-columns: 1fr;">
         {#each products as product}
-          <div class="relative bg-white rounded-lg border border-gray-200 overflow-hidden" style="padding: 0.8rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); {product.discontinued ? 'opacity: 0.6; background-color: #f8f8f8;' : ''}">
+          <div class="relative bg-white rounded-lg border border-gray-200 overflow-hidden" style="padding: 0.8rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 2px solid #e5e7eb; {product.discontinued ? 'opacity: 0.6; background-color: #f8f8f8;' : ''}">
             <!-- 이미지 및 기본 정보 -->
             <div class="flex" style="gap: 0.8rem;">
               <!-- 상품 이미지 -->
@@ -407,72 +464,85 @@
                   }}
                 >
               </div>
+              <div class="flex flex-1 gap-3">
+                <!-- 상품 정보 -->
+                <div class="flex-1 min-w-0">
+                  <h3 class="font-semibold text-gray-900 mb-1" style="font-size: 0.8rem; line-height: 1.3; word-break: break-all;">{product.name}</h3>
+                  <div class="text-blue-600 font-bold mb-1" style="font-size: 0.8rem;">{product.code}</div>
+                  <div class="text-gray-600" style="font-size: 0.8rem;">원가: {product.cost ? `${product.cost.toLocaleString()}원` : '0원'}</div>
+                  <div class="text-gray-700" style="font-size: 0.85rem;">금액: {product.price.toLocaleString()}원</div>
+                </div>
 
-              <!-- 상품 정보 -->
-              <div class="flex-1 min-w-0">
-                <h3 class="font-semibold text-gray-900 mb-1" style="font-size: 0.95rem; line-height: 1.3; word-break: break-all;">{product.name}</h3>
-                <div class="text-blue-600 font-bold mb-1" style="font-size: 0.9rem;">코드: {product.code}</div>
-                <div class="text-gray-600" style="font-size: 0.8rem;">원가: {product.cost ? `${product.cost.toLocaleString()}원` : '0원'}</div>
-                <div class="text-gray-700" style="font-size: 0.85rem;">금액: {product.price.toLocaleString()}원</div>
+                <!-- ✅ 세로 구분선 추가 -->
+                <div class="border-l border-gray-300" style="height: auto; margin: 0 8px;"></div>
+                <!-- 오른쪽 영역: 기능 그룹 (3줄 유지, 크기 축소) -->
+                <div class="w-32 flex flex-col justify-between" style="padding: 4px;">
+                  
+                  <!-- 1줄: 재고 표시 + 수량 입력 -->
+                  <div class="flex items-center gap-1 mb-1">
+                    <div class="text-gray-600 font-medium" style="font-size: 0.65rem; white-space: nowrap;">
+                      재고: {product.stock || 0}개
+                    </div>
+                    <input 
+                      type="number" 
+                      class="flex-1 border border-gray-300 rounded text-center"
+                      style="font-size: 0.6rem; min-width: 40px; height: 20px; padding: 1px;"
+                      placeholder="±수량"
+                      data-code={product.code}
+                      on:keydown={(e) => handleStockInput(e, product.code)}
+                    />
+                  </div>
+                    
+                  <!-- 2줄: 저장/출력 버튼 -->
+                  <div class="flex gap-1 mb-1">
+                    <button 
+                      type="button"
+                      class="flex-1 bg-green-500 text-white border-0 rounded cursor-pointer hover:bg-green-600 disabled:bg-gray-500 disabled:cursor-not-allowed transition-all duration-200"
+                      style="font-size: 0.65rem; font-weight: 600; height: 20px; padding: 0;"
+                      disabled={adjustingStock.has(product.code)}
+                      on:click={(e) => {
+                        const input = e.target.closest('.w-32').querySelector('input');
+                        adjustStock(product.code, input.value);
+                      }}
+                    >
+                      💾 저장
+                    </button>
+                    <button 
+                      type="button"
+                      class="flex-1 bg-purple-500 text-white border-0 rounded cursor-pointer hover:bg-purple-600 transition-all duration-200"
+                      style="font-size: 0.65rem; font-weight: 600; height: 20px; padding: 0;"
+                      on:click={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        printBarcode(product);
+                      }}
+                    >
+                      🖨️ 출력
+                    </button>
+                  </div>
+                  
+                  <!-- 3줄: 단종/재고사용 토글 -->
+                  <div class="flex gap-1">
+                    <button 
+                      type="button"
+                      class="flex-1 border-0 rounded cursor-pointer transition-all duration-200 {product.discontinued ? 'bg-gray-400 text-white hover:bg-gray-500' : 'bg-red-500 text-white hover:bg-red-600'}"
+                      style="font-size: 0.65rem; font-weight: 600; height: 20px; padding: 0;"
+                      on:click={() => toggleDiscontinued(product.code)}
+                    >
+                      {product.discontinued ? '정상' : '단종'}
+                    </button>
+                    
+                    <button 
+                      type="button"
+                      class="flex-1 border-0 rounded cursor-pointer transition-all duration-200 {(product.stock_usage === true) ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-400 text-white hover:bg-gray-500'}"
+                      style="font-size: 0.65rem; font-weight: 600; height: 20px; padding: 0;"
+                      on:click={() => toggleStockUsage(product.code)}
+                    >
+                      {(product.stock_usage === true) ? '미사용' : '사용'}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-
-            <!-- 재고 컨트롤 (오른쪽 위 absolute) -->
-            <div class="absolute bg-white border border-gray-300 rounded-lg" style="top: 8px; right: 8px; background: rgba(255, 255, 255, 0.95); padding: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); min-width: 100px;">
-              <!-- 현재 재고 표시 -->
-              <div class="text-center text-gray-600 mb-1" style="font-size: 11px;">재고: {product.stock}개</div>
-              
-              <!-- 재고 조정 입력 -->
-              <div class="flex items-center" style="gap: 4px;">
-                <input 
-                  type="number" 
-                  class="border border-gray-300 rounded text-center"
-                  style="width: 50px; padding: 3px; font-size: 12px;"
-                  placeholder="±수량"
-                  data-code={product.code}
-                  on:keydown={(e) => handleStockInput(e, product.code)}
-                >
-                <button 
-                  type="button"
-                  class="bg-green-500 text-white border-0 rounded cursor-pointer hover:bg-green-600 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                  style="padding: 3px 6px; font-size: 11px; min-width: 35px;"
-                  disabled={adjustingStock.has(product.code)}
-                  on:click={(e) => {
-                    const input = e.target.previousElementSibling;
-                    adjustStock(product.code, input.value);
-                  }}
-                >
-                  저장
-                </button>
-              </div>
-            </div>
-
-            <!-- 하단 버튼들 -->
-            <div class="absolute flex" style="bottom: 6px; right: 6px; gap: 4px;">
-              <!-- 🖨️ 바코드 출력 버튼 (수정됨 - 이벤트 핸들러 개선) -->
-              <button 
-                type="button"
-                class="bg-purple-500 text-white border-0 rounded cursor-pointer hover:bg-purple-600 transition-all duration-200"
-                style="padding: 0.25rem 0.5rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);"
-                on:click={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  console.log('버튼 클릭된 제품:', product);
-                  printBarcode(product);
-                }}
-              >
-                🖨️ 출력
-              </button>
-              
-              <!-- 단종 처리 버튼 -->
-              <button 
-                type="button"
-                class="border-0 rounded cursor-pointer transition-all duration-200 {product.discontinued ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-gray-400 text-white hover:bg-gray-500'}"
-                style="padding: 0.25rem 0.5rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);"
-                on:click={() => toggleDiscontinued(product.code)}
-              >
-                {product.discontinued ? '단종 취소' : '단종 처리'}
-              </button>
             </div>
           </div>
         {/each}

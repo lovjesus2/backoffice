@@ -20,7 +20,11 @@ export async function load({ parent }) {
     throw redirect(302, '/admin?error=access_denied');
   }
   
-  
   console.log('✅ 제품등록 페이지 접근 허용');
-  return {};
+  
+  // Admin Layout으로 전달할 페이지 데이터
+  return {
+    pageTitle: '제품등록',
+    actionButtons: []  // 빈 배열로 시작, 페이지에서 동적으로 설정
+  };
 }

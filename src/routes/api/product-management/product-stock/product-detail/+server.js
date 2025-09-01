@@ -6,7 +6,6 @@ export async function GET({ url, locals }) {
   try {
     console.log('=== Product Detail API 호출 시작 ===');
     
-    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
     if (!user) {
       console.log('인증되지 않은 사용자');
@@ -17,7 +16,6 @@ export async function GET({ url, locals }) {
     
     console.log('제품 조회 요청:', { productCode, user: user.username });
     
-    // 입력값 검증
     if (!productCode) {
       return json({
         success: false,
@@ -27,16 +25,23 @@ export async function GET({ url, locals }) {
     
     const db = getDb();
     
-    // 제품 정보 조회 (기존 search API와 동일한 구조)
+    // ✅ 수정된 SQL: L5(단종)와 L6(재고사용) 모두 조회
     const sql = `
-      SELECT p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, prod.PROD_TXT1,
+      SELECT p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, 
+             l5.PROD_TXT1 as DISCONTINUED_STATUS,
+             l6.PROD_TXT1 as STOCK_USAGE_STATUS,
              COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK
       FROM ASSE_PROH p
-      INNER JOIN ASSE_PROD prod
-         ON p.PROH_GUB1 = prod.PROD_GUB1
-        AND p.PROH_GUB2 = prod.PROD_GUB2
-        AND p.PROH_CODE = prod.PROD_CODE
-        AND prod.PROD_COD2 = 'L5'
+      LEFT JOIN ASSE_PROD l5
+         ON p.PROH_GUB1 = l5.PROD_GUB1
+        AND p.PROH_GUB2 = l5.PROD_GUB2
+        AND p.PROH_CODE = l5.PROD_CODE
+        AND l5.PROD_COD2 = 'L5'  -- 단종 상태
+      LEFT JOIN ASSE_PROD l6
+         ON p.PROH_GUB1 = l6.PROD_GUB1
+        AND p.PROH_GUB2 = l6.PROD_GUB2
+        AND p.PROH_CODE = l6.PROD_CODE
+        AND l6.PROD_COD2 = 'L6'  -- 재고 사용
       INNER JOIN BISH_DPRC d
          ON p.PROH_CODE = d.DPRC_CODE
       LEFT JOIN STOK_HYUN h
@@ -59,13 +64,15 @@ export async function GET({ url, locals }) {
       }, { status: 404 });
     }
     
+    // ✅ 수정된 응답: stock_usage 필드 추가
     const product = {
       code: rows[0].PROH_CODE,
       name: rows[0].PROH_NAME,
       cost: parseInt(rows[0].DPRC_BAPR) || 0,
       price: parseInt(rows[0].DPRC_SOPR) || 0,
       stock: parseInt(rows[0].CURRENT_STOCK) || 0,
-      discontinued: rows[0].PROD_TXT1 === '1'
+      discontinued: rows[0].DISCONTINUED_STATUS === '1',  // L5
+      stock_usage: rows[0].STOCK_USAGE_STATUS === '1'     // L6 추가!
     };
 
     console.log('변환된 제품 데이터:', product);

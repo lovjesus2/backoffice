@@ -59,6 +59,7 @@ export async function GET({ url, locals }) {
     // 쿼리 실행
     const sql = `
       SELECT p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, prod.PROD_TXT1,
+             COALESCE(prod_stock_usage.PROD_TXT1, '0') as STOCK_USAGE,  -- ✅ 추가
              COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK
       FROM ASSE_PROH p
       INNER JOIN ASSE_PROD prod
@@ -68,6 +69,11 @@ export async function GET({ url, locals }) {
         AND prod.PROD_COD2 = 'L5'
       INNER JOIN BISH_DPRC d
          ON p.PROH_CODE = d.DPRC_CODE
+      LEFT JOIN ASSE_PROD prod_stock_usage  -- ✅ 추가
+        ON p.PROH_GUB1 = prod_stock_usage.PROD_GUB1
+        AND p.PROH_GUB2 = prod_stock_usage.PROD_GUB2
+        AND p.PROH_CODE = prod_stock_usage.PROD_CODE
+        AND prod_stock_usage.PROD_COD2 = 'L6'         
       LEFT JOIN STOK_HYUN h
          ON p.PROH_CODE = h.HYUN_ITEM
       WHERE p.PROH_GUB1 = 'A1'
@@ -89,7 +95,8 @@ export async function GET({ url, locals }) {
       cost: parseInt(row.DPRC_BAPR) || 0,
       price: parseInt(row.DPRC_SOPR) || 0,
       stock: parseInt(row.CURRENT_STOCK) || 0,
-      discontinued: row.PROD_TXT1 === '1'
+      discontinued: row.PROD_TXT1 === '1',
+      stock_usage: row.STOCK_USAGE === '1'  // ✅ 추가
     }));
 
     console.log('변환된 제품 데이터:', products.length, '개');

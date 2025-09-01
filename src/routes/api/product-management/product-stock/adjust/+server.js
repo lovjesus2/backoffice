@@ -1,4 +1,4 @@
-// src/routes/api/sales/sale-stock/adjust/+server.js
+// src/routes/api/product-management/product-stock/adjust/+server.js
 import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/database.js';
 
