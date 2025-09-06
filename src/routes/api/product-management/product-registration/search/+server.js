@@ -63,22 +63,52 @@ export async function GET({ url, locals }) {
       }
     }
     
-    // 단종 필터 적용 (제품정보일 때만)
+    // 단종 필터 적용 (제품정보일 때만) - EXISTS 서브쿼리 사용
     let discontinuedSQL = '';
     if (registrationName === '제품정보') {
       if (discontinuedFilter === 'discontinued') {
-        discontinuedSQL = "AND prod_l5.PROD_TXT1 = ?";
+        discontinuedSQL = `AND EXISTS (
+          SELECT 1 FROM ASSE_PROD p_disc 
+          WHERE p_disc.PROD_GUB1 = p.PROH_GUB1 
+            AND p_disc.PROD_GUB2 = p.PROH_GUB2 
+            AND p_disc.PROD_CODE = p.PROH_CODE 
+            AND p_disc.PROD_COD2 = 'L5' 
+            AND p_disc.PROD_TXT1 = ?
+        )`;
         searchParams.push('1');
       } else if (discontinuedFilter === 'normal') {
-        discontinuedSQL = "AND (prod_l5.PROD_TXT1 = ? OR prod_l5.PROD_TXT1 IS NULL)";
+        discontinuedSQL = `AND (
+          NOT EXISTS (
+            SELECT 1 FROM ASSE_PROD p_disc 
+            WHERE p_disc.PROD_GUB1 = p.PROH_GUB1 
+              AND p_disc.PROD_GUB2 = p.PROH_GUB2 
+              AND p_disc.PROD_CODE = p.PROH_CODE 
+              AND p_disc.PROD_COD2 = 'L5' 
+              AND p_disc.PROD_TXT1 = '1'
+          ) OR EXISTS (
+            SELECT 1 FROM ASSE_PROD p_disc 
+            WHERE p_disc.PROD_GUB1 = p.PROH_GUB1 
+              AND p_disc.PROD_GUB2 = p.PROH_GUB2 
+              AND p_disc.PROD_CODE = p.PROH_CODE 
+              AND p_disc.PROD_COD2 = 'L5' 
+              AND p_disc.PROD_TXT1 = ?
+          )
+        )`;
         searchParams.push('0');
       }
     }
     
-    // 제품구분 필터 적용 (제품정보이고 제품구분이 선택된 경우)
+    // 제품구분 필터 적용 (제품정보이고 제품구분이 선택된 경우) - EXISTS 서브쿼리 사용
     let productTypeSQL = '';
     if (registrationName === '제품정보' && productType && productType !== 'ALL') {
-      productTypeSQL = "AND prod_l1.PROD_TXT1 = ?";
+      productTypeSQL = `AND EXISTS (
+        SELECT 1 FROM ASSE_PROD p_type 
+        WHERE p_type.PROD_GUB1 = p.PROH_GUB1 
+          AND p_type.PROD_GUB2 = p.PROH_GUB2 
+          AND p_type.PROD_CODE = p.PROH_CODE 
+          AND p_type.PROD_COD2 = 'L1' 
+          AND p_type.PROD_TXT1 = ?
+      )`;
       searchParams.push(productType);
     }
     
@@ -86,41 +116,35 @@ export async function GET({ url, locals }) {
     let sql;
     
     if (registrationName === '제품정보') {
-      // 제품정보인 경우 - 가격, 재고, 단종 정보 포함
+      // ✅ 최적화된 쿼리: ASSE_PROD를 1번만 JOIN + CASE문 사용
       sql = `
-        SELECT p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, 
-              prod_l5.PROD_TXT1 as discontinued_status,
-              COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
-              COALESCE(prod_l6.PROD_TXT1, '0') as STOCK_MANAGED
+        SELECT p.PROH_CODE, 
+               p.PROH_NAME, 
+               d.DPRC_SOPR, 
+               d.DPRC_BAPR,
+               COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
+               MAX(CASE WHEN prod.PROD_COD2 = 'L1' THEN prod.PROD_TXT1 END) as product_type,
+               MAX(CASE WHEN prod.PROD_COD2 = 'L2' THEN prod.PROD_TXT1 END) as handmade_status,
+               MAX(CASE WHEN prod.PROD_COD2 = 'L5' THEN prod.PROD_TXT1 END) as discontinued_status,
+               MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed
         FROM ASSE_PROH p
-        INNER JOIN ASSE_PROD prod_l1
-           ON p.PROH_GUB1 = prod_l1.PROD_GUB1
-          AND p.PROH_GUB2 = prod_l1.PROD_GUB2
-          AND p.PROH_CODE = prod_l1.PROD_CODE
-          AND prod_l1.PROD_COD2 = 'L1'
-        INNER JOIN ASSE_PROD prod_l5
-           ON p.PROH_GUB1 = prod_l5.PROD_GUB1
-          AND p.PROH_GUB2 = prod_l5.PROD_GUB2
-          AND p.PROH_CODE = prod_l5.PROD_CODE
-          AND prod_l5.PROD_COD2 = 'L5'
-         LEFT JOIN BISH_DPRC d
+        INNER JOIN ASSE_PROD prod
+           ON p.PROH_GUB1 = prod.PROD_GUB1
+          AND p.PROH_GUB2 = prod.PROD_GUB2
+          AND p.PROH_CODE = prod.PROD_CODE
+        LEFT JOIN BISH_DPRC d
            ON p.PROH_CODE = d.DPRC_CODE
         LEFT JOIN STOK_HYUN h
           ON p.PROH_CODE = h.HYUN_ITEM
-        LEFT JOIN ASSE_PROD prod_l6
-          ON p.PROH_GUB1 = prod_l6.PROD_GUB1
-        AND p.PROH_GUB2 = prod_l6.PROD_GUB2
-        AND p.PROH_CODE = prod_l6.PROD_CODE
-        AND prod_l6.PROD_COD2 = 'L6'
         WHERE p.PROH_GUB1 = ?
           AND p.PROH_GUB2 = ?
+          AND prod.PROD_COD2 IN ('L1', 'L2', 'L5', 'L6')
           AND (${searchSQL})
           ${discontinuedSQL}
           ${productTypeSQL}
+        GROUP BY p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, h.HYUN_QTY1
         ORDER BY p.PROH_CODE ASC
       `;
-      // 회사구분과 등록구분을 파라미터 앞쪽에 추가
-      // 이미 searchParams에 추가되어 있음
     } else {
       // 기타 등록구분인 경우 - 기본 제품 정보만
       sql = `
@@ -131,8 +155,6 @@ export async function GET({ url, locals }) {
           AND (${searchSQL})
         ORDER BY p.PROH_CODE ASC
       `;
-      // 회사구분과 등록구분을 파라미터 앞쪽에 추가
-      // 이미 searchParams에 추가되어 있음
     }
     
     console.log('실행할 SQL:', sql);
@@ -151,7 +173,8 @@ export async function GET({ url, locals }) {
         price: parseInt(row.DPRC_SOPR) || 0,
         stock: parseInt(row.CURRENT_STOCK) || 0,
         discontinued: row.discontinued_status === '1',
-        stockManaged: row.STOCK_MANAGED === '1',
+        stockManaged: row.stock_managed === '1',
+        isHandmade: row.handmade_status === 'S1', // 🟡 수제 배지 조건 (PROD_COD2='L2', PROD_TXT1='S1')
         isProductInfo: true
       }));
     } else {
@@ -162,6 +185,8 @@ export async function GET({ url, locals }) {
         price: 0,
         stock: 0,
         discontinued: false,
+        stockManaged: false,
+        isHandmade: false,
         isProductInfo: false
       }));
     }

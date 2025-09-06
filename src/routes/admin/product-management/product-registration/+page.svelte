@@ -104,6 +104,12 @@
   
   // 스크롤 이벤트 전파 차단 함수들 (script 태그 안에 추가)
   function handlePanelWheel(event) {
+
+    // PC에서는 스크롤 차단하지 않음 (740px 이상)
+    if (typeof window !== 'undefined' && window.innerWidth >= 740) {
+      return; // PC에서는 그냥 통과
+    }
+
     const target = event.currentTarget;
     const { scrollTop, scrollHeight, clientHeight } = target;
     
@@ -140,7 +146,7 @@
     layoutConstants = getLayoutConstants();
 
     // 모바일에서는 초기에 대분류 패널 숨김, PC에서는 표시
-    leftPanelVisible = window.innerWidth > 768;
+    leftPanelVisible = window.innerWidth > 740;
     
     // 회사구분 목록 로드
     await loadCompanyList();
@@ -151,7 +157,7 @@
       if (sidebar) {
         backofficeMenuOpen = sidebar.classList.contains('open');
         // 모바일에서 백오피스 메뉴가 열리면 대분류 패널 숨기기
-        if (window.innerWidth <= 768 && backofficeMenuOpen) {
+        if (window.innerWidth <= 740 && backofficeMenuOpen) {
           leftPanelVisible = false;
         }
       }
@@ -175,7 +181,7 @@
 
   // 모바일에서 패널 열림/닫힘 상태에 따른 body 스크롤 제어
   $: if (typeof window !== 'undefined') {
-    if (window.innerWidth <= 1024 && leftPanelVisible) {
+    if (window.innerWidth <= 740 && leftPanelVisible) {
       // 모바일에서 패널이 열렸을 때 body 스크롤 방지
       document.body.style.overflow = 'hidden';
     } else {
@@ -1249,7 +1255,7 @@
     <!-- 반응형 레이아웃 -->
     <div class="flex flex-1 relative" style="padding-top: {layoutConstants.safeAreaTop};">
       <!-- 모바일 오버레이 배경 -->
-      {#if typeof window !== 'undefined' && window.innerWidth <= 1024 && leftPanelVisible}
+      {#if typeof window !== 'undefined' && window.innerWidth <= 740 && leftPanelVisible}
         <div 
           class="fixed inset-0 bg-black bg-opacity-50 z-20"
           style="top: calc(env(safe-area-inset-top, 0px) + 70px);"
@@ -1262,13 +1268,13 @@
       <!-- 제품 조회 패널 (왼쪽) -->
       <div class="transition-all duration-300 {leftPanelVisible ? 'opacity-100' : 'opacity-0'} lg:relative lg:ml-2.5 {leftPanelVisible ? '' : 'hidden'}" 
            style="flex: 0 0 {leftPanelVisible ? '350px' : '0px'}; background: transparent; z-index: 25;"
-           class:fixed={typeof window !== 'undefined' && window.innerWidth <= 1024}
-           class:left-0={typeof window !== 'undefined' && window.innerWidth <= 1024}
-           class:bg-white={typeof window !== 'undefined' && window.innerWidth <= 1024}
-           style:top={typeof window !== 'undefined' && window.innerWidth <= 1024 ? layoutConstants.sideMenuTop : 'auto'}
-           style:height={typeof window !== 'undefined' && window.innerWidth <= 1024 ? layoutConstants.sideMenuHeight : 'auto'}
-           style:box-shadow={typeof window !== 'undefined' && window.innerWidth <= 1024 ? '2px 0 8px rgba(0,0,0,0.1)' : 'none'}
-           style:transform={typeof window !== 'undefined' && window.innerWidth <= 1024 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
+           class:fixed={typeof window !== 'undefined' && window.innerWidth <= 740}
+           class:left-0={typeof window !== 'undefined' && window.innerWidth <= 740}
+           class:bg-white={typeof window !== 'undefined' && window.innerWidth <= 740}
+           style:top={typeof window !== 'undefined' && window.innerWidth <= 740 ? layoutConstants.sideMenuTop : 'auto'}
+           style:height={typeof window !== 'undefined' && window.innerWidth <= 740 ? layoutConstants.sideMenuHeight : 'auto'}
+           style:box-shadow={typeof window !== 'undefined' && window.innerWidth <= 740 ? '2px 0 8px rgba(0,0,0,0.1)' : 'none'}
+           style:transform={typeof window !== 'undefined' && window.innerWidth <= 740 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
            on:click={handlePanelClick}>
         
         <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? '1px' : '8px'}; height: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? 'calc(100vh + 20px)' : layoutConstants.sideMenuHeight};"
@@ -1278,7 +1284,7 @@
           
           <!-- 패널 헤더 -->
           <div class="py-4 px-5 border-b border-gray-200 flex flex-col items-stretch gap-4 relative" style="gap: 15px;">
-            {#if typeof window !== 'undefined' && window.innerWidth <= 1024}
+            {#if typeof window !== 'undefined' && window.innerWidth <= 740}
               <button 
                 class="absolute bg-red-600 text-white border-none rounded-full cursor-pointer flex items-center justify-center hover:bg-red-700 hover:scale-110 transition-all text-lg z-10"
                 style="top: 15px; right: 15px; width: 24px; height: 24px; font-size: 1.2rem;"
@@ -1422,6 +1428,14 @@
                         {#if isProductInfo && product.stockManaged}
                           <span class="absolute top-0.5 right-0.5 {product.stock === 0 ? 'bg-gray-500 text-white' : 'bg-yellow-400 text-gray-800'} px-1 py-0.5 rounded-lg text-xs font-bold min-w-6 text-center md:text-[10px]">
                             {product.stock || 0}
+                          </span>
+                        {/if}
+
+                        <!-- 기존 재고 배지 옆에 추가 -->
+                        {#if product.isHandmade}
+                          <span class="absolute top-0.5 left-0.5 bg-yellow-100 text-yellow-800 border border-yellow-200 text-xs rounded-full px-1.5 py-0.5 font-medium shadow-sm" 
+                          style="font-size: 0.6rem; line-height: 1;">
+                            수제
                           </span>
                         {/if}
                       </div>
