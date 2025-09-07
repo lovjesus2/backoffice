@@ -25,10 +25,11 @@ export async function POST({ request, locals }) {
       }, { status: 400 });
     }
     
-    // 지원하는 속성 코드 체크
+    // 지원하는 속성 코드 체크 (L7 추가)
     const supportedAttributes = {
       'L5': { name: '단종 상태', active: '단종', inactive: '정상' },
-      'L6': { name: '재고 사용', active: '사용', inactive: '미사용' }
+      'L6': { name: '재고 사용', active: '사용', inactive: '미사용' },
+      'L7': { name: '온라인 판매', active: '활성화', inactive: '비활성화' }
     };
     
     if (!supportedAttributes[attribute_code]) {
@@ -40,17 +41,12 @@ export async function POST({ request, locals }) {
     
     const db = getDb();
     
-    // 제품 정보 조회
+    // 제품 존재 여부 확인 (ASSE_PROH에서만 확인)
     const [productRows] = await db.execute(`
-      SELECT p.PROH_CODE, p.PROH_NAME, prod.PROD_TXT1 
+      SELECT p.PROH_CODE, p.PROH_NAME
       FROM ASSE_PROH p
-      INNER JOIN ASSE_PROD prod
-         ON p.PROH_GUB1 = prod.PROD_GUB1
-        AND p.PROH_GUB2 = prod.PROD_GUB2
-        AND p.PROH_CODE = prod.PROD_CODE
-        AND prod.PROD_COD2 = ?
-      WHERE p.PROH_CODE = ?
-    `, [attribute_code, product_code]);
+      WHERE p.PROH_GUB1 = 'A1' AND p.PROH_GUB2 = 'AK' AND p.PROH_CODE = ?
+    `, [product_code]);
     
     if (productRows.length === 0) {
       return json({
@@ -62,11 +58,20 @@ export async function POST({ request, locals }) {
     const product = productRows[0];
     console.log('제품 정보:', product);
     
-    // 현재 상태 확인 및 토글
-    const currentStatus = product.PROD_TXT1 || '0';
+    // 해당 속성의 현재 상태 조회 (ASSE_PROD에서 속성별 조회)
+    const [attrRows] = await db.execute(`
+      SELECT PROD_TXT1 
+      FROM ASSE_PROD 
+      WHERE PROD_GUB1 = 'A1' AND PROD_GUB2 = 'AK' 
+      AND PROD_CODE = ? AND PROD_COD2 = ?
+    `, [product_code, attribute_code]);
+    
+    // 현재 상태 확인 및 토글 (레코드가 없으면 기본값 '0')
+    const currentStatus = attrRows.length > 0 ? (attrRows[0].PROD_TXT1 || '0') : '0';
     const newStatus = currentStatus === '1' ? '0' : '1';
     
     console.log('상태 변경:', currentStatus, '→', newStatus);
+    console.log('속성 레코드 존재:', attrRows.length > 0 ? '예' : '아니오');
     
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     
@@ -75,15 +80,27 @@ export async function POST({ request, locals }) {
     console.log('트랜잭션 시작');
     
     try {
-      // 1. ASSE_PROD 테이블 업데이트
-      await db.execute(`
-        UPDATE ASSE_PROD 
-        SET PROD_TXT1 = ?, PROD_IDAT = NOW(), PROD_IUSR = ?
-        WHERE PROD_GUB1 = 'A1' AND PROD_GUB2 = 'AK' 
-        AND PROD_CODE = ? AND PROD_COD2 = ?
-      `, [newStatus, user.username, product_code, attribute_code]);
-      
-      console.log('ASSE_PROD 테이블 업데이트 완료');
+      // 1. ASSE_PROD 테이블 업데이트 또는 삽입
+      if (attrRows.length > 0) {
+        // 기존 레코드 업데이트
+        await db.execute(`
+          UPDATE ASSE_PROD 
+          SET PROD_TXT1 = ?, PROD_IDAT = NOW(), PROD_IUSR = ?
+          WHERE PROD_GUB1 = 'A1' AND PROD_GUB2 = 'AK' 
+          AND PROD_CODE = ? AND PROD_COD2 = ?
+        `, [newStatus, user.username, product_code, attribute_code]);
+        
+        console.log('ASSE_PROD 기존 레코드 업데이트 완료');
+      } else {
+        // 새 레코드 삽입
+        await db.execute(`
+          INSERT INTO ASSE_PROD 
+          (PROD_GUB1, PROD_GUB2, PROD_CODE, PROD_COD2, PROD_TXT1, PROD_NUM1, PROD_IUSR) 
+          VALUES ('A1', 'AK', ?, ?, ?, 0, ?)
+        `, [product_code, attribute_code, newStatus, user.username]);
+        
+        console.log('ASSE_PROD 새 레코드 생성 완료');
+      }
       
       // 2. ASSE_PROT 이력 테이블 처리
       const pGub1 = 'A1';

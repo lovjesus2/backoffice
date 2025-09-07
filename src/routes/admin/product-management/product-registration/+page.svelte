@@ -1432,10 +1432,10 @@
                         {/if}
 
                         <!-- 기존 재고 배지 옆에 추가 -->
-                        {#if product.isHandmade}
-                          <span class="absolute top-0.5 left-0.5 bg-yellow-100 text-yellow-800 border border-yellow-200 text-xs rounded-full px-1.5 py-0.5 font-medium shadow-sm" 
+                        {#if product.isOnline}
+                          <span class="absolute top-0.5 left-0.5 bg-blue-100 text-blue-800 border border-blue-200 text-xs rounded-full px-1.5 py-0.5 font-medium shadow-sm" 
                           style="font-size: 0.6rem; line-height: 1;">
-                            수제
+                            On
                           </span>
                         {/if}
                       </div>

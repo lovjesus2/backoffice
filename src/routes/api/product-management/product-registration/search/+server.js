@@ -55,7 +55,8 @@ export async function GET({ url, locals }) {
       } else {
         // 제품명 검색 - 글자 하나씩 잘라서 AND 조건
         const nameSearchConditions = [];
-        [...searchTerm.trim()].forEach((char) => {
+        const searchChars = searchTerm.trim().replace(/\s/g, '').split('');
+        searchChars.forEach((char) => {
           nameSearchConditions.push("p.PROH_NAME LIKE ?");
           searchParams.push(`%${char}%`);
         });
@@ -124,9 +125,9 @@ export async function GET({ url, locals }) {
                d.DPRC_BAPR,
                COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
                MAX(CASE WHEN prod.PROD_COD2 = 'L1' THEN prod.PROD_TXT1 END) as product_type,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L2' THEN prod.PROD_TXT1 END) as handmade_status,
                MAX(CASE WHEN prod.PROD_COD2 = 'L5' THEN prod.PROD_TXT1 END) as discontinued_status,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed
+               MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed,
+               MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status
         FROM ASSE_PROH p
         INNER JOIN ASSE_PROD prod
            ON p.PROH_GUB1 = prod.PROD_GUB1
@@ -138,7 +139,7 @@ export async function GET({ url, locals }) {
           ON p.PROH_CODE = h.HYUN_ITEM
         WHERE p.PROH_GUB1 = ?
           AND p.PROH_GUB2 = ?
-          AND prod.PROD_COD2 IN ('L1', 'L2', 'L5', 'L6')
+          AND prod.PROD_COD2 IN ('L1', 'L5', 'L6', 'L7')
           AND (${searchSQL})
           ${discontinuedSQL}
           ${productTypeSQL}
@@ -174,7 +175,7 @@ export async function GET({ url, locals }) {
         stock: parseInt(row.CURRENT_STOCK) || 0,
         discontinued: row.discontinued_status === '1',
         stockManaged: row.stock_managed === '1',
-        isHandmade: row.handmade_status === 'S1', // 🟡 수제 배지 조건 (PROD_COD2='L2', PROD_TXT1='S1')
+        isOnline: row.online_status === '1', // 🟡 온라인 배지 조건 (PROD_COD2='L7', PROD_TXT1='1')
         isProductInfo: true
       }));
     } else {
@@ -186,7 +187,7 @@ export async function GET({ url, locals }) {
         stock: 0,
         discontinued: false,
         stockManaged: false,
-        isHandmade: false,
+        isOnline: false,
         isProductInfo: false
       }));
     }

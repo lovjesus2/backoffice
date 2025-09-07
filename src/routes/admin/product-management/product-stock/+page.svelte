@@ -50,6 +50,14 @@
     await simpleCache.handleImage(event.target);
   }
 
+  // 이미지 클릭 핸들러 (누락된 함수)
+  function handleImageClick(productCode, productName) {
+    const imageSrc = getProxyImageUrl(productCode);
+    if (imageSrc) {
+      openImageModal(imageSrc, productName, productCode);
+    }
+  }
+
   // 검색 실행
   async function handleSearch() {
     if (!authenticated) return;
@@ -185,7 +193,52 @@
     }
   }
   
-  // ✅ 재고사용 처리 함수 수정
+  // ✅ 온라인 처리 함수 추가
+  async function toggleOnline(productCode) {
+    if (!authenticated) return;
+    
+    try {
+      console.log('온라인 토글 시작, 제품코드:', productCode);
+      
+      const response = await fetch('/api/product-management/product-stock/toggle-attribute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          product_code: productCode, 
+          attribute_code: 'L7'  // 온라인
+        })
+      });
+      
+      const result = await response.json();
+      console.log('API 응답:', result);
+      
+      if (result.success) {
+        const isOnline = result.new_status === '1';
+        console.log('새로운 온라인 상태:', isOnline);
+        
+        // products 배열 업데이트
+        products = products.map(p => 
+          p.code === productCode 
+            ? { ...p, isOnline: isOnline }
+            : p
+        );
+        
+        console.log('업데이트된 products 배열');
+        
+        showToast(result.message, 'success');
+        
+      } else {
+        showToast(result.message || '처리 실패', 'error');
+      }
+    } catch (err) {
+      console.error('온라인 처리 오류:', err);
+      showToast('처리 중 오류가 발생했습니다.', 'error');
+    }
+  }
+
+  // ✅ 재고사용 토글 함수 수정 (stockManaged로 변경)
   async function toggleStockUsage(productCode) {
     if (!authenticated) return;
     
@@ -210,10 +263,10 @@
         const isStockUsage = result.new_status === '1';
         console.log('새로운 재고사용 상태:', isStockUsage);
         
-        // ✅ products 배열 업데이트 (제품검색&재고관리 페이지용)
+        // ✅ products 배열 업데이트 (stockManaged로 변경)
         products = products.map(p => 
           p.code === productCode 
-            ? { ...p, stock_usage: isStockUsage }
+            ? { ...p, stockManaged: isStockUsage }
             : p
         );
         
@@ -450,19 +503,33 @@
           <div class="relative bg-white rounded-lg border border-gray-200 overflow-hidden" style="padding: 0.8rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 2px solid #e5e7eb; {product.discontinued ? 'opacity: 0.6; background-color: #f8f8f8;' : ''}">
             <!-- 이미지 및 기본 정보 -->
             <div class="flex" style="gap: 0.8rem;">
-              <!-- 상품 이미지 -->
-              <div class="flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden" style="width: 80px; height: 80px;">
+              <!-- 제품 이미지 (배지 포함) -->
+              <div class="relative w-20 h-20 flex-shrink-0 mr-3">
                 <img 
                   src={getProxyImageUrl(product.code)} 
                   alt={product.name}
-                  class="w-full h-full object-cover cursor-pointer"
-                  on:click={() => openImageModal(getProxyImageUrl(product.code), product.name)}
+                  class="w-full h-full object-cover rounded-lg border border-gray-200 cursor-pointer"
+                  style="background: #f8f9fa;"
+                  on:click={() => handleImageClick(product.code, product.name)}
+                  on:error={cacheImage}
                   on:load={cacheImage}
-                  on:error={(e) => {
-                    e.target.src = '/placeholder.png';
-                    e.target.style.background = '#f0f0f0';
-                  }}
                 >
+                
+                <!-- ✅ 재고 수량 배지 (오른쪽 위) -->
+                {#if product.stockManaged}
+                  <span class="absolute top-0.5 right-0.5 {product.stock === 0 ? 
+                    'bg-gray-500 text-white' : 'bg-yellow-400 text-gray-800'} px-1 py-0.5 rounded-lg text-xs font-bold min-w-6 text-center md:text-[10px]">
+                    {product.stock || 0}
+                  </span>
+                {/if}
+
+                <!-- ✅ 온라인 배지 (왼쪽 위) -->
+                {#if product.isOnline}
+                  <span class="absolute top-0.5 left-0.5 bg-blue-100 text-blue-800 border border-blue-200 text-xs rounded-full px-1.5 py-0.5 font-medium shadow-sm" 
+                  style="font-size: 0.6rem; line-height: 1;">
+                    ON
+                  </span>
+                {/if}
               </div>
               <div class="flex flex-1 gap-3">
                 <!-- 상품 정보 -->
@@ -522,7 +589,7 @@
                   </div>
                   
                   <!-- 3줄: 단종/재고사용 토글 -->
-                  <div class="flex gap-1">
+                  <div class="flex gap-1 mb-1">
                     <button 
                       type="button"
                       class="flex-1 border-0 rounded cursor-pointer transition-all duration-200 {product.discontinued ? 'bg-gray-400 text-white hover:bg-gray-500' : 'bg-red-500 text-white hover:bg-red-600'}"
@@ -534,11 +601,31 @@
                     
                     <button 
                       type="button"
-                      class="flex-1 border-0 rounded cursor-pointer transition-all duration-200 {(product.stock_usage === true) ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-400 text-white hover:bg-gray-500'}"
+                      class="flex-1 border-0 rounded cursor-pointer transition-all duration-200 {(product.stockManaged === true) ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-400 text-white hover:bg-gray-500'}"
                       style="font-size: 0.65rem; font-weight: 600; height: 20px; padding: 0;"
                       on:click={() => toggleStockUsage(product.code)}
                     >
-                      {(product.stock_usage === true) ? '미사용' : '사용'}
+                      {(product.stockManaged === true) ? '미사용' : '사용'}
+                    </button>
+                  </div>
+
+                  <!-- ✅ 새로 추가: 가로 구분선 -->
+                  <hr class="border-0 border-t border-gray-300 my-1">
+
+                  <!-- ✅ 새로 추가: 온라인 토글 버튼 -->
+                  <div>
+                    <button 
+                      type="button"
+                      class="w-full border-0 rounded cursor-pointer transition-all duration-200 {product.isOnline ? 
+                        'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+                      style="font-size: 0.65rem; font-weight: 600; height: 20px; padding: 0;"
+                      on:click={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        toggleOnline(product.code);
+                      }}
+                    >
+                      {product.isOnline ? 'ON' : 'OFF'}
                     </button>
                   </div>
                 </div>
