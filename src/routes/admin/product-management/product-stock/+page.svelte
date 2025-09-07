@@ -596,7 +596,7 @@
                       style="font-size: 0.65rem; font-weight: 600; height: 20px; padding: 0;"
                       on:click={() => toggleDiscontinued(product.code)}
                     >
-                      {product.discontinued ? '정상' : '단종'}
+                      {product.discontinued ? '단종' : '정상'}
                     </button>
                     
                     <button 
@@ -605,7 +605,7 @@
                       style="font-size: 0.65rem; font-weight: 600; height: 20px; padding: 0;"
                       on:click={() => toggleStockUsage(product.code)}
                     >
-                      {(product.stockManaged === true) ? '미사용' : '사용'}
+                      {(product.stockManaged === true) ? '사용' : '미사용'}
                     </button>
                   </div>
 
