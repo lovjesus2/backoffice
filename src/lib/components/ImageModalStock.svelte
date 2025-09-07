@@ -293,7 +293,7 @@
   // ✅ 재고사용 처리 함수 수정
   async function toggleStockUsage(productCode) {
     try {
-      console.log('재고사용 토글 시작, 현재 상태:', productData?.stock_usage); // 디버그 로그
+      console.log('재고사용 토글 시작, 현재 상태:', productData?.stockManaged); // 디버그 로그
       
       const response = await fetch('/api/product-management/product-stock/toggle-attribute', {
         method: 'POST',
@@ -318,7 +318,7 @@
         if (productData && productData.code === productCode) {
           productData = {
             ...productData,
-            stock_usage: isStockUsage
+            stockManaged: isStockUsage
           };
           // 강제 반응성 트리거
           productData = productData;
@@ -331,7 +331,7 @@
         // 부모 컴포넌트에 변경 사항 알림
         dispatch('stockUsageUpdated', {
           productCode,
-          stock_usage: isStockUsage
+          stockManaged: isStockUsage
         });
         
       } else {
@@ -567,7 +567,7 @@
         <div class="relative flex items-center justify-center" style="width: 300px; height: 300px;">
           <!-- 닫기 버튼 (이미지 상단 오른쪽) -->
           <button 
-            class="absolute -top-2 -right-2 w-10 h-10 bg-black/70 hover:bg-black/90 text-white rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 z-20 backdrop-blur-sm"
+            class="absolute -top-5 -right-5 w-10 h-10 bg-black/70 hover:bg-black/90 text-white rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 z-20 backdrop-blur-sm"
             style="touch-action: manipulation;"
             on:click={closeImageModal}
           >
@@ -687,7 +687,7 @@
                 <button 
                   type="button"
                   class="flex-1 border-0 rounded cursor-pointer transition-all duration-200 py-2 {productData.discontinued ? 
-                    'bg-red-500 text-white hover:bg-red-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+                    'bg-gray-400 text-white hover:bg-gray-500' : 'bg-red-500 text-white hover:bg-red-600'}"
                   style="font-size: 0.7rem; font-weight: 600;"
                   on:click={() => toggleDiscontinued(productData.code)}
                 >
@@ -698,7 +698,7 @@
                 <button 
                   type="button"
                   class="flex-1 border-0 rounded cursor-pointer transition-all duration-200 py-2 {productData.stockManaged ? 
-                    'bg-green-500 text-white hover:bg-green-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+                    'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-400 text-white hover:bg-gray-500'}"
                   style="font-size: 0.7rem; font-weight: 600;"
                   on:click={() => toggleStockUsage(productData.code)}
                 >
