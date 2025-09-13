@@ -1168,13 +1168,13 @@
 
 <div class="min-h-screen relative" style="background-color: #f5f5f5;" >
   <!-- 메인 컨텐츠 -->
-  <div class="flex flex-col" style="padding: 0; min-height: calc(100vh - 70px);">
+  <div class="flex flex-col" style="padding: 0; min-height: calc(100vh - var(--header-height));">
     <!-- 헤더 (고정 + 버튼 오른쪽 정렬) -->
-    <div class="bg-white border-b mb-2.5" style="position: fixed; top: calc(env(safe-area-inset-top, 0px) + 70px); left: 0; right: 0; border-color: #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 50;">
-      <div style="padding: 15px 8px;">
+    <div class="bg-white border-b mb-2.5" style="position: fixed; top: var(--header-total-height); left: 0; right: 0; border-color: #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 50;">
+      <div style="padding: 10px 8px;">
         <div class="flex items-center justify-between">
           <!-- 왼쪽: 햄버거 메뉴 + 제목 -->
-          <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2">
             <button 
               class="bg-transparent border border-gray-300 rounded p-2 cursor-pointer transition-all duration-300 hover:bg-gray-50 hover:border-gray-400 flex items-center justify-center"
               style="padding: 8px;"
@@ -1258,7 +1258,7 @@
       {#if typeof window !== 'undefined' && window.innerWidth <= 740 && leftPanelVisible}
         <div 
           class="fixed inset-0 bg-black bg-opacity-50 z-20"
-          style="top: calc(env(safe-area-inset-top, 0px) + 70px);"
+          style="top: var(--header-total-height);"
           on:click={handleOverlayClick}
           on:touchstart={handleOverlayClick}
           on:touchmove|preventDefault
@@ -1470,7 +1470,7 @@
         <div class="flex flex-col gap-1">
           
           <!-- 카테고리 관리 섹션 (항상 위) -->
-          <div class="w-full">
+          <div class="w-full max-md:mt-4">
             <!-- 첫 번째 카드: 기본 정보 (통합 저장 버튼으로 수정) -->
             <div class="bg-white rounded-lg overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
               <div class="border-b border-gray-200" style="padding: 15px 20px;">

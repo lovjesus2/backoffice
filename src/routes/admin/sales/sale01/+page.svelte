@@ -286,7 +286,8 @@
             <div>
               {#each group.items as item}
                 <div class="flex p-3 border-b border-gray-100 gap-3 hover:bg-gray-50 {item.hygb === '1' ? 'bg-green-50 border-l-4 border-l-green-500' : ''} md:p-2.5 md:gap-2.5">
-                  <div class="w-16 h-16 bg-gray-100 rounded flex items-center justify-center flex-shrink-0 relative overflow-hidden border border-gray-200 md:w-14 md:h-14">
+                  <!-- 상품 이미지 컨테이너 -->
+                  <div class="w-20 h-20 bg-gray-100 rounded flex items-center justify-center flex-shrink-0 relative overflow-hidden border border-gray-200">
                     {#if item.itemCode}
                       <img 
                         src="/proxy-images/{item.itemCode}_1.jpg" 
@@ -297,11 +298,21 @@
                         on:click={() => handleImageClick(item)}
                       />
                     {:else}
-                      <span class="text-xs text-gray-500 text-center leading-3 md:text-[10px]">이미지<br/>없음</span>
+                      <span class="text-xs text-gray-500 text-center leading-3">이미지<br/>없음</span>
                     {/if}
+                    
+                    <!-- 재고 배지 (오른쪽 위) -->
                     {#if item.stockManaged}
-                      <span class="absolute top-0.5 right-0.5 {item.currentStock === 0 ? 'bg-gray-500 text-white' : 'bg-yellow-400 text-gray-800'} px-1 py-0.5 rounded-lg text-xs font-bold min-w-6 text-center md:text-[10px]">
+                      <span class="absolute top-0.5 right-0.5 {item.currentStock === 0 ? 'bg-gray-500 text-white' : 'bg-yellow-400 text-gray-800'} px-1 py-0.5 rounded-lg text-xs font-bold min-w-6 text-center">
                         {item.currentStock}
+                      </span>
+                    {/if}
+                    
+                    <!-- 온라인 배지 (왼쪽 위) -->
+                    {#if item.isOnline}
+                      <span class="absolute top-0.5 left-0.5 bg-blue-100 text-blue-800 border border-blue-200 text-xs rounded-full px-1.5 py-0.5 font-medium shadow-sm" 
+                        style="font-size: 0.6rem; line-height: 1;">
+                        ON
                       </span>
                     {/if}
                   </div>

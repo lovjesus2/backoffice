@@ -97,7 +97,7 @@
     }
   }
   
-  // 재고 조정
+  // 재고 조정 (수정된 버전)
   async function adjustStock(productCode, quantity) {
     if (!authenticated) return;
     
@@ -123,13 +123,28 @@
       });
       
       const result = await response.json();
+      console.log('재고 조정 API 응답:', result); // 디버깅용
       
       if (result.success) {
-        products = products.map(p => 
+        // ✅ 강제 반응성 트리거를 위한 방법들
+        
+        // 방법 1: 배열 재할당 (가장 확실한 방법)
+        const updatedProducts = products.map(p => 
           p.code === productCode 
-            ? { ...p, stock: result.new_stock }
+            ? { 
+                ...p, 
+                stock: result.new_stock,
+                stockManaged: true  // 재고 조정 시 자동으로 재고관리 활성화
+              }
             : p
         );
+        products = updatedProducts;
+        
+        // 방법 2: 추가 반응성 트리거 (선택사항)
+        // products = [...products];
+        
+        console.log('업데이트된 products:', products); // 디버깅용
+        
         alert(result.message);
         
         // 입력 필드 초기화

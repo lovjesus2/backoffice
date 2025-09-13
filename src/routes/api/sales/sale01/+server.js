@@ -69,6 +69,7 @@ export async function GET({ url }) {
     }
 
     // 매출 데이터 조회 (재고 정보 포함)
+    // 기존 쿼리에 온라인 정보 추가
     const salesQuery = `
       SELECT 
         h.DNHD_SLIP,
@@ -82,19 +83,23 @@ export async function GET({ url }) {
         d.DNDT_HYGB,
         p.PROH_NAME,
         sp.POST_SLIP,
-        -- 재고 정보 추가
+        -- 재고 정보
         COALESCE(stock.HYUN_QTY1, 0) as CURRENT_STOCK,
-        COALESCE(prod.PROD_TXT1, '0') as STOCK_MANAGED
+        COALESCE(stockProd.PROD_TXT1, '0') as STOCK_MANAGED,
+        -- 🆕 온라인 정보 추가
+        COALESCE(onlineProd.PROD_TXT1, '0') as ONLINE_STATUS
       FROM SALE_DNHD h
       INNER JOIN SALE_DNDT d ON h.DNHD_SLIP = d.DNDT_SLIP
       INNER JOIN ASSE_PROH p ON p.PROH_GUB1 = 'A1' 
-                             AND p.PROH_GUB2 = 'AK' 
-                             AND d.DNDT_ITEM = p.PROH_CODE
+                            AND p.PROH_GUB2 = 'AK' 
+                            AND d.DNDT_ITEM = p.PROH_CODE
       LEFT JOIN SALE_POST sp ON h.DNHD_SLIP = sp.POST_SLIP
-      -- 재고 정보 조인
       LEFT JOIN STOK_HYUN stock ON d.DNDT_ITEM = stock.HYUN_ITEM
-      LEFT JOIN ASSE_PROD prod ON d.DNDT_ITEM = prod.PROD_CODE
-                               AND prod.PROD_COD2 = 'L6'
+      LEFT JOIN ASSE_PROD stockProd ON d.DNDT_ITEM = stockProd.PROD_CODE
+                                    AND stockProd.PROD_COD2 = 'L6'
+      -- 🆕 온라인 정보 조인 추가
+      LEFT JOIN ASSE_PROD onlineProd ON d.DNDT_ITEM = onlineProd.PROD_CODE
+                                    AND onlineProd.PROD_COD2 = 'L7'
       ${whereClause}
       ORDER BY h.DNHD_SLIP DESC, d.DNDT_SENO ASC
     `;
@@ -170,7 +175,9 @@ export async function GET({ url }) {
         hygb: row.DNDT_HYGB,
         // 재고 정보 추가
         currentStock: currentStock,
-        stockManaged: isStockManaged
+        stockManaged: isStockManaged,
+        // 🆕 온라인 정보 추가
+        isOnline: row.ONLINE_STATUS === '1'
       });
     });
 

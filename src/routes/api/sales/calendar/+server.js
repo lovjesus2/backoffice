@@ -100,7 +100,9 @@ async function getDailySalesDetail(db, date) {
         DATE_FORMAT(DNHD_UDAT, '%Y-%m-%d %H:%i:%s') as DNHD_UDAT, 
         DNDT_HYGB, DNDT_SENO, DNHD_RAND, PROH_QRCD,
         COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
-        p.PROD_TXT1 as STOCK_MANAGEMENT_FLAG,
+        stockProd.PROD_TXT1 as STOCK_MANAGEMENT_FLAG,
+        -- 🆕 온라인 정보 추가
+        onlineProd.PROD_TXT1 as ONLINE_FLAG,
         sp.POST_SLIP
       FROM SALE_DNHD 
       INNER JOIN SALE_DNDT ON DNHD_SLIP = DNDT_SLIP
@@ -108,8 +110,11 @@ async function getDailySalesDetail(db, date) {
                            AND PROH_GUB2 = 'AK' 
                            AND DNDT_ITEM = PROH_CODE
       LEFT JOIN STOK_HYUN h ON DNDT_ITEM = h.HYUN_ITEM
-      LEFT JOIN ASSE_PROD p ON DNDT_ITEM = p.PROD_CODE
-                            AND p.PROD_COD2 = 'L6'
+      LEFT JOIN ASSE_PROD stockProd ON DNDT_ITEM = stockProd.PROD_CODE
+                                    AND stockProd.PROD_COD2 = 'L6'
+      -- 🆕 온라인 정보 조인 추가
+      LEFT JOIN ASSE_PROD onlineProd ON DNDT_ITEM = onlineProd.PROD_CODE
+                                     AND onlineProd.PROD_COD2 = 'L7'
       LEFT JOIN SALE_POST sp ON DNHD_SLIP = sp.POST_SLIP
       WHERE DNHD_DATE = ?
       ORDER BY DNDT_SLIP DESC, DNDT_SENO ASC
@@ -133,9 +138,11 @@ async function getDailySalesDetail(db, date) {
         currentStock: parseInt(row.CURRENT_STOCK) || 0,
         qrCode: row.PROH_QRCD,
         isStockManaged: (row.STOCK_MANAGEMENT_FLAG == '1'),
+        // 🆕 온라인 정보 추가
+        isOnline: (row.ONLINE_FLAG == '1'),
         postSlip: row.POST_SLIP,
         rand: row.DNHD_RAND,
-        bigo: row.DNHD_BIGO || '' // 이 줄 추가
+        bigo: row.DNHD_BIGO || ''
       });
 
       totalAmount += amount;
