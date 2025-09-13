@@ -333,7 +333,8 @@ export async function initPWA() {
       refreshBtn.innerHTML = '↻';
       refreshBtn.style.cssText = `
         position: fixed;
-        top: calc(env(safe-area-inset-top, 0px) + 17px);
+        top: var(--safe-area-top);
+        transform: translateY(-10px);
         right: 15px;
         width: 36px;
         height: 36px;

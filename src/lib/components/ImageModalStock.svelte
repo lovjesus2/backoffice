@@ -182,7 +182,7 @@
     }
   }
 
-  // 재고 조정
+  // 재고 조정 (ImageModalStock.svelte용 수정 버전)
   async function adjustStock(productCode, quantity) {
     const qty = parseInt(quantity);
     if (!qty || qty === 0) {
@@ -194,6 +194,8 @@
     adjustingStock = adjustingStock;
     
     try {
+      console.log('모달에서 재고 조정 시작:', { productCode, quantity: qty });
+      
       const response = await fetch('/api/product-management/product-stock/adjust', {
         method: 'POST',
         headers: {
@@ -206,11 +208,30 @@
       });
       
       const result = await response.json();
+      console.log('모달 재고 조정 API 응답:', result);
       
       if (result.success) {
-        // 제품 데이터 업데이트
+        // ⭐ 기존 재고 확인
+        const beforeStock = productData?.stock || 0;
+        console.log('모달 업데이트 전 재고:', beforeStock);
+        console.log('모달 API에서 받은 새 재고:', result.new_stock);
+        
+        // ⭐ 강제 반응성 트리거 방식들
         if (productData && productData.code === productCode) {
-          productData = { ...productData, stock: result.new_stock };
+          // 방법 1: 새로운 객체 생성 후 재할당
+          const updatedProductData = {
+            ...productData,
+            stock: result.new_stock,
+            stockManaged: true  // 재고 조정 시 자동으로 재고관리 활성화
+          };
+          
+          // 명시적 재할당으로 반응성 보장
+          productData = updatedProductData;
+          
+          // 방법 2: 추가 반응성 트리거 (선택사항)
+          productData = productData;
+          
+          console.log('모달 업데이트 후 productData:', productData);
         }
         
         showToast(result.message, 'success');
@@ -219,17 +240,18 @@
         const input = document.querySelector(`input[data-code="${productCode}"]`);
         if (input) input.value = '';
         
-        // 부모 컴포넌트에 변경 사항 알림
+        // ⭐ 부모 컴포넌트에 변경 사항 알림 (재고와 재고관리 상태 모두 전달)
         dispatch('stockUpdated', {
           productCode,
-          newStock: result.new_stock
+          newStock: result.new_stock,
+          stockManaged: true  // 재고관리 상태도 함께 전달
         });
         
       } else {
         showToast(result.message || '재고 조정 실패', 'error');
       }
     } catch (err) {
-      console.error('재고 조정 오류:', err);
+      console.error('모달 재고 조정 오류:', err);
       showToast('재고 조정 중 오류가 발생했습니다.', 'error');
     } finally {
       adjustingStock.delete(productCode);
