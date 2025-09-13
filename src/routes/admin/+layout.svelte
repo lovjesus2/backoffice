@@ -43,87 +43,157 @@
     }));
   }
 
-  onMount(async () => {
-    // 화면 크기 변경 감지
-    const handleResize = () => {
-      if (window.innerWidth > 768) {
-        isMobileMenuOpen = false;
-      }
-    };
-    window.addEventListener('resize', handleResize);
-    
-    // PWA 초기화
-    initPWA();
-    
-    // 자동 이미지 모달 초기화
-    if (browser) {
-      cleanupImageModal = initAutoImageModal(true); // 프록시 이미지 사용
-    }
-    
-    // PC 사이드바 상태 복원
-    if (browser) {
-      const savedPcSidebar = localStorage.getItem('pcSidebarOpen');
-      if (savedPcSidebar) {
-        isPcSidebarOpen = JSON.parse(savedPcSidebar);
-      }
-    }
-    
-    // 초기 로드 시 상태 복원
-    const restoredPath = await stateManager.restoreState();
-    if (restoredPath && restoredPath !== $page.url.pathname) {
-      goto(restoredPath);
-    }
 
-    // Service Worker 등록 코드 추가
-    // Service Worker 등록 코드 수정 (+layout.svelte)
-    // Service Worker 등록 코드에 로그 추가
-    if ('serviceWorker' in navigator) {
-      try {
-        console.log('🔄 Service Worker 등록 시작...');
+
+// +layout.svelte의 onMount 부분 (중복 초기화 방지)
+
+onMount(async () => {
+  // 화면 크기 변경 감지
+  const handleResize = () => {
+    if (window.innerWidth > 768) {
+      isMobileMenuOpen = false;
+    }
+  };
+  window.addEventListener('resize', handleResize);
+  
+  // PWA 초기화
+  initPWA();
+  
+  // 자동 이미지 모달 초기화
+  if (browser) {
+    cleanupImageModal = initAutoImageModal(true);
+  }
+  
+  // PC 사이드바 상태 복원
+  if (browser) {
+    const savedPcSidebar = localStorage.getItem('pcSidebarOpen');
+    if (savedPcSidebar) {
+      isPcSidebarOpen = JSON.parse(savedPcSidebar);
+    }
+  }
+  
+  // 초기 로드 시 상태 복원
+  const restoredPath = await stateManager.restoreState();
+  if (restoredPath && restoredPath !== $page.url.pathname) {
+    goto(restoredPath);
+  }
+
+  // 🔥 Firebase Messaging 초기화 (중복 방지)
+  if (typeof window !== 'undefined') {
+    // 🚫 중복 초기화 방지 체크
+    if (window.__firebaseMessagingInitialized) {
+      console.log('ℹ️ Firebase Messaging 이미 초기화됨');
+      return;
+    }
+    
+    console.log('🔥 Firebase Messaging 초기화 시작...');
+    
+    try {
+      // Service Worker 지원 확인
+      if (!('serviceWorker' in navigator)) {
+        console.warn('⚠️ Service Worker를 지원하지 않는 브라우저');
+        return;
+      }
+      
+      // Firebase 푸시 모듈 로드
+      const { getFCMToken, setupForegroundMessaging } = await import('$lib/utils/pushNotification.js');
+      console.log('✅ Firebase 푸시 모듈 로드 성공');
+      
+      // FCM 토큰 획득
+      const fcmToken = await getFCMToken();
+      
+      if (fcmToken) {
+        console.log('✅ FCM 토큰 획득 성공');
         
-        const registration = await navigator.serviceWorker.register('/sw.js');
-        console.log('✅ Service Worker 등록 성공:', registration);
+        // 🔥 중복 초기화 방지 플래그 설정
+        window.__firebaseMessagingInitialized = true;
         
-        // 🔥 여기에 로그 추가
-        console.log('🔄 푸시 모듈 로드 시작...');
-        const { getFCMToken, setupForegroundMessaging } = await import('$lib/utils/pushNotification.js');
-        console.log('✅ 푸시 모듈 로드 성공');
+        // 포그라운드 메시징 설정 (한번만)
+        setupForegroundMessaging();
+        console.log('✅ 포그라운드 메시징 설정 완료');
         
-        console.log('🔄 FCM 토큰 요청 시작...');
-        const token = await getFCMToken();
-        console.log('🔄 FCM 토큰 결과:', token ? '토큰 획득' : '토큰 없음');
-        
-        if (token) {
-          console.log('🔥 FCM 토큰:', token.substring(0, 20) + '...');
-          
-          // 서버에 토큰 등록
+        // 서버에 토큰 저장
+        try {
           const response = await fetch('/api/push/subscribe', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              token,
+            headers: { 
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+              token: fcmToken,
               deviceInfo: {
                 userAgent: navigator.userAgent,
-                platform: navigator.platform
+                platform: navigator.platform,
+                language: navigator.language,
+                timestamp: new Date().toISOString(),
+                url: window.location.href
               }
             })
           });
           
           const result = await response.json();
-          console.log('🔥 토큰 등록 응답:', result);
-        } else {
-          console.log('❌ FCM 토큰을 가져올 수 없습니다');
+          
+          if (response.ok && result.success) {
+            console.log('✅ FCM 토큰 서버 저장 성공');
+          } else {
+            console.warn('⚠️ FCM 토큰 서버 저장 실패:', result.message);
+          }
+          
+        } catch (saveError) {
+          console.error('❌ FCM 토큰 서버 저장 오류:', saveError);
         }
         
-        setupForegroundMessaging();
-        
-      } catch (error) {
-        console.error('❌ Service Worker 또는 FCM 오류:', error);
+      } else {
+        console.warn('⚠️ FCM 토큰 획득 실패');
       }
-    } else {
-      console.log('❌ Service Worker를 지원하지 않는 브라우저');
+      
+    } catch (error) {
+      console.error('❌ Firebase Messaging 초기화 실패:', error);
     }
+  }
+
+  // cleanup 함수
+  return () => {
+    window.removeEventListener('resize', handleResize);
+    if (cleanupImageModal) {
+      cleanupImageModal();
+    }
+  };
 });
+
+// 🔥 페이지 언로드 시 초기화 플래그 리셋 (선택사항)
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    // 다음 페이지 로드 시 다시 초기화할 수 있도록
+    // window.__firebaseMessagingInitialized = false;
+  });
+}
+
+// 🔄 페이지 가시성 변경 시 Service Worker 상태 체크
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && 'serviceWorker' in navigator) {
+      // 페이지가 다시 보일 때 Service Worker 업데이트 체크
+      navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js').then(registration => {
+        if (registration && registration.waiting) {
+          console.log('🔄 페이지 복귀 시 Service Worker 업데이트 감지');
+          if (confirm('앱 업데이트가 있습니다. 적용하시겠습니까?')) {
+            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+            window.location.reload();
+          }
+        }
+      });
+    }
+  });
+}
+
+// 🔥 페이지 언로드 시 초기화 플래그 리셋 (선택사항)
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    // 다음 페이지 로드 시 다시 초기화할 수 있도록
+    // window.__firebaseMessagingInitialized = false;
+  });
+}
 
   // 앱 종료 시 현재 상태 저장
   async function handleBeforeUnload() {
