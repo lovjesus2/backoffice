@@ -47,6 +47,8 @@
 
 // +layout.svelte의 onMount 부분 (중복 초기화 방지)
 
+// +layout.svelte의 onMount 부분 (중복 방지)
+
 onMount(async () => {
   // 화면 크기 변경 감지
   const handleResize = () => {
@@ -78,78 +80,57 @@ onMount(async () => {
     goto(restoredPath);
   }
 
-  // 🔥 Firebase Messaging 초기화 (중복 방지)
-  if (typeof window !== 'undefined') {
-    // 🚫 중복 초기화 방지 체크
-    if (window.__firebaseMessagingInitialized) {
-      console.log('ℹ️ Firebase Messaging 이미 초기화됨');
-      return;
-    }
+  // 🔥 Firebase Messaging 설정 (Service Worker 중복 등록 방지)
+  console.log('🔥 Firebase Messaging 초기화 시작...');
+  
+  // 🚫 중복 초기화 방지
+  if (window.__fcmInitialized) {
+    console.log('ℹ️ FCM 이미 초기화됨, 건너뜀');
+    return;
+  }
+  
+  try {
+    const { getFCMToken, setupForegroundMessaging } = await import('$lib/utils/pushNotification.js');
+    console.log('✅ 푸시 모듈 로드 성공');
     
-    console.log('🔥 Firebase Messaging 초기화 시작...');
+    const token = await getFCMToken();
+    console.log('🔥 FCM 토큰 결과:', token ? '토큰 생성됨' : '토큰 없음');
     
-    try {
-      // Service Worker 지원 확인
-      if (!('serviceWorker' in navigator)) {
-        console.warn('⚠️ Service Worker를 지원하지 않는 브라우저');
-        return;
-      }
+    if (token) {
+      // 🔥 중복 방지 플래그 설정
+      window.__fcmInitialized = true;
       
-      // Firebase 푸시 모듈 로드
-      const { getFCMToken, setupForegroundMessaging } = await import('$lib/utils/pushNotification.js');
-      console.log('✅ Firebase 푸시 모듈 로드 성공');
+      // 포그라운드 메시징 설정 (한번만)
+      setupForegroundMessaging();
       
-      // FCM 토큰 획득
-      const fcmToken = await getFCMToken();
-      
-      if (fcmToken) {
-        console.log('✅ FCM 토큰 획득 성공');
+      // 토큰을 서버에 저장
+      try {
+        const response = await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            token,
+            deviceInfo: {
+              userAgent: navigator.userAgent,
+              platform: navigator.platform,
+              timestamp: new Date().toISOString()
+            }
+          })
+        });
         
-        // 🔥 중복 초기화 방지 플래그 설정
-        window.__firebaseMessagingInitialized = true;
-        
-        // 포그라운드 메시징 설정 (한번만)
-        setupForegroundMessaging();
-        console.log('✅ 포그라운드 메시징 설정 완료');
-        
-        // 서버에 토큰 저장
-        try {
-          const response = await fetch('/api/push/subscribe', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ 
-              token: fcmToken,
-              deviceInfo: {
-                userAgent: navigator.userAgent,
-                platform: navigator.platform,
-                language: navigator.language,
-                timestamp: new Date().toISOString(),
-                url: window.location.href
-              }
-            })
-          });
-          
-          const result = await response.json();
-          
-          if (response.ok && result.success) {
-            console.log('✅ FCM 토큰 서버 저장 성공');
-          } else {
-            console.warn('⚠️ FCM 토큰 서버 저장 실패:', result.message);
-          }
-          
-        } catch (saveError) {
-          console.error('❌ FCM 토큰 서버 저장 오류:', saveError);
+        if (response.ok) {
+          console.log('✅ FCM 토큰 서버 저장 성공');
+        } else {
+          const errorData = await response.json();
+          console.warn('⚠️ FCM 토큰 서버 저장 실패:', errorData.message);
         }
-        
-      } else {
-        console.warn('⚠️ FCM 토큰 획득 실패');
+      } catch (error) {
+        console.error('❌ FCM 토큰 서버 저장 오류:', error);
       }
-      
-    } catch (error) {
-      console.error('❌ Firebase Messaging 초기화 실패:', error);
     }
+    
+  } catch (error) {
+    console.error('❌ Firebase Messaging 초기화 실패:', error);
   }
 
   // cleanup 함수
