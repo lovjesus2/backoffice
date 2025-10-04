@@ -63,40 +63,37 @@ export async function GET({ url, locals }) {
         searchSQL = nameSearchConditions.join(' AND ');
       }
     }
+   
     
     // 단종 필터 적용 (제품정보일 때만) - EXISTS 서브쿼리 사용
     let discontinuedSQL = '';
     if (registrationName === '제품정보') {
+      console.log('✅ 제품정보 확인됨, 단종 필터 적용:', discontinuedFilter);
+      
       if (discontinuedFilter === 'discontinued') {
+        // 단종품만
         discontinuedSQL = `AND EXISTS (
           SELECT 1 FROM ASSE_PROD p_disc 
           WHERE p_disc.PROD_GUB1 = p.PROH_GUB1 
             AND p_disc.PROD_GUB2 = p.PROH_GUB2 
             AND p_disc.PROD_CODE = p.PROH_CODE 
             AND p_disc.PROD_COD2 = 'L5' 
-            AND p_disc.PROD_TXT1 = ?
+            AND p_disc.PROD_TXT1 = '1'
         )`;
-        searchParams.push('1');
       } else if (discontinuedFilter === 'normal') {
-        discontinuedSQL = `AND (
-          NOT EXISTS (
-            SELECT 1 FROM ASSE_PROD p_disc 
-            WHERE p_disc.PROD_GUB1 = p.PROH_GUB1 
-              AND p_disc.PROD_GUB2 = p.PROH_GUB2 
-              AND p_disc.PROD_CODE = p.PROH_CODE 
-              AND p_disc.PROD_COD2 = 'L5' 
-              AND p_disc.PROD_TXT1 = '1'
-          ) OR EXISTS (
-            SELECT 1 FROM ASSE_PROD p_disc 
-            WHERE p_disc.PROD_GUB1 = p.PROH_GUB1 
-              AND p_disc.PROD_GUB2 = p.PROH_GUB2 
-              AND p_disc.PROD_CODE = p.PROH_CODE 
-              AND p_disc.PROD_COD2 = 'L5' 
-              AND p_disc.PROD_TXT1 = ?
-          )
+        // 정상품만 (단종이 아닌 제품)
+        discontinuedSQL = `AND NOT EXISTS (
+          SELECT 1 FROM ASSE_PROD p_disc 
+          WHERE p_disc.PROD_GUB1 = p.PROH_GUB1 
+            AND p_disc.PROD_GUB2 = p.PROH_GUB2 
+            AND p_disc.PROD_CODE = p.PROH_CODE 
+            AND p_disc.PROD_COD2 = 'L5' 
+            AND p_disc.PROD_TXT1 = '1'
         )`;
-        searchParams.push('0');
       }
+      // 'all'인 경우 discontinuedSQL = '' (빈 문자열)
+    } else {
+      console.log('⚠️ 단종 필터 미적용 - registrationName:', registrationName);
     }
     
     // 제품구분 필터 적용 (제품정보이고 제품구분이 선택된 경우) - EXISTS 서브쿼리 사용
