@@ -43,11 +43,7 @@
     }));
   }
 
-
-
-// +layout.svelte의 onMount 부분 (중복 초기화 방지)
-
-// +layout.svelte의 onMount 부분 (중복 방지)
+  // +layout.svelte의 onMount 부분 (중복 방지)
 
 onMount(async () => {
   // 화면 크기 변경 감지
@@ -141,40 +137,6 @@ onMount(async () => {
     }
   };
 });
-
-// 🔥 페이지 언로드 시 초기화 플래그 리셋 (선택사항)
-if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', () => {
-    // 다음 페이지 로드 시 다시 초기화할 수 있도록
-    // window.__firebaseMessagingInitialized = false;
-  });
-}
-
-// 🔄 페이지 가시성 변경 시 Service Worker 상태 체크
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && 'serviceWorker' in navigator) {
-      // 페이지가 다시 보일 때 Service Worker 업데이트 체크
-      navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js').then(registration => {
-        if (registration && registration.waiting) {
-          console.log('🔄 페이지 복귀 시 Service Worker 업데이트 감지');
-          if (confirm('앱 업데이트가 있습니다. 적용하시겠습니까?')) {
-            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-            window.location.reload();
-          }
-        }
-      });
-    }
-  });
-}
-
-// 🔥 페이지 언로드 시 초기화 플래그 리셋 (선택사항)
-if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', () => {
-    // 다음 페이지 로드 시 다시 초기화할 수 있도록
-    // window.__firebaseMessagingInitialized = false;
-  });
-}
 
   // 앱 종료 시 현재 상태 저장
   async function handleBeforeUnload() {

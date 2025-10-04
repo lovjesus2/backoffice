@@ -6,6 +6,7 @@
   import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
   import ImageModalStock from '$lib/components/ImageModalStock.svelte';
   import { getLayoutConstants } from '$lib/utils/deviceUtils';
+  import ProductSearchPopup from '$lib/components/ProductSearchPopup.svelte'; // 품목검색 팝업
   
   export let data;
   
@@ -14,6 +15,8 @@
   // =============================================================================
   
   // 기본 상태 변수들
+  
+  let showProductPopup = false; // 제품 조회 팝업 관련 변수 추가
   let leftPanelVisible = true;
   let error = '';
   let success = '';
@@ -673,6 +676,73 @@
     updateSummary();
   }
 
+  // 팝업에서 제품 선택 시 처리
+  function handleProductSelected(event) {
+    const product = event.detail;
+    
+    // 기존 제품이 있는지 확인
+    const existingIndex = detailItems.findIndex(item => item.itemCode === product.code);
+    
+    if (existingIndex >= 0) {
+      // 기존 제품이 있으면 수량 증가
+      detailItems[existingIndex].quantity++;
+      const unitPrice = detailItems[existingIndex].isCash ? 
+        detailItems[existingIndex].cashPrice : 
+        detailItems[existingIndex].cardPrice;
+      detailItems[existingIndex].amount = detailItems[existingIndex].quantity * unitPrice;
+      console.log('기존 제품 수량 증가:', product.code);
+    } else {
+      // 새 제품 추가 (바코드 스캔과 동일한 로직 사용)
+      searchAndAddProductByCode(product.code);
+    }
+    
+    updateSummary();
+  }
+
+  // 제품 코드로 상세 정보를 가져와서 추가하는 함수
+  async function searchAndAddProductByCode(productCode) {
+    try {
+      const params = new URLSearchParams({
+        code: productCode
+      });
+      
+      const response = await fetch(`/api/sales/sales-registration/barcode-search?${params}`);
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        const productInfo = result.data;
+        
+        const newItem = {
+          seq: detailItems.length + 1,
+          itemCode: productCode,
+          itemName: productInfo.name || '',
+          itemDescription: productInfo.description || '',
+          isCash: false,
+          quantity: 1,
+          cardPrice: productInfo.cardPrice || 0,
+          cashPrice: productInfo.cashPrice || 0,
+          deliveryPrice: productInfo.deliveryPrice || 0,
+          currentStock: productInfo.stock || 0,
+          stockManaged: productInfo.stockManaged || false,
+          isOnline: productInfo.isOnline || false,
+          qrCode: '',
+          discountQty: 0,
+          discountAmount: 0,
+          discountType: 0
+        };
+        
+        newItem.amount = newItem.quantity * newItem.cardPrice;
+        
+        detailItems = [newItem, ...detailItems];
+        console.log('새 제품 추가:', productCode);
+        
+        updateSummary();
+      }
+    } catch (error) {
+      console.error('제품 정보 조회 오류:', error);
+    }
+  }
+
   // 현금할인 적용
   function applyCashDiscount() {
     if (detailItems.length === 0) {
@@ -714,6 +784,55 @@
   function toggleItemDescription(index) {
     detailItems[index].descriptionExpanded = !detailItems[index].descriptionExpanded;
     detailItems = [...detailItems];
+  }
+
+  // 토스트 메시지 표시 함수 추가
+  function showToast(message, type = 'info') {
+    // 기존 토스트 제거
+    const existingToast = document.querySelector('.toast-message');
+    if (existingToast) {
+      existingToast.remove();
+    }
+    
+    // 새 토스트 생성
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      padding: 16px 24px;
+      border-radius: 12px;
+      color: white;
+      font-weight: 600;
+      font-size: 16px;
+      max-width: 400px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      ${type === 'success' ? 'background: linear-gradient(135deg, #10b981, #059669);' : 
+        type === 'error' ? 'background: linear-gradient(135deg, #ef4444, #dc2626);' : 
+        'background: linear-gradient(135deg, #3b82f6, #2563eb);'}
+    `;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    // 애니메이션으로 표시
+    setTimeout(() => {
+      toast.style.transform = 'translateX(0)';
+    }, 10);
+    
+    // 4초 후 자동 제거
+    setTimeout(() => {
+      toast.style.transform = 'translateX(100%)';
+      setTimeout(() => {
+        if (document.body.contains(toast)) {
+          document.body.removeChild(toast);
+        }
+      }, 300);
+    }, 3000);
   }
 
   // 매출등록 초기화
@@ -861,6 +980,10 @@
       }
       
       if (result.success) {
+        // 토스트 메시지 표시
+        const amount = summaryData.totalAmount || 0;
+        showToast(`💰 매출 저장 완료!\n💳 ${amount.toLocaleString()}원 (${result.slipNo})`, 'success');
+        
         saveSuccess = result.message || '매출이 성공적으로 저장되었습니다.';
         
         if (result.slipNo) {
@@ -888,6 +1011,9 @@
       
     } catch (error) {
       console.error('매출등록 저장 오류:', error);
+  
+      // 토스트 오류 메시지 표시
+      showToast(`❌ 저장 실패\n${error.message || '저장 중 오류가 발생했습니다.'}`, 'error');
       saveError = error.message || '저장 중 오류가 발생했습니다.';
       
       setTimeout(() => {
@@ -936,6 +1062,8 @@
       }
       
       if (result.success) {
+        showToast('🗑️ 매출 삭제 완료!', 'success');
+
         setTimeout(() => {
           saveSuccess = '';
         }, 1000);
@@ -950,6 +1078,8 @@
       
     } catch (error) {
       console.error('매출 삭제 오류:', error);
+      // 토스트 오류 메시지 표시
+      showToast(`❌ 삭제 실패\n${error.message || '삭제 중 오류가 발생했습니다.'}`, 'error');
       saveError = error.message || '삭제 중 오류가 발생했습니다.';
       
       setTimeout(() => {
@@ -960,28 +1090,6 @@
     }
   }
 
-  // 상세내역 입력값 변경 시 처리
-  function handleDetailInputChange(index) {
-    detailChanged = true;
-    saveSuccess = '';
-    saveError = '';
-    productDetailItems = [...productDetailItems];
-  }
-
-  // 숫자와 콤마만 허용하는 입력 검증 함수
-  function validateNumberInput(value, allowNegative = false) {
-    let cleaned = value.replace(/[^\d,-]/g, '');
-    
-    if (!allowNegative) {
-      cleaned = cleaned.replace(/-/g, '');
-    } else {
-      const hasNegative = cleaned.startsWith('-');
-      cleaned = cleaned.replace(/-/g, '');
-      if (hasNegative) cleaned = '-' + cleaned;
-    }
-    
-    return cleaned;
-  }
 
   // 페이지 로드 시 초기화
   onMount(async () => {
@@ -1029,6 +1137,9 @@
       }
     };
   });
+
+
+  
 
 </script>
 
@@ -1295,8 +1406,8 @@
               <div style="padding: 10px;">
                 
                 <!-- 매출 합계 카드 (상단 한번만) -->
-                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg mb-3" style="padding: 12px;">
-                  <div class="grid grid-cols-3 gap-2 text-xs">
+                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg mb-3" style="padding: 4px;">
+                  <div class="grid grid-cols-3 gap-1 text-xs">
                     <!-- 전체 합계 -->
                     <div class="bg-white rounded border border-blue-100" style="padding: 6px; text-align: center;">
                       <div class="text-gray-600 font-medium" style="font-size: 0.6rem;">
@@ -1626,8 +1737,17 @@
                   </div>
                 </div>
                 
-                <!-- 오른쪽: 현금할인 버튼 -->
-                <div>
+                <!-- 오른쪽: 검색 버튼 + 현금할인 버튼 -->
+                <div class="flex gap-2">
+                  <!-- 검색 버튼 추가 -->
+                  <button 
+                    type="button"
+                    on:click={() => showProductPopup = true}
+                    class="px-3 py-1.5 text-xs rounded transition-colors duration-200 bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    검색
+                  </button>
+                  
                   <button 
                     type="button"
                     on:click={applyCashDiscount}
@@ -1818,11 +1938,22 @@
   </div>
 </div>
 
+<!-- 제품 조회 팝업 -->
+<ProductSearchPopup 
+  bind:visible={showProductPopup}
+  currentCompanyCode={selectedCompany}
+  currentRegistrationCode={selectedRegistration}
+  on:productSelected={handleProductSelected}
+  on:close={() => showProductPopup = false}
+/>
+
 <!-- 이미지 모달 -->
 <ImageModalStock 
   on:stockUpdated={handleStockUpdated}
   on:discontinuedUpdated={handleDiscontinuedUpdated}
 />
+
+
 <style>
   /* 사이드 메뉴 스크롤 제어 */
   .panel-scroll-container {
