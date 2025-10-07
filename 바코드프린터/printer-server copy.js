@@ -203,375 +203,266 @@ async function generateQRCodeESCPOS(qrData, options = {}) {
 }
 
 async function generateReceiptFromLayout(receiptData) {
-  console.log(`영수증 이미지 생성 (${receiptData.layout?.length || 0}개 요소)`);
+  console.log(`영수증 생성 (${receiptData.layout?.length || 0}개)`);
   
-  const width = 576;
-  let currentY = 20;
-  const compositeItems = [];
+  const buffers = [];
+  
+  buffers.push(Buffer.from([0x1B, 0x40])); // 초기화
+  buffers.push(Buffer.from([0x1B, 0x74, 0x13])); // EUC-KR
   
   if (receiptData.layout && Array.isArray(receiptData.layout)) {
     for (const item of receiptData.layout) {
-      console.log(`  처리 중: ${item.type}`);
+      console.log(`  ${item.type}`);
       
-      try {
-        switch (item.type) {
-          case 'logo':
-            if (item.path) {
-              let logoBuffer;
-              
-              // Base64 디코딩
-              if (item.path.startsWith('data:image')) {
-                const base64Data = item.path.split(',')[1];
-                logoBuffer = Buffer.from(base64Data, 'base64');
-              } else if (item.path.startsWith('http')) {
-                const response = await fetch(item.path);
-                const arrayBuffer = await response.arrayBuffer();
-                logoBuffer = Buffer.from(arrayBuffer);
-              } else {
-                logoBuffer = fs.readFileSync(item.path);
-              }
-              
-              // 먼저 리사이즈
-              const resizedLogo = await sharp(logoBuffer)
-                .resize(item.width || 300, null, { fit: 'inside' })
-                .toBuffer();
-              
-              const logoMeta = await sharp(resizedLogo).metadata();
-              console.log(`리사이즈된 로고 크기: ${logoMeta.width}x${logoMeta.height}`);
-              
-              let finalLogo = resizedLogo;
-              
-              // QR 코드 + 텍스트 합성
-              if (item.qrData && (item.qrX !== undefined || item.qrY !== undefined)) {
-                try {
-                  const qrSize = item.qrSize || 100;
-                  const qrX = parseInt(item.qrX) || 0;
-                  const qrY = parseInt(item.qrY) || 0;
-                  const qrText = item.qrText || '';
-                  const qrTextSize = item.qrTextSize || 14;
-                  
-                  console.log(`QR 합성: 위치(${qrX}, ${qrY}), 크기(${qrSize})`);
-                  
-                  // QR 코드 생성
-                  const qrBuffer = await QRCode.toBuffer(item.qrData, {
-                    errorCorrectionLevel: 'M',
-                    type: 'png',
-                    width: qrSize,
-                    margin: 2  // 👈 1 → 2로 변경
-                  });
-
-                  // Sharp로 QR 코드 선명하게 처리
-                  const enhancedQR = await sharp(qrBuffer)
-                    .sharpen()
-                    .toBuffer();
-
-                  const compositeItems = [
-                    // QR 코드
-                    {
-                      input: enhancedQR,  // 👈 qrBuffer → enhancedQR로 변경
-                      top: qrY,
-                      left: qrX
-                    }
-                    
-                  ];
-                  
-                  // QR 텍스트가 있으면 추가
-                  if (qrText) {
-                    const textY = qrY + qrSize + 5; // QR 아래 5px 간격
-                    const textWidth = qrSize * 2; // QR 코드 폭의 2배로 설정
-                    const textX = qrX - (qrSize / 2); // 좌우 중앙 정렬을 위해 왼쪽으로 이동
-                    
-                    const textSvg = `
-                      <svg width="${textWidth}" height="${qrTextSize + 10}">
-                        <text x="${textWidth / 2}" y="${qrTextSize + 2}" 
-                              font-family="Malgun Gothic, 맑은 고딕, sans-serif" 
-                              font-size="${qrTextSize}" 
-                              text-anchor="middle"
-                              fill="#000000">${qrText}</text>
-                      </svg>
-                    `;
-                    
-                    compositeItems.push({
-                      input: Buffer.from(textSvg),
-                      top: textY,
-                      left: textX
-                    });
-                    
-                    console.log(`QR 텍스트 추가: "${qrText}" (폭: ${textWidth}px)`);
-                  }
-                  
-                  // 리사이즈된 이미지에 QR + 텍스트 합성
-                  finalLogo = await sharp(resizedLogo)
-                    .composite(compositeItems)
-                    .toBuffer();
-                  
-                  console.log('QR 코드 합성 완료');
-                } catch (qrError) {
-                  console.error('QR 코드 합성 실패:', qrError);
-                }
-              }
-              
-              const finalMeta = await sharp(finalLogo).metadata();
-              const logoX = item.align === 'center' ? (width - finalMeta.width) / 2 : 20;
-              
-              compositeItems.push({
-                input: finalLogo,
-                top: currentY,
-                left: Math.floor(logoX)
-              });
-              
-              currentY += finalMeta.height + (item.marginBottom || 10);
+      switch (item.type) {
+        case 'image':
+          if (receiptData.images && receiptData.images[item.imageIndex]) {
+            const imageCommands = await imageToESCPOS(receiptData.images[item.imageIndex]);
+            
+            if (item.align === 'center') buffers.push(Buffer.from([0x1B, 0x61, 0x01]));
+            else if (item.align === 'right') buffers.push(Buffer.from([0x1B, 0x61, 0x02]));
+            else buffers.push(Buffer.from([0x1B, 0x61, 0x00]));
+            
+            if (imageCommands.length > 0) {
+              buffers.push(imageCommands);
+              buffers.push(Buffer.from('\n'));
             }
-            break;
+          }
+          break;
+        
+        case 'qrcode':
+          if (item.data) {
+            const qrCommands = await generateQRCodeESCPOS(item.data, {
+              size: item.size || 256,
+              errorCorrectionLevel: item.errorCorrectionLevel || 'H'
+            });
+            
+            if (item.align === 'center') buffers.push(Buffer.from([0x1B, 0x61, 0x01]));
+            else if (item.align === 'right') buffers.push(Buffer.from([0x1B, 0x61, 0x02]));
+            else buffers.push(Buffer.from([0x1B, 0x61, 0x00]));
+            
+            if (qrCommands.length > 0) {
+              buffers.push(qrCommands);
+              buffers.push(Buffer.from('\n'));
+            }
+          }
+          break;
+        
+        case 'text':
+          if (item.align === 'center') buffers.push(Buffer.from([0x1B, 0x61, 0x01]));
+          else if (item.align === 'right') buffers.push(Buffer.from([0x1B, 0x61, 0x02]));
+          else buffers.push(Buffer.from([0x1B, 0x61, 0x00]));
           
-          case 'qrcode':
-            if (item.data) {
-              const qrSize = item.size || 128;
-              const qrBuffer = await QRCode.toBuffer(item.data, {
+          if (item.bold) buffers.push(Buffer.from([0x1B, 0x45, 0x01]));
+          
+          if (item.fontSize && item.fontSize > 1) {
+            const size = Math.min(item.fontSize, 8);
+            const sizeCode = ((size - 1) << 4) | (size - 1);
+            buffers.push(Buffer.from([0x1D, 0x21, sizeCode]));
+          }
+          
+          if (item.underline) buffers.push(Buffer.from([0x1B, 0x2D, 0x01]));
+          
+          const encodedText = iconv.encode(item.content || '', 'euc-kr');
+          buffers.push(encodedText);
+          buffers.push(Buffer.from('\n'));
+          
+          buffers.push(Buffer.from([0x1B, 0x45, 0x00, 0x1D, 0x21, 0x00, 0x1B, 0x2D, 0x00]));
+          break;
+        
+        case 'line':
+          buffers.push(Buffer.from([0x1B, 0x61, 0x00]));
+          const lineText = (item.char || '=').repeat(item.length || 40);
+          buffers.push(iconv.encode(lineText, 'euc-kr'));
+          buffers.push(Buffer.from('\n'));
+          break;
+        
+        case 'items':
+          buffers.push(Buffer.from([0x1B, 0x61, 0x00]));
+          if (item.items && Array.isArray(item.items)) {
+            item.items.forEach(product => {
+              buffers.push(iconv.encode(product.name || '', 'euc-kr'));
+              buffers.push(Buffer.from('\n'));
+              
+              const price = (product.price || 0).toLocaleString();
+              const priceText = `  ${price}원 x ${product.quantity || 1}`;
+              buffers.push(iconv.encode(priceText, 'euc-kr'));
+              buffers.push(Buffer.from('\n'));
+            });
+          }
+          break;
+        case 'image-with-qr':
+          // 이미지 위에 QR 코드를 합성해서 출력
+          if (item.imagePath && item.qrData) {
+            try {
+              console.log('이미지+QR 합성 시작');
+              
+              // 1. QR 코드 생성
+              const qrSize = item.qrSize || 128;
+              const qrBuffer = await QRCode.toBuffer(item.qrData, {
                 errorCorrectionLevel: item.errorCorrectionLevel || 'H',
                 type: 'png',
                 width: qrSize,
                 margin: 1
               });
               
-              const qrX = item.align === 'center' ? (width - qrSize) / 2 : 20;
-              compositeItems.push({
-                input: qrBuffer,
-                top: currentY,
-                left: Math.floor(qrX)
-              });
-              
-              currentY += qrSize + (item.marginBottom || 10);
-            }
-            break;
-          
-          case 'text':
-            if (item.content) {
-              const fontSize = item.fontSize || 12;
-              const fontWeight = item.bold ? 'bold' : 'normal';
-              const textHeight = fontSize + 10;
-              
-              let textAnchor = 'start';
-              let textX = 20;
-              if (item.align === 'center') {
-                textAnchor = 'middle';
-                textX = width / 2;
-              } else if (item.align === 'right') {
-                textAnchor = 'end';
-                textX = width - 20;
-              }
-              
-              const textSvg = `
-                <svg width="${width}" height="${textHeight}">
-                  <text x="${textX}" y="${fontSize + 2}" 
-                        font-family="Malgun Gothic, 맑은 고딕, sans-serif" 
-                        font-size="${fontSize}" 
-                        font-weight="${fontWeight}"
-                        text-anchor="${textAnchor}"
-                        fill="#000000">${item.content}</text>
-                </svg>
-              `;
-              
-              compositeItems.push({
-                input: Buffer.from(textSvg),
-                top: currentY,
-                left: 0
-              });
-              
-              currentY += textHeight + (item.marginBottom || 5);
-            }
-            break;
-          
-          case 'product-line':
-            if (item.name) {
-              const fontSize = item.fontSize || 12;
-              const lineHeight = fontSize + 8;
-              
-              // 글자 수 고정 (폰트 크기별)
-              let maxCharsPerLine;
-              if (fontSize <= 12) {
-                maxCharsPerLine = 18;
-              } else if (fontSize <= 15) {
-                maxCharsPerLine = 16;  // 15pt는 16자
+              // 2. 배경 이미지 로드 (로고)
+              let baseImage;
+              if (item.imagePath.startsWith('http')) {
+                // URL에서 이미지 로드
+                const response = await fetch(item.imagePath);
+                const arrayBuffer = await response.arrayBuffer();
+                baseImage = Buffer.from(arrayBuffer);
               } else {
-                maxCharsPerLine = 14;
+                // 로컬 파일에서 이미지 로드
+                baseImage = fs.readFileSync(item.imagePath);
               }
               
-              // 품목명을 두 줄로 분리
-              let line1 = item.name.substring(0, maxCharsPerLine);
-              let line2 = item.name.length > maxCharsPerLine ? 
-                          item.name.substring(maxCharsPerLine, maxCharsPerLine * 2) : '';
+              // 3. 이미지 합성 (sharp 사용)
+              const qrPosition = item.qrPosition || { top: 50, left: 100 };
+              const compositeImage = await sharp(baseImage)
+                .composite([{
+                  input: qrBuffer,
+                  top: qrPosition.top,
+                  left: qrPosition.left
+                }])
+                .png()
+                .toBuffer();
               
-              const nameSvg = `
-                <svg width="280" height="${lineHeight * 2}">
-                  <text x="20" y="${fontSize + 2}" 
-                        font-family="Malgun Gothic, 맑은 고딕, sans-serif" 
-                        font-size="${fontSize}" 
-                        fill="#000000">
-                    ${line1}
-                    ${line2 ? `<tspan x="20" dy="${lineHeight}">${line2}</tspan>` : ''}
-                  </text>
-                </svg>
-              `;
-              compositeItems.push({
-                input: Buffer.from(nameSvg),
-                top: currentY,
-                left: 0
-              });
+              console.log('이미지+QR 합성 완료');
               
-              const price = (item.price || 0).toLocaleString();
-              const qty = String(item.quantity || 0);
-              const total = (item.total || 0).toLocaleString();
+              // 4. ESC/POS 이미지 명령어로 변환
+              const imageCommands = await imageToESCPOS(compositeImage);
               
-              const priceSvg = `
-                <svg width="280" height="${lineHeight}">
-                  ${item.price > 0 ? `
-                  <text x="80" y="${fontSize + 2}" 
-                        font-family="Malgun Gothic, 맑은 고딕, sans-serif" 
-                        font-size="${fontSize}" 
-                        text-anchor="end"
-                        fill="#000000">${price}</text>
-                  ` : ''}
-                  <text x="150" y="${fontSize + 2}" 
-                        font-family="Malgun Gothic, 맑은 고딕, sans-serif" 
-                        font-size="${fontSize}" 
-                        text-anchor="middle"
-                        fill="#000000">${qty}</text>
-                  <text x="280" y="${fontSize + 2}" 
-                        font-family="Malgun Gothic, 맑은 고딕, sans-serif" 
-                        font-size="${fontSize}" 
-                        text-anchor="end"
-                        fill="#000000">${total}</text>
-                </svg>
-              `;
-              compositeItems.push({
-                input: Buffer.from(priceSvg),
-                top: currentY,
-                left: width - 280
-              });
+              // 5. 정렬
+              if (item.align === 'center') buffers.push(Buffer.from([0x1B, 0x61, 0x01]));
+              else if (item.align === 'right') buffers.push(Buffer.from([0x1B, 0x61, 0x02]));
+              else buffers.push(Buffer.from([0x1B, 0x61, 0x00]));
               
-              currentY += (lineHeight * 2) + (item.marginBottom || 8);
-            }
-            break;
-          
-          case 'space':
-            const lines = item.lines || 1;
-            currentY += lines * 20;
-            break;
-          
-          case 'line':
-            const lineChar = item.char || '-';
-            const lineLength = item.length || 40;
-            const lineText = lineChar.repeat(lineLength);
-            
-            const lineSvg = `
-              <svg width="${width}" height="20">
-                <text x="20" y="14" 
-                      font-family="Courier, monospace" 
-                      font-size="12" 
-                      fill="#000000">${lineText}</text>
-              </svg>
-            `;
-            compositeItems.push({
-              input: Buffer.from(lineSvg),
-              top: currentY,
-              left: 0
-            });
-            
-            currentY += 20 + (item.marginBottom || 5);
-            break;
-        }
-      } catch (error) {
-        console.error(`${item.type} 처리 실패:`, error.message);
-      }
-    }
-  }
-  
-  currentY += 40;
-  
-  console.log(`최종 이미지 크기: ${width}x${currentY}`);
-  
-  const receiptImage = await sharp({
-    create: {
-      width: width,
-      height: currentY,
-      channels: 4,
-      background: { r: 255, g: 255, b: 255, alpha: 1 }
-    }
-  })
-  .composite(compositeItems)
-  .png()
-  .toBuffer();
-  
-  console.log('이미지 버퍼 크기:', receiptImage.length, 'bytes');
-  fs.writeFileSync('debug_receipt.png', receiptImage);
-  console.log('디버그 이미지 저장: debug_receipt.png');
-  
-  console.log('이미지 → ESC/POS 변환 시작...');
-  
-  let buffers = [];
-  
-  try {
-    // 원본 크기 유지하고 8의 배수로만 조정
-    const processed = await sharp(receiptImage)
-      .resize(576, null, { 
-        fit: 'inside',
-        kernel: 'nearest'  // 픽셀 보존, 번짐 방지
-      })
-      .sharpen()
-      .grayscale()
-      .linear(1.2, -(128 * 0.2))  // 명암 대비 증가
-      .threshold(120)  // 128 → 120 (더 진하게)
-      .toFormat('png')
-      .toBuffer();
-    
-    const png = PNG.sync.read(processed);
-    const w = png.width;
-    const h = png.height;
-    
-    console.log(`이미지 변환 완료: ${w}x${h}px`);
-    
-    const imageCommands = [];
-    imageCommands.push(0x1D, 0x76, 0x30, 0x00);
-    imageCommands.push((w / 8) & 0xFF, ((w / 8) >> 8) & 0xFF);
-    imageCommands.push(h & 0xFF, (h >> 8) & 0xFF);
-    
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x += 8) {
-        let byte = 0;
-        for (let bit = 0; bit < 8; bit++) {
-          if (x + bit < w) {
-            const idx = (y * w + x + bit) * 4;
-            if (png.data[idx] < 128) {
-              byte |= (1 << (7 - bit));
+              if (imageCommands.length > 0) {
+                buffers.push(imageCommands);
+                buffers.push(Buffer.from('\n'));
+              }
+              
+              // 정렬 초기화
+              buffers.push(Buffer.from([0x1B, 0x61, 0x00]));
+              
+            } catch (error) {
+              console.error('이미지+QR 합성 실패:', error.message);
             }
           }
-        }
-        imageCommands.push(byte);
+          break; 
+          
+        case 'product-line':
+          // 품목명과 가격/수량/합계를 한 줄 또는 두 줄에 표시
+          buffers.push(Buffer.from([0x1B, 0x61, 0x00])); // 왼쪽 정렬
+          
+          if (item.name && item.price !== undefined && item.quantity !== undefined && item.total !== undefined) {
+            const name = item.name || '';
+            const price = (item.price || 0).toLocaleString();
+            const qty = String(item.quantity || 0);
+            const total = (item.total || 0).toLocaleString();
+            
+            // 금액 부분 - 오른쪽 끝에 배치
+            const rightPart = `${price}    ${qty}    ${total}`;
+            const rightPartBytes = Buffer.byteLength(iconv.encode(rightPart, 'euc-kr'));
+            
+            const lineWidth = 48;
+            const nameBytes = Buffer.byteLength(iconv.encode(name, 'euc-kr'));
+            
+            // 품목명이 차지할 수 있는 최대 공간 (오른쪽 금액 부분 제외)
+            const maxNameSpace = lineWidth - rightPartBytes;
+            
+            if (nameBytes <= maxNameSpace) {
+              // 한 줄에 다 들어감 - 금액을 오른쪽 끝에 딱 붙이기
+              const spacesNeeded = maxNameSpace - nameBytes;
+              const spaces = ' '.repeat(spacesNeeded);
+              const line = `${name}${spaces}${rightPart}`;
+              
+              buffers.push(iconv.encode(line, 'euc-kr'));
+              buffers.push(Buffer.from('\n'));
+              
+            } else {
+              // 두 줄로 나눔
+              let firstLineBytes = 0;
+              let firstLineChars = 0;
+              
+              // 첫 줄은 전체 폭 사용
+              for (let i = 0; i < name.length; i++) {
+                const char = name[i];
+                const charBytes = /[\u3131-\uD79D]/.test(char) ? 2 : 1;
+                
+                if (firstLineBytes + charBytes > lineWidth) {
+                  break;
+                }
+                
+                firstLineBytes += charBytes;
+                firstLineChars++;
+              }
+              
+              const firstLine = name.substring(0, firstLineChars);
+              buffers.push(iconv.encode(firstLine, 'euc-kr'));
+              buffers.push(Buffer.from('\n'));
+              
+              // 두 번째 줄: 품목명 나머지 + 금액을 오른쪽 끝에
+              const secondLineName = name.substring(firstLineChars);
+              const secondLineNameBytes = Buffer.byteLength(iconv.encode(secondLineName, 'euc-kr'));
+              
+              if (secondLineNameBytes <= maxNameSpace) {
+                // 두 번째 줄에 들어감 - 금액을 오른쪽 끝에 딱 붙이기
+                const spacesNeeded = maxNameSpace - secondLineNameBytes;
+                const spaces = ' '.repeat(spacesNeeded);
+                const secondLine = `${secondLineName}${spaces}${rightPart}`;
+                
+                buffers.push(iconv.encode(secondLine, 'euc-kr'));
+                buffers.push(Buffer.from('\n'));
+                
+              } else {
+                // 두 번째 줄도 잘라야 함
+                let secondLineChars = 0;
+                let secondLineBytes = 0;
+                
+                for (let i = 0; i < secondLineName.length; i++) {
+                  const char = secondLineName[i];
+                  const charBytes = /[\u3131-\uD79D]/.test(char) ? 2 : 1;
+                  
+                  if (secondLineBytes + charBytes > maxNameSpace) {
+                    break;
+                  }
+                  
+                  secondLineBytes += charBytes;
+                  secondLineChars++;
+                }
+                
+                const trimmedSecondLine = secondLineName.substring(0, secondLineChars);
+                const spacesNeeded = maxNameSpace - secondLineBytes;
+                const spaces = ' '.repeat(spacesNeeded);
+                const secondLine = `${trimmedSecondLine}${spaces}${rightPart}`;
+                
+                buffers.push(iconv.encode(secondLine, 'euc-kr'));
+                buffers.push(Buffer.from('\n'));
+              }
+            }
+            
+            // 상품 항목 사이 간격
+            buffers.push(Buffer.from('\n'));
+          }
+          break;
+
+        case 'space':
+          buffers.push(Buffer.from('\n'.repeat(item.lines || 1)));
+          break;
       }
     }
-    
-    const imageBuffer = Buffer.from(imageCommands);
-    console.log('ESC/POS 변환 완료, 크기:', imageBuffer.length, 'bytes');
-    
-    buffers.push(Buffer.from([0x1B, 0x40]));
-    buffers.push(Buffer.from([0x1B, 0x61, 0x01]));
-    buffers.push(imageBuffer);
-    buffers.push(Buffer.from([0x1B, 0x61, 0x00]));
-    buffers.push(Buffer.from('\n\n\n\n'));
-    buffers.push(Buffer.from([0x1D, 0x56, 0x00]));
-    
-  } catch (error) {
-    console.error('이미지 변환 실패:', error.message);
-    buffers.push(Buffer.from([0x1B, 0x40]));
-    buffers.push(Buffer.from([0x1D, 0x56, 0x00]));
   }
   
+  buffers.push(Buffer.from('\n\n\n\n'));
+  buffers.push(Buffer.from([0x1D, 0x56, 0x00])); // 용지 커트
+  
   const final = Buffer.concat(buffers);
-  console.log(`최종 버퍼 크기: ${final.length} bytes`);
+  console.log(`완료 (${final.length} bytes)`);
   return final;
 }
-
 
 async function checkPrinterStatus() {
   return new Promise((resolve) => {
