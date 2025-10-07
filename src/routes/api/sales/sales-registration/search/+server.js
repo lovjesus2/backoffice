@@ -35,7 +35,7 @@ export async function GET({ url }) {
     
     // 기본 쿼리
     let strsql = `
-      SELECT DNHD_DATE, DNHD_QTY1, DNHD_TAMT, DNHD_SLGB,
+      SELECT DNHD_DATE, DNHD_QTY1, DNHD_TAMT, DNHD_SLGB, DNHD_RAND,
              DNHD_BPCD, DNHD_SLIP, DNHD_SHOP, MINR_NAME as SLGB_NAME,
              IFNULL(SHOP_NAME,'') SHOP_NAME, IFNULL(BPCD_NAME,'') BPCD_NAME,
              IFNULL(SUM(CASE WHEN DNDT_HYGB = '1' THEN DNDT_TAMT END),0) as CASH_AMT,
@@ -103,7 +103,7 @@ export async function GET({ url }) {
     }
 
     strsql += `
-       GROUP BY DNHD_DATE, DNHD_QTY1, DNHD_TAMT, DNHD_SLGB,
+       GROUP BY DNHD_DATE, DNHD_QTY1, DNHD_TAMT, DNHD_SLGB, DNHD_RAND,
                 DNHD_BPCD, DNHD_SLIP, DNHD_SHOP, MINR_NAME,
                 SHOP_NAME, BPCD_NAME
        ORDER BY DNHD_DATE DESC, DNHD_SLIP DESC

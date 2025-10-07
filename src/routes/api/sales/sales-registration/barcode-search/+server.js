@@ -33,6 +33,7 @@ export async function GET({ url, locals }) {
              d.DPRC_DCPR,
              d.DPRC_DEPR,
              COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
+             MAX(CASE WHEN prod.PROD_COD2 = 'L3' THEN prod.PROD_TXT1 END) as cash_status,
              MAX(CASE WHEN prod.PROD_COD2 = 'L5' THEN prod.PROD_TXT1 END) as discontinued_status,
              MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed,
              MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status
@@ -47,7 +48,7 @@ export async function GET({ url, locals }) {
         ON p.PROH_CODE = h.HYUN_ITEM
       WHERE p.PROH_GUB1 = 'A1'
         AND p.PROH_GUB2 = 'AK'
-        AND prod.PROD_COD2 IN ('L5', 'L6', 'L7')
+        AND prod.PROD_COD2 IN ('L3', 'L5', 'L6', 'L7')
         AND p.PROH_CODE = ?
       GROUP BY p.PROH_CODE, p.PROH_NAME, p.PROH_BIGO, d.DPRC_SOPR, d.DPRC_BAPR, d.DPRC_DCPR, d.DPRC_DEPR, h.HYUN_QTY1
     `;
@@ -74,6 +75,7 @@ export async function GET({ url, locals }) {
       cashPrice: parseInt(rows[0].DPRC_DCPR) || 0,
       deliveryPrice: parseInt(rows[0].DPRC_DEPR) || 0,
       stock: parseInt(rows[0].CURRENT_STOCK) || 0,
+      cash_status : rows[0].cash_status === '1',
       discontinued: rows[0].discontinued_status === '1',
       stockManaged: rows[0].stock_managed === '1',
       isOnline: rows[0].online_status === '1'

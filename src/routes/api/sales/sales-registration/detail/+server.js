@@ -103,7 +103,7 @@ export async function GET({ url, locals }) {
       customerCode: firstRow.DNHD_BPCD,
       customerName: firstRow.BPCD_NAME,
       memo: firstRow.DNHD_BIGO,
-      randomCode: firstRow.DNHD_RAND
+      rand: firstRow.DNHD_RAND
     };
     
     // 상세내역 (모든 행)
