@@ -55,7 +55,8 @@
     shopName: '',
     customerCode: '',
     customerName: '',
-    memo: ''
+    memo: '',
+    rand: ''  // 👈 추가
   };
   
   // 상세내역
@@ -116,8 +117,14 @@
     amount: 0,
     isChecked: false
   };
+
+  let autoPrintAfterSave = false;  // 저장 후 자동 출력 여부
   
   let discountTypeOptions = [];
+
+// 로고이미지 변수
+let logoImages = [];
+let logoImageIndex = 0;
   
   // =============================================================================
   // Reactive Statements (변수 선언 후에 배치)
@@ -166,6 +173,28 @@
     const imageSrc = getProxyImageUrl(productCode);
     if (imageSrc) {
       openImageModal(imageSrc, productName, productCode);
+    }
+  }
+
+  async function loadLogoImages() {
+    try {
+      console.log('로고 이미지 코드 조회 시작...');
+      
+      const response = await fetch('/api/sales/sales-registration/get-logo-codes?gub1=A1&gub2=LG');
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        logoImages = result.data;
+        console.log('로고 이미지 코드 조회 완료:', logoImages.length + '개');
+        
+        // 각 로고 이미지 미리 로드 (기존 방식 그대로)
+        const logoCodes = logoImages.map(logo => logo.code);
+        await simpleCache.preloadImages(logoCodes);
+        
+        console.log('로고 이미지 캐싱 완료');
+      }
+    } catch (error) {
+      console.error('로고 이미지 로드 오류:', error);
     }
   }
 
@@ -466,6 +495,24 @@
     }
   }
 
+  // 엽서 URL 생성 공통 함수
+  function getPostcardUrl(saleSlip, rand) {
+    if (!saleSlip || !rand) {
+      return null;
+    }
+    return `https://postcard.akojeju.com/receipt.php?sale_id=${saleSlip}_${rand}`;
+  }
+
+  // 엽서 열기 함수
+  function openPostcard(saleSlip, rand) {
+    const url = getPostcardUrl(saleSlip, rand);
+    if (!url) {
+      alert('엽서 정보가 없습니다.');
+      return;
+    }
+    window.open(url, '_blank');
+  }
+
   // 바코드 입력 처리
   async function handleBarcodeKeydown(event) {
     if (event.key === 'Enter' && barcodeValue.trim()) {
@@ -508,7 +555,8 @@
             itemCode: productCode,
             itemName: productInfo.name || '',
             itemDescription: productInfo.description || '',
-            isCash: false,
+            hasPresetCashPrice: productInfo.cash_status || false,  // 현금할인
+            isCash: productInfo.cash_status || false,              // 현금체크
             quantity: 1,
             cardPrice: productInfo.cardPrice || 0,
             cashPrice: productInfo.cashPrice || 0,
@@ -522,7 +570,10 @@
             discountType: 0
           };
           
-          newItem.amount = newItem.quantity * newItem.cardPrice;
+          // 👇 isCash 값에 따라 금액 계산
+          const unitPrice = newItem.isCash ? newItem.cashPrice : newItem.cardPrice;
+          newItem.amount = newItem.quantity * unitPrice;
+          //newItem.amount = newItem.quantity * newItem.cardPrice;
           
           detailItems = [newItem, ...detailItems];
           console.log('새 제품 추가:', productCode);
@@ -594,7 +645,8 @@
           shopName: result.basicInfo.shopName,
           customerCode: result.basicInfo.customerCode,
           customerName: result.basicInfo.customerName,
-          memo: result.basicInfo.memo
+          memo: result.basicInfo.memo,
+          rand: result.basicInfo.rand 
         };
         
         detailItems = result.detailItems;
@@ -717,7 +769,8 @@
           itemCode: productCode,
           itemName: productInfo.name || '',
           itemDescription: productInfo.description || '',
-          isCash: false,
+          hasPresetCashPrice: productInfo.cash_status || false,  // 현금할인
+          isCash: productInfo.cash_status || false,              // 현금체크
           quantity: 1,
           cardPrice: productInfo.cardPrice || 0,
           cashPrice: productInfo.cashPrice || 0,
@@ -731,7 +784,10 @@
           discountType: 0
         };
         
-        newItem.amount = newItem.quantity * newItem.cardPrice;
+        // 👇 isCash 값에 따라 금액 계산
+        const unitPrice = newItem.isCash ? newItem.cashPrice : newItem.cardPrice;
+        newItem.amount = newItem.quantity * unitPrice;
+        //newItem.amount = newItem.quantity * newItem.cardPrice;
         
         detailItems = [newItem, ...detailItems];
         console.log('새 제품 추가:', productCode);
@@ -750,21 +806,23 @@
       return;
     }
     
-    const cashItems = detailItems.filter(item => item.isCash);
+    const cashItems = detailItems.filter(
+      item => item.isCash && !item.hasPresetCashPrice  // ✅ 수정
+    );
     
     if (cashItems.length === 0) {
-      alert('현금으로 체크된 항목이 없습니다.');
+      alert('현금할인을 적용할 수 있는 항목이 없습니다.\n(이미 현금할인가가 적용된 제품은 제외됩니다)');
       return;
     }
     
-    const confirmMessage = `현금으로 체크된 ${cashItems.length}개 항목에 5% 할인을 적용하시겠습니까?\n(100원 단위 절삭 처리됩니다)`;
+    const confirmMessage = `현금으로 체크된 ${cashItems.length}개 항목에 5% 할인을 적용하시겠습니까?\n(100원 단위 절삭 처리됩니다)\n\n※ 이미 현금가가 설정된 제품은 제외됩니다.`;
     
     if (!confirm(confirmMessage)) {
       return;
     }
     
     detailItems = detailItems.map(item => {
-      if (item.isCash) {
+      if (item.isCash && !item.hasPresetCashPrice) {  // ✅ 수정
         const originalAmount = item.quantity * item.cashPrice;
         const discountedAmount = originalAmount * 0.95;
         const roundedAmount = Math.floor(discountedAmount / 100) * 100;
@@ -854,7 +912,8 @@
       shopName: '',
       customerCode: '',
       customerName: '',
-      memo: ''
+      memo: '',
+      rand:''
     };
     
     detailItems = [];
@@ -986,14 +1045,13 @@
         
         saveSuccess = result.message || '매출이 성공적으로 저장되었습니다.';
         
+        // 👇 신규 저장 여부 판단
+        const isNewSale = !selectedSaleSlip;  // 저장 전 selectedSaleSlip이 없으면 신규
+        
         if (result.slipNo) {
           selectedSaleSlip = result.slipNo;
-          console.log('저장된 매출번호:', result.slipNo);
-          
-          if (result.rand) {
-            const receiptUrl = `/receipt?slip=${result.slipNo}&rand=${result.rand}&shop=${result.shop}&date=${result.date}`;
-            console.log('영수증 URL:', receiptUrl);
-          }
+          saleInfo.rand = result.rand || '';  // 👈 이 줄 추가
+          console.log('저장된 매출번호:', result.slipNo, 'RAND:', saleInfo.rand);
         }
         
         setTimeout(() => {
@@ -1001,7 +1059,21 @@
         }, 1000);
 
         handleSearch();
-        resetAll();
+        // 👇 신규 저장이고 체크박스 체크되어 있을 때만 자동 출력
+        if (autoPrintAfterSave && isNewSale && result.slipNo && saleInfo.rand) {
+          console.log('신규 저장 - 자동 출력 시작...');
+          // detailItems와 selectedSaleSlip이 유지된 상태에서 출력
+          setTimeout(() => {
+            printReceipt();
+            // 출력 후 초기화
+            setTimeout(() => {
+              resetAll();
+            }, 1000);
+          }, 500);
+        } else {
+          console.log('수정 저장 또는 자동출력 OFF - 즉시 초기화');
+          resetAll();  // 자동 출력 안 할 때만 바로 초기화
+        }
         
         console.log('매출등록 저장 완료');
         
@@ -1090,7 +1162,200 @@
     }
   }
 
+  // Blob을 Base64로 변환하는 함수 추가 (함수 선언 부분에)
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+  // 내역서 출력 함수
+  async function printReceipt() {
+    if (!selectedSaleSlip) {
+      showToast('❌ 출력할 매출이 선택되지 않았습니다.', 'error');
+      return;
+    }
 
+    if (!detailItems || !Array.isArray(detailItems) || detailItems.length === 0) {
+      showToast('❌ 출력할 내역이 없습니다.', 'error');
+      return;
+    }
+
+    try {
+      console.log('📄 영수증 출력 시작:', selectedSaleSlip);
+      
+      const qrUrl = `https://postcard.akojeju.com/receipt.php?sale_id=${selectedSaleSlip}_${saleInfo.rand}`;
+      
+      // 로고 이미지 준비
+      let logoLayoutItem = null;
+      
+      if (logoImages && logoImages.length > 0) {
+        const currentLogo = logoImages[logoImageIndex % logoImages.length];
+        console.log('현재 로고:', currentLogo);
+        
+        try {
+          // 이미지 fetch (캐시에서 자동으로 가져옴)
+          const logoImageUrl = getProxyImageUrl(currentLogo.code);
+          const logoResponse = await fetch(logoImageUrl);
+          const logoBlob = await logoResponse.blob();
+          const logoBase64 = await blobToBase64(logoBlob);
+          
+          logoLayoutItem = {
+            type: 'logo',
+            path: logoBase64,
+            width: 500,
+            align: 'center',
+            marginBottom: 20,
+            qrData: qrUrl,
+            qrX: parseInt(currentLogo.qrx) || 0,
+            qrY: parseInt(currentLogo.qry) || 0,
+            qrSize: 120,
+            qrText: '▲디지털 엽서',  
+            qrTextSize: 20           
+          };
+          
+          // 다음 출력을 위해 인덱스 증가
+          logoImageIndex++;
+          
+          console.log('로고 Base64 변환 완료, QR 위치:', currentLogo.qrx, currentLogo.qry);
+        } catch (err) {
+          console.error('로고 이미지 로드 실패:', err);
+        }
+      }
+      
+      // 영수증 레이아웃 정의
+      const receiptLayout = [
+        // 로고 (있으면 추가)
+        ...(logoLayoutItem ? [logoLayoutItem] : []),
+        
+        // 텍스트 로고 (로고 이미지 없을 때만)
+        ...(!logoLayoutItem ? [{
+          type: 'text',
+          content: 'AKOJEJU',
+          fontSize: 32,
+          bold: true,
+          align: 'center',
+          marginBottom: 20
+        }] : []),
+        
+        /*
+        // 2. QR 코드 (크기 증가)
+        {
+          type: 'qrcode',
+          data: 'https://brand.akojeju.com',
+          size: 128,  // 100 → 120
+          align: 'center',
+          errorCorrectionLevel: 'H',
+          marginBottom: 15
+        },
+       
+
+        // 3. QR 설명
+        {
+          type: 'text',
+          content: '▲디지털 엽서',
+          fontSize: 18,  // 14 → 18
+          align: 'center',
+          marginBottom: 25
+        },
+   
+        
+        // 4. 매장 정보
+        {
+          type: 'text',
+          content: '아코제주 본점',
+          fontSize: 22,  // 12 → 20
+          align: 'left',
+          marginBottom: 8
+        },
+        */
+        // 3. 일자
+        {
+          type: 'text',
+          content: `일자  ${saleInfo.date}`,
+          fontSize: 22,  // 12 → 20
+          align: 'left',
+          marginBottom: 8
+        },
+        
+        // 4. 번호
+        {
+          type: 'text',
+          content: `번호  ${selectedSaleSlip}`,
+          fontSize: 22,  // 12 → 20
+          align: 'left',
+          marginBottom: 25
+        },
+
+        // 5. 상품 리스트
+        ...detailItems.map(item => ({
+          type: 'product-line',
+          name: item.itemName || item.itemCode || '',
+          price: item.isCash ? (parseInt(item.cashPrice) || 0) : (parseInt(item.cardPrice) || 0),
+          quantity: parseInt(item.quantity) || 0,
+          total: parseInt(item.amount) || 0,
+          fontSize: 22,  // 11 → 20
+          marginBottom: 10
+        })),
+        
+        // 6. 공백
+        {
+          type: 'space',
+          lines: 1
+        },
+        
+        // 7. 합계 - product-line 형식으로 변경
+        {
+          type: 'product-line',
+          name: '합계',
+          price: 0,  // 단가는 표시 안 함
+          quantity: summaryData.totalQty,
+          total: summaryData.totalAmount,
+          fontSize: 22,
+          marginBottom: 25
+        },
+        
+        // 8. 웹사이트
+        {
+          type: 'text',
+          content: 'www.akojeju.com',
+          fontSize: 22,  // 12 → 20
+          align: 'center',
+          marginBottom: 15
+        }
+      ];
+
+      // 프린터 서버로 출력 요청
+      const response = await fetch('https://localhost:8443/print-receipt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          receiptData: {
+            layout: receiptLayout
+          }
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        showToast('✅ 내역서 출력 완료!', 'success');
+        console.log('영수증 출력 성공');
+      } else {
+        throw new Error(result.message || '출력 실패');
+      }
+
+    } catch (error) {
+      console.error('영수증 출력 오류:', error);
+      showToast(`❌ 출력 실패\n${error.message}`, 'error');
+    }
+  }
+
+/*
   // 페이지 로드 시 초기화
   onMount(async () => {
     layoutConstants = getLayoutConstants();
@@ -1137,7 +1402,56 @@
       }
     };
   });
+*/
 
+  onMount(async () => {
+    layoutConstants = getLayoutConstants();
+    
+    const today = new Date().toISOString().split('T')[0];
+    startDate = today;
+    endDate = today;
+    saleInfo.date = today;
+
+    await loadSaleCategoryList();
+    await loadShopList();
+    await loadCustomerList();
+
+    leftPanelVisible = window.innerWidth > 740;
+    
+    await loadCompanyList();
+    
+    // 로고 이미지 코드 조회 및 캐싱
+    await loadLogoImages();
+    
+    const detectBackofficeMenu = () => {
+      const sidebar = document.querySelector('.sidebar');
+      if (sidebar) {
+        backofficeMenuOpen = sidebar.classList.contains('open');
+        if (window.innerWidth <= 740 && backofficeMenuOpen) {
+          leftPanelVisible = false;
+        }
+      }
+    };
+    
+    const observer = new MutationObserver(detectBackofficeMenu);
+    const sidebar = document.querySelector('.sidebar');
+    if (sidebar) {
+      observer.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
+    }
+
+    setTimeout(() => {
+      if (barcodeInput) {
+        barcodeInput.focus();
+      }
+    }, 500);
+    
+    return () => {
+      observer.disconnect();
+      if (typeof document !== 'undefined') {
+        document.body.style.overflow = '';
+      }
+    };
+  });
 
   
 
@@ -1219,6 +1533,29 @@
             >
               삭제
             </button>
+
+            <!-- 4. 내역서 버튼 -->
+            <button 
+              type="button"
+              on:click={printReceipt}
+              disabled={!selectedSaleSlip || detailItems.length === 0}
+              class="px-3 py-1 text-xs rounded transition-colors duration-200 
+                    {(selectedSaleSlip && detailItems.length > 0)
+                      ? 'bg-green-600 text-white hover:bg-green-700' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'}"
+              title={(selectedSaleSlip && detailItems.length > 0) ? '내역서 출력' : '출력할 매출이 없습니다'}
+            >
+              <div class="flex items-center gap-1">
+                <input 
+                  type="checkbox" 
+                  bind:checked={autoPrintAfterSave}
+                  class="w-3 h-3"
+                  on:click|stopPropagation
+                />
+                <span>내역서</span>
+              </div>
+            </button>
+
           </div>
 
           <!-- 저장/삭제 결과 메시지 (기존 success/error 메시지 아래에 추가) -->
@@ -1488,7 +1825,15 @@
                             <!-- 엽서 -->
                             <td class="border-r border-gray-300 text-center" style="padding: 6px;">
                               <div style="font-size: 0.65rem;">
-                                {sale.POST_SLIP ? '✓' : '-'}
+                                {#if sale.POST_SLIP}
+                                  <button 
+                                    on:click|stopPropagation={() => openPostcard(sale.DNHD_SLIP, sale.DNHD_RAND)}
+                                  >
+                                    ✓
+                                  </button>
+                                {:else}
+                                  -
+                                {/if}
                               </div>
                             </td>
 
