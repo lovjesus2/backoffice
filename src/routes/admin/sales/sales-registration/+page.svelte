@@ -7,6 +7,7 @@
   import ImageModalStock from '$lib/components/ImageModalStock.svelte';
   import { getLayoutConstants } from '$lib/utils/deviceUtils';
   import ProductSearchPopup from '$lib/components/ProductSearchPopup.svelte'; // 품목검색 팝업
+  import BarcodeInput from '$lib/components/BarcodeInput.svelte'; //바코드 스캔
   
   export let data;
   
@@ -514,12 +515,18 @@ let logoImageIndex = 0;
   }
 
   // 바코드 입력 처리
-  async function handleBarcodeKeydown(event) {
-    if (event.key === 'Enter' && barcodeValue.trim()) {
-      event.preventDefault();
-      await searchAndAddProduct(barcodeValue.trim().toUpperCase());
-      barcodeValue = '';
+  async function handleBarcodeSearch(event) {
+    const { code } = event.detail;
+    if (code) {
+      await searchAndAddProduct(code.toUpperCase());
     }
+  }
+
+  // 에러 처리 추가
+  function handleScanError(event) {
+    console.error('바코드 스캔 오류:', event.detail);
+    error = '바코드 스캔 중 오류가 발생했습니다.';
+    setTimeout(() => error = '', 3000);
   }
 
   // 제품 검색 및 추가(바코드)
@@ -540,7 +547,7 @@ let logoImageIndex = 0;
       if (result.success && result.data) {
         const productInfo = result.data;
         
-        const existingIndex = detailItems.findIndex(item => item.itemCode === productCode);
+        const existingIndex = detailItems.findIndex(item => item.itemCode === productInfo.code);
         
         if (existingIndex >= 0) {
           detailItems[existingIndex].quantity++;
@@ -548,11 +555,11 @@ let logoImageIndex = 0;
             detailItems[existingIndex].cashPrice : 
             detailItems[existingIndex].cardPrice;
           detailItems[existingIndex].amount = detailItems[existingIndex].quantity * unitPrice;
-          console.log('기존 제품 수량 증가:', productCode);
+          console.log('기존 제품 수량 증가:', productInfo.code);
         } else {
           const newItem = {
             seq: detailItems.length + 1,
-            itemCode: productCode,
+            itemCode: productInfo.code,
             itemName: productInfo.name || '',
             itemDescription: productInfo.description || '',
             hasPresetCashPrice: productInfo.cash_status || false,  // 현금할인
@@ -583,12 +590,12 @@ let logoImageIndex = 0;
         
       } else {
         console.error('제품을 찾을 수 없습니다:', productCode);
-        alert(result.message || `제품 코드 '${productCode}'를 찾을 수 없습니다.`);
+        showToast(result.message || `제품 코드 '${productCode}'를 찾을 수 없습니다.`, 'error');
       }
       
     } catch (error) {
       console.error('제품 검색 오류:', error);
-      alert('제품 검색 중 오류가 발생했습니다.');
+      showToast('제품 검색 중 오류가 발생했습니다.', 'error');
     } finally {
       isSearchingProduct = false;
       
@@ -2056,17 +2063,13 @@ let logoImageIndex = 0;
                   <h3 class="text-gray-800 m-0" style="font-size: 0.9rem;">상세내역</h3>
                   <div class="flex items-center gap-1">
                     <!-- 바코드 입력 -->
-                    <input 
-                      type="text" 
-                      bind:this={barcodeInput}
+                    <BarcodeInput
                       bind:value={barcodeValue}
-                      on:keydown={handleBarcodeKeydown}
-                      class="border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                      style="padding: 4px 8px; font-size: 0.75rem; width: 150px; text-transform: uppercase; ime-mode: disabled;"
                       placeholder="바코드 스캔..."
-                      inputmode="latin"
-                      autocomplete="off"
-                      lang="en"
+                      showCamera="auto"
+                      autoSearch={true}
+                      on:search={handleBarcodeSearch}
+                      on:error={handleScanError}
                     />
                     
                     <!-- 전체 현금 체크박스 -->
