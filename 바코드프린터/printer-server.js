@@ -34,8 +34,8 @@ const CONFIG = {
 
 function loadSSLCert() {
   console.log('인증서 로드 중...');
-  const certFile = 'localhost+2.pem';
-  const keyFile = 'localhost+2-key.pem';
+  const certFile = 'localhost.pem';
+  const keyFile = 'llocalhost-key.pem';
   
   if (!fs.existsSync(certFile) || !fs.existsSync(keyFile)) {
     console.error('인증서 파일 없음');
@@ -202,6 +202,17 @@ async function generateQRCodeESCPOS(qrData, options = {}) {
   }
 }
 
+// ⭐ 여기에 추가 (generateReceiptFromLayout 함수 바로 위)
+function escapeXml(unsafe) {
+  if (!unsafe) return '';
+  return String(unsafe)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 async function generateReceiptFromLayout(receiptData) {
   console.log(`영수증 이미지 생성 (${receiptData.layout?.length || 0}개 요소)`);
   
@@ -345,12 +356,15 @@ async function generateReceiptFromLayout(receiptData) {
             }
             break;
           
-          case 'text':
+          case 'text': 
             if (item.content) {
               const fontSize = item.fontSize || 12;
               const fontWeight = item.bold ? 'bold' : 'normal';
               const textHeight = fontSize + 10;
               
+              // ⭐ 함수 호출
+              const safeContent = escapeXml(item.content);
+
               let textAnchor = 'start';
               let textX = 20;
               if (item.align === 'center') {
@@ -361,6 +375,7 @@ async function generateReceiptFromLayout(receiptData) {
                 textX = width - 20;
               }
               
+
               const textSvg = `
                 <svg width="${width}" height="${textHeight}">
                   <text x="${textX}" y="${fontSize + 2}" 
@@ -368,7 +383,7 @@ async function generateReceiptFromLayout(receiptData) {
                         font-size="${fontSize}" 
                         font-weight="${fontWeight}"
                         text-anchor="${textAnchor}"
-                        fill="#000000">${item.content}</text>
+                        fill="#000000">${safeContent}</text>
                 </svg>
               `;
               
@@ -387,6 +402,7 @@ async function generateReceiptFromLayout(receiptData) {
               const fontSize = item.fontSize || 12;
               const lineHeight = fontSize + 8;
               
+
               // 글자 수 고정 (폰트 크기별)
               let maxCharsPerLine;
               if (fontSize <= 12) {
@@ -401,6 +417,10 @@ async function generateReceiptFromLayout(receiptData) {
               let line1 = item.name.substring(0, maxCharsPerLine);
               let line2 = item.name.length > maxCharsPerLine ? 
                           item.name.substring(maxCharsPerLine, maxCharsPerLine * 2) : '';
+
+              // ⭐ 이스케이프
+              line1 = escapeXml(line1);
+              line2 = escapeXml(line2);
               
               const nameSvg = `
                 <svg width="280" height="${lineHeight * 2}">
