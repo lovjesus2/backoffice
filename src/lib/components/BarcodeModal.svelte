@@ -65,7 +65,7 @@
     try {
       console.log('🔍 TSC 연결 확인 시도... (iframe 방식)');
       
-      const result = await accessTSCViaIframe('https://localhost:8443/status', 'GET');
+      const result = await accessTSCViaIframe('https://LAPTOP-IN37RDJM.local:8443/status', 'GET');
       
       if (result.success) {
         const data = result.data;
@@ -150,7 +150,7 @@
     });
   }
   
-  // TSC 프린터로 라벨 출력 (iframe 방식)
+  // TSC 프린터로 라벨 출력 (다이렉트 방식)
   async function printToTSC() {
     if (!productData || isPrinting) return;
     
@@ -184,16 +184,16 @@
         quantity: printQuantity
       };
       
-      const result = await accessTSCViaIframe('https://localhost:8443/print', 'POST', requestData);
+      const result = await accessTSCViaIframe('https://LAPTOP-IN37RDJM.local:8443/print', 'POST', requestData);
       
       if (result.success) {
-        printStatus = `✅ TSC 출력 완료! (${printQuantity}장)`;
-        console.log('✅ TSC 출력 성공:', result.data?.message);
+        printStatus = `✅ 바코드 출력 완료! (${printQuantity}장)`;
+        console.log('✅ 바코드 출력 성공:', result.data?.message);
         
         // 자동 출력 모드일 때는 성공 이벤트 발생
         if (autoPrint) {
           dispatch('printSuccess', { 
-            message: `TSC 바코드 출력 완료 (${printQuantity}장)`,
+            message: `바코드 출력 완료 (${printQuantity}장)`,
             product: productData,
             quantity: printQuantity
           });
@@ -203,7 +203,7 @@
           if (isOpen) closeModal();
         }, 1500);
       } else {
-        printStatus = '❌ TSC 출력 실패';
+        printStatus = '❌ 바코드 출력 실패';
         
         if (autoPrint) {
           dispatch('printError', { 
@@ -211,7 +211,7 @@
             product: productData 
           });
         } else {
-          alert('TSC 출력 실패: ' + result.error);
+          alert('바코드 출력 실패: ' + result.error);
         }
       }
       
@@ -235,7 +235,7 @@
     }
   }
   
-  // TSC 명령어 생성 (30mm x 20mm 라벨)
+  // TSC 명령어 생성 (30mm x 10mm 라벨)
   function generateTSCCommands({ productCode, productName, proudctPrice, quantity = 1 }) {
     let commands = '';
 
@@ -280,6 +280,56 @@
     // 제품코드 텍스트 (항상 출력)
     // 위치: x=20, y=100 (하단)
     commands += `TEXT 160,60,"1",0,1,1,"${proudctPrice}"\r\n`;
+    
+    // 출력 명령 (quantity장, 복사본 1장)
+    commands += `PRINT ${quantity},1\r\n`;
+    
+    return commands;
+  }
+
+  function generateTSCCommandsQr({ QrCode, quantity = 1 }) {
+    let commands = '';
+
+    // SPEED 인쇄속도( 1.0(TTP-242만) , 1.5 , 2.0 , 3.0(TTP-243만) )
+    commands += 'SPEED 3.0\r\n';
+    // DENSITY 인쇄농도(0-15)
+    commands += 'DENSITY 10\r\n';
+
+    // SET CUTTER 커터사용유무 및 인쇄수량에 따른 커터 ( OFF , BATCH , pieces(0-127) )
+    // OFF (사용안함), BATCH(사용), pieces( 만약 2라는 값을 주면 2장 인쇄 후 Cut )
+    commands += 'SET CUTTER OFF\r\n';
+
+    // SET RIBBON 사용유무( ON,OFF)
+    commands += 'SET RIBBON ON\r\n';
+  
+    // SET PEEL 사용유무 ( ON , OFF )
+    // PEEL 사용 시 한번 인쇄 후 라벨을 벗겨내야만 다음 인쇄로 들어감
+    commands += 'SET PEEL OFF\r\n';
+
+    // DIRECTION 인쇄방향(0, 1)
+    commands += 'DIRECTION 1\r\n';
+
+    // 라벨 크기 설정 (30mm x 20mm)
+    commands += 'SIZE 30 mm, 10 mm\r\n';
+
+    // GAP 라벨사이의 거리,라벨사이의 거리에서 차감
+    commands += 'GAP 3 mm, 0 mm\r\n';
+
+    commands += 'REFERENCE 0, 0\r\n';   
+    // 이미지 버퍼 지움 ( Memory Clear )
+    commands += 'CLS\r\n';
+
+    // 카운터(시리얼)설정 : @1로 정의 2씩증가
+    // SET COUNTER @n(0~49) setp(-999999999~999999999)
+    commands += 'SET COUNTER @1 1\r\n';
+
+    // 바코드 출력 (QR코드)
+    // 위치: x=30, y=6 (라벨 왼쪽)
+    // 위치: x=145, y=6 (라벨 오른쪽)
+   
+    commands += `QRCODE 30,6,L,3,A,0,M2,"${QrCode}"\r\n`;
+    commands += `QRCODE 145,6,L,3,A,0,M2,"${QrCode}"\r\n`;
+    
     
     // 출력 명령 (quantity장, 복사본 1장)
     commands += `PRINT ${quantity},1\r\n`;

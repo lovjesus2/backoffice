@@ -83,16 +83,23 @@
   
   // 키보드 입력 처리 (바코드 스캐너 기기)
   function handleKeydown(event) {
-    if (event.key === 'Enter' && value && autoSearch) {
+    if (event.key === 'Enter') {
       event.preventDefault();
-      handleSearch(value, 'device');
       
-      // ✅ Enter 후 input 초기화 (PC 바코드 스캐너)
-      setTimeout(() => {
-        value = '';
-      }, 100);
+      if (value && autoSearch) {
+        // 값이 있으면 기존 검색 동작
+        handleSearch(value, 'device');
+        
+        setTimeout(() => {
+          value = '';
+        }, 100);
+      } else {
+        // 값이 없으면 검색 버튼 동작 이벤트 발생
+        dispatch('emptySearch');
+      }
     }
   }
+  
   
   // 검색 실행
   function handleSearch(code, source = 'manual') {
