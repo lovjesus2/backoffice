@@ -522,6 +522,12 @@ let logoImageIndex = 0;
     }
   }
 
+  // 빈 엔터 처리 (검색 버튼 동작)
+  function handleEmptySearch() {
+    console.log('빈 엔터 입력 - 검색 팝업 열기');
+    showProductPopup = true;
+  }
+
   // 에러 처리 추가
   function handleScanError(event) {
     console.error('바코드 스캔 오류:', event.detail);
@@ -2019,37 +2025,54 @@ let logoImageIndex = 0;
             </div>
 
             <!-- 합계 정보 카드 (상세내역 위에) -->
-            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg mb-1" style="padding: 6px;">
-              <div class="grid grid-cols-3 gap-1 text-xs">
+            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg mb-1" style="padding: 8px;">
+              <div class="grid grid-cols-3 gap-2">
+                
                 <!-- 전체 합계 -->
-                <div class="bg-white rounded border border-blue-100" style="padding: 2px; text-align: center;">
-                  <div class="text-gray-600 font-medium" style="font-size: 0.65rem;">
-                    전체 ({summaryData.totalQty.toLocaleString('ko-KR')}개)
+                <div class="bg-white rounded border border-green-200 relative overflow-hidden" style="padding: 5px; padding-top: 40px;">
+                  <!-- 상단 배지 바 -->
+                  <div class="absolute top-0 left-0 right-0 bg-green-400 text-white text-center py-1">
+                    <span class="text-xs font-bold">전체</span>
                   </div>
-                  <div class="font-bold text-blue-900" style="font-size: 0.65rem;">
-                    {summaryData.totalAmount.toLocaleString('ko-KR')}원
+                  <!-- 금액 + 수량 -->
+                  <div class="text-center">
+                    <div class="font-bold text-gray-800 mb-1" style="font-size: 0.85rem;">
+                      {summaryData.totalAmount.toLocaleString('ko-KR')}원
+                      ({summaryData.totalQty.toLocaleString('ko-KR')}개)
+                    </div>
                   </div>
                 </div>
                 
                 <!-- 카드 합계 -->
-                <div class="bg-white rounded border border-green-100" style="padding: 2px; text-align: center;">
-                  <div class="text-gray-600 font-medium" style="font-size: 0.65rem;">
-                    카드 ({summaryData.cardQty.toLocaleString('ko-KR')}개)
+                <div class="bg-white rounded border border-gray-200 relative overflow-hidden" style="padding: 5px; padding-top: 40px;">
+                  <!-- 상단 배지 바 -->
+                  <div class="absolute top-0 left-0 right-0 bg-gray-100 border-b border-gray-300 text-gray-800 text-center py-1">
+                    <span class="text-xs font-bold">카드</span>
                   </div>
-                  <div class="font-bold text-green-700" style="font-size: 0.65rem;">
-                    {summaryData.cardAmount.toLocaleString('ko-KR')}원
+                  <!-- 금액 + 수량 -->
+                  <div class="text-center">
+                    <div class="font-bold text-gray-800 mb-1" style="font-size: 0.85rem;">
+                      {summaryData.cardAmount.toLocaleString('ko-KR')}원
+                      ({summaryData.cardQty.toLocaleString('ko-KR')}개)
+                    </div>
                   </div>
                 </div>
                 
                 <!-- 현금 합계 -->
-                <div class="bg-white rounded border border-yellow-100" style="padding: 2px; text-align: center;">
-                  <div class="text-gray-600 font-medium" style="font-size: 0.65rem;">
-                    현금 ({summaryData.cashQty.toLocaleString('ko-KR')}개)
+                <div class="bg-white rounded border border-pink-200 relative overflow-hidden" style="padding: 5px; padding-top: 40px;">
+                  <!-- 상단 배지 바 -->
+                  <div class="absolute top-0 left-0 right-0 bg-pink-300 text-white text-center py-1">
+                    <span class="text-xs font-bold">현금</span>
                   </div>
-                  <div class="font-bold text-yellow-700" style="font-size: 0.65rem;">
-                    {summaryData.cashAmount.toLocaleString('ko-KR')}원
+                  <!-- 금액 + 수량 -->
+                  <div class="text-center">
+                    <div class="font-bold text-gray-800 mb-1" style="font-size: 0.85rem;">
+                      {summaryData.cashAmount.toLocaleString('ko-KR')}원
+                      ({summaryData.cashQty.toLocaleString('ko-KR')}개)
+                    </div>
                   </div>
                 </div>
+                
               </div>
             </div>
 
@@ -2070,6 +2093,7 @@ let logoImageIndex = 0;
                       autoSearch={true}
                       on:search={handleBarcodeSearch}
                       on:error={handleScanError}
+                      on:emptySearch={handleEmptySearch}
                     />
                     
                     <!-- 전체 현금 체크박스 -->
