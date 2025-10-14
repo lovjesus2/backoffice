@@ -4,7 +4,7 @@
   import { browser } from '$app/environment';
   import { imageModalStore, closeImageModal } from '$lib/utils/imageModalUtils';
   import { simpleCache } from '$lib/utils/simpleImageCache.js';
-  import BarcodeModal from '$lib/components/BarcodeModal.svelte';
+  import DirectPrint from '$lib/components/DirectPrint.svelte';
 
   const dispatch = createEventDispatcher();
 
@@ -32,7 +32,7 @@
   // 재고 관리 관련 상태
   let adjustingStock = new Set();
   let selectedProduct = null;
-  let barcodeModal;
+  let directPrint;
 
   // 모바일 체크
   function checkMobile() {
@@ -441,8 +441,36 @@
     console.log('출력 수량:', quantity);
     
     // 바코드 출력 실행
-    if (barcodeModal) {
-      barcodeModal.directPrint(quantity);
+    if (directPrint) {
+      directPrint.directPrint(quantity);
+    }
+  }
+
+  // QR코드 출력
+  // QR 코드 출력 함수 추가
+  async function printQRCode(product) {
+    console.log('QR 코드 출력 시작:', product);
+    
+    // QR 데이터 생성 (제품의 qrCode 필드 사용하거나 기본 URL)
+    const qrData = product.qrCode || `https://brand.akojeju.com`;
+    
+    // 수량 (기본 1장)
+    const quantity = 1;
+    
+    showToast(`🖨️ QR 코드 ${quantity}장 출력 중...`, 'info');
+    
+    // selectedProduct 업데이트
+    selectedProduct = {
+      code: product.code,
+      name: product.name,
+      price: product.price || 0
+    };
+    
+    await tick();
+    
+    // QR 출력 실행
+    if (directPrint) {
+      directPrint.directPrint('qr', qrData, quantity); // ✅ 이렇게 수정
     }
   }
 
@@ -456,6 +484,16 @@
   function handlePrintError(event) {
     console.error('출력 실패:', event.detail.error);
     showToast('❌ 바코드 출력 실패: ' + event.detail.error, 'error');
+  }
+
+  function handleQRPrintSuccess(event) {
+    console.log('✅ QR 출력 성공:', event.detail);
+    // 성공 토스트나 알림 표시 (선택사항)
+  }
+
+  function handleQRPrintError(event) {
+    console.error('❌ QR 출력 실패:', event.detail);
+    // 에러 토스트나 알림 표시 (선택사항)
   }
 
   // 재고 조정 값 처리
@@ -704,11 +742,18 @@
                 
                 <button 
                   type="button"
-                  class="bg-purple-500 text-white border-0 rounded px-3 py-2 text-sm hover:bg-blue-600 flex-1"
+                  class="border-0 rounded px-3 py-2 text-sm flex-1 {
+                    (productData?.qrCode || productData?.PROH_QRCD) 
+                      ? 'bg-purple-500 text-white hover:bg-purple-600' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }"
+                  disabled={!(productData?.qrCode || productData?.PROH_QRCD)}
                   on:click={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    printQRCode(productData);
+                    if (productData?.qrCode || productData?.PROH_QRCD) {
+                      printQRCode(productData);
+                    }
                   }}
                 >
                   QR코드
@@ -790,8 +835,8 @@
 {/if}
 
 <!-- 바코드 출력 컴포넌트 (숨겨져 있지만 직접 출력용) -->
-<BarcodeModal 
-  bind:this={barcodeModal}
+<DirectPrint 
+  bind:this={directPrint}
   bind:productData={selectedProduct}
   on:printSuccess={handlePrintSuccess}
   on:printError={handlePrintError}
