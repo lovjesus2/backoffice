@@ -28,7 +28,8 @@ export async function GET({ url, locals }) {
     // ✅ 수정된 SQL: L5(단종)와 L6(재고사용) 모두 조회
     const sql = `
       SELECT p.PROH_CODE, 
-            p.PROH_NAME, 
+            p.PROH_NAME,
+            p.PROH_QRCD, 
             d.DPRC_SOPR, 
             d.DPRC_BAPR,
             COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
@@ -48,7 +49,7 @@ export async function GET({ url, locals }) {
       WHERE p.PROH_GUB1 = 'A1'
         AND p.PROH_GUB2 = 'AK'
         AND p.PROH_CODE = ?
-      GROUP BY p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, h.HYUN_QTY1
+      GROUP BY p.PROH_CODE, p.PROH_NAME, p.PROH_QRCD, d.DPRC_SOPR, d.DPRC_BAPR, h.HYUN_QTY1
     `;
     
     console.log('실행할 SQL:', sql);
@@ -68,6 +69,7 @@ export async function GET({ url, locals }) {
     const product = {
       code: rows[0].PROH_CODE,
       name: rows[0].PROH_NAME,
+      qrCode: rows[0].PROH_QRCD || '',
       cost: parseInt(rows[0].DPRC_BAPR) || 0,
       price: parseInt(rows[0].DPRC_SOPR) || 0,
       stock: parseInt(rows[0].CURRENT_STOCK) || 0,

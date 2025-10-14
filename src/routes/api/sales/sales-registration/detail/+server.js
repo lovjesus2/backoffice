@@ -127,7 +127,7 @@ export async function GET({ url, locals }) {
         discountType: row.YOUL_GUBN,
         image: row.IMAGE || '',
         postMessage: row.POST_MESS,
-        cash_status: row.HYGB,
+        hasPresetCashPrice: row.HYGB === '1',
         hyunCode: row.HYUN
     }));
     
