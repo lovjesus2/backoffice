@@ -34,8 +34,8 @@ const CONFIG = {
 
 function loadSSLCert() {
   console.log('인증서 로드 중...');
-  const certFile = 'localhost.pem';
-  const keyFile = 'llocalhost-key.pem';
+  const certFile = 'localhost+2.pem';
+  const keyFile = 'localhost+2-key.pem';
   
   if (!fs.existsSync(certFile) || !fs.existsSync(keyFile)) {
     console.error('인증서 파일 없음');
