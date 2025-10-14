@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { simpleCache } from '$lib/utils/simpleImageCache';
   import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
-  import BarcodeModal from '$lib/components/BarcodeModal.svelte';
+  import DirectPrint from '$lib/components/DirectPrint.svelte';
 
   // 상태 관리
   let searchTerm = '';
@@ -16,7 +16,7 @@
   let authenticated = false;
   
   // 바코드 출력 관련 상태 (변경됨)
-  let barcodeModal; // ref로 사용
+  let directPrint; // ref로 사용
   let selectedProduct = null;
   let shouldAutoPrint = false;
   
@@ -328,8 +328,35 @@
     console.log('출력 수량:', quantity);
     
     // 바코드 출력 실행
-    if (barcodeModal) {
-      barcodeModal.directPrint(quantity);
+    if (directPrint) {
+      directPrint.directPrint(quantity);
+    }
+  }
+
+  // QR 코드 출력 함수 추가
+  async function printQRCode(product) {
+    console.log('QR 코드 출력 시작:', product);
+    
+    // QR 데이터 생성 (제품의 qrCode 필드 사용하거나 기본 URL)
+    const qrData = product.qrCode || `https://brand.akojeju.com`;
+    
+    // 수량 (기본 1장)
+    const quantity = 1;
+    
+    showToast(`🖨️ QR 코드 ${quantity}장 출력 중...`, 'info');
+    
+    // selectedProduct 업데이트
+    selectedProduct = {
+      code: product.code,
+      name: product.name,
+      price: product.price || 0
+    };
+    
+    await tick();
+    
+    // QR 출력 실행
+    if (directPrint) {
+      directPrint.directPrint('qr', qrData, quantity); // ✅ 이렇게 수정
     }
   }
   
@@ -667,8 +694,8 @@
 </div>
 
 <!-- 바코드 출력 컴포넌트 (숨겨져 있지만 직접 출력용) -->
-<BarcodeModal 
-  bind:this={barcodeModal}
+<DirectPrint
+  bind:this={directPrint}
   bind:productData={selectedProduct}
   on:printSuccess={handlePrintSuccess}
   on:printError={handlePrintError}

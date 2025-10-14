@@ -8,7 +8,8 @@
   import { getLayoutConstants } from '$lib/utils/deviceUtils';
   import ProductSearchPopup from '$lib/components/ProductSearchPopup.svelte'; // 품목검색 팝업
   import BarcodeInput from '$lib/components/BarcodeInput.svelte'; //바코드 스캔
-  
+  import DirectPrint from '$lib/components/DirectPrint.svelte';
+
   export let data;
   
   // =============================================================================
@@ -90,6 +91,7 @@
   let customerList = [];
   
   // 바코드 관련
+  let directPrint;
   let barcodeInput;
   let barcodeValue = '';
   
@@ -124,8 +126,9 @@
   let discountTypeOptions = [];
 
 // 로고이미지 변수
-let logoImages = [];
-let logoImageIndex = 0;
+  let directPrinter; // DirectPrint 컴포넌트 참조
+  let logoImages = []; // 로고 이미지 목록
+  let logoImageIndex = 0; // 현재 로고 인덱스
   
   // =============================================================================
   // Reactive Statements (변수 선언 후에 배치)
@@ -1184,189 +1187,96 @@ let logoImageIndex = 0;
       reader.readAsDataURL(blob);
     });
   }
+
+  function handlePrintSuccess(event) {
+    console.log('✅ 출력 성공:', event.detail);
+    showToast('✅ 내역서 출력 완료!', 'success');
+  }
+
+  function handlePrintError(event) {
+    console.error('❌ 출력 실패:', event.detail);
+    showToast(`❌ 출력 실패: ${event.detail.error}`, 'error');
+  }
+
   // 내역서 출력 함수
   async function printReceipt() {
-    if (!selectedSaleSlip) {
-      showToast('❌ 출력할 매출이 선택되지 않았습니다.', 'error');
-      return;
-    }
-
-    if (!detailItems || !Array.isArray(detailItems) || detailItems.length === 0) {
-      showToast('❌ 출력할 내역이 없습니다.', 'error');
-      return;
-    }
-
-    try {
-      console.log('📄 영수증 출력 시작:', selectedSaleSlip);
-      
-      const qrUrl = `https://postcard.akojeju.com/receipt.php?sale_id=${selectedSaleSlip}_${saleInfo.rand}`;
-      
-      // 로고 이미지 준비
-      let logoLayoutItem = null;
-      
-      if (logoImages && logoImages.length > 0) {
-        const currentLogo = logoImages[logoImageIndex % logoImages.length];
-        console.log('현재 로고:', currentLogo);
-        
-        try {
-          // 이미지 fetch (캐시에서 자동으로 가져옴)
-          const logoImageUrl = getProxyImageUrl(currentLogo.code);
-          const logoResponse = await fetch(logoImageUrl);
-          const logoBlob = await logoResponse.blob();
-          const logoBase64 = await blobToBase64(logoBlob);
-          
-          logoLayoutItem = {
-            type: 'logo',
-            path: logoBase64,
-            width: 500,
-            align: 'center',
-            marginBottom: 20,
-            qrData: qrUrl,
-            qrX: parseInt(currentLogo.qrx) || 0,
-            qrY: parseInt(currentLogo.qry) || 0,
-            qrSize: 120,
-            qrText: '▲디지털 엽서',  
-            qrTextSize: 20           
-          };
-          
-          // 다음 출력을 위해 인덱스 증가
-          logoImageIndex++;
-          
-          console.log('로고 Base64 변환 완료, QR 위치:', currentLogo.qrx, currentLogo.qry);
-        } catch (err) {
-          console.error('로고 이미지 로드 실패:', err);
-        }
-      }
-      
-      // 영수증 레이아웃 정의
-      const receiptLayout = [
-        // 로고 (있으면 추가)
-        ...(logoLayoutItem ? [logoLayoutItem] : []),
-        
-        // 텍스트 로고 (로고 이미지 없을 때만)
-        ...(!logoLayoutItem ? [{
-          type: 'text',
-          content: 'AKOJEJU',
-          fontSize: 32,
-          bold: true,
-          align: 'center',
-          marginBottom: 20
-        }] : []),
-        
-        /*
-        // 2. QR 코드 (크기 증가)
-        {
-          type: 'qrcode',
-          data: 'https://brand.akojeju.com',
-          size: 128,  // 100 → 120
-          align: 'center',
-          errorCorrectionLevel: 'H',
-          marginBottom: 15
-        },
-       
-
-        // 3. QR 설명
-        {
-          type: 'text',
-          content: '▲디지털 엽서',
-          fontSize: 18,  // 14 → 18
-          align: 'center',
-          marginBottom: 25
-        },
-   
-        
-        // 4. 매장 정보
-        {
-          type: 'text',
-          content: '아코제주 본점',
-          fontSize: 22,  // 12 → 20
-          align: 'left',
-          marginBottom: 8
-        },
-        */
-        // 3. 일자
-        {
-          type: 'text',
-          content: `일자  ${saleInfo.date}`,
-          fontSize: 22,  // 12 → 20
-          align: 'left',
-          marginBottom: 8
-        },
-        
-        // 4. 번호
-        {
-          type: 'text',
-          content: `번호  ${selectedSaleSlip}`,
-          fontSize: 22,  // 12 → 20
-          align: 'left',
-          marginBottom: 25
-        },
-
-        // 5. 상품 리스트
-        ...detailItems.map(item => ({
-          type: 'product-line',
-          name: item.itemName || item.itemCode || '',
-          price: item.isCash ? (parseInt(item.cashPrice) || 0) : (parseInt(item.cardPrice) || 0),
-          quantity: parseInt(item.quantity) || 0,
-          total: parseInt(item.amount) || 0,
-          fontSize: 22,  // 11 → 20
-          marginBottom: 10
-        })),
-        
-        // 6. 공백
-        {
-          type: 'space',
-          lines: 1
-        },
-        
-        // 7. 합계 - product-line 형식으로 변경
-        {
-          type: 'product-line',
-          name: '합계',
-          price: 0,  // 단가는 표시 안 함
-          quantity: summaryData.totalQty,
-          total: summaryData.totalAmount,
-          fontSize: 22,
-          marginBottom: 25
-        },
-        
-        // 8. 웹사이트
-        {
-          type: 'text',
-          content: 'www.akojeju.com',
-          fontSize: 22,  // 12 → 20
-          align: 'center',
-          marginBottom: 15
-        }
-      ];
-
-      // 프린터 서버로 출력 요청
-      const response = await fetch('https://localhost:8443/print-receipt', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          receiptData: {
-            layout: receiptLayout
-          }
-        })
-      });
-
-      const result = await response.json();
-      
-      if (result.success) {
-        showToast('✅ 내역서 출력 완료!', 'success');
-        console.log('영수증 출력 성공');
-      } else {
-        throw new Error(result.message || '출력 실패');
-      }
-
-    } catch (error) {
-      console.error('영수증 출력 오류:', error);
-      showToast(`❌ 출력 실패\n${error.message}`, 'error');
-    }
+  if (!selectedSaleSlip) {
+    showToast('❌ 출력할 매출이 선택되지 않았습니다.', 'error');
+    return;
   }
+
+  if (!detailItems || !Array.isArray(detailItems) || detailItems.length === 0) {
+    showToast('❌ 출력할 내역이 없습니다.', 'error');
+    return;
+  }
+
+  try {
+    console.log('📄 영수증 출력 시작:', selectedSaleSlip);
+    
+    const qrUrl = `https://postcard.akojeju.com/receipt.php?sale_id=${selectedSaleSlip}_${saleInfo.rand}`;
+    
+    // 로고 이미지 준비
+    let logoImage = null;
+    let qrX = 0, qrY = 0;
+    
+    if (logoImages && logoImages.length > 0) {
+      const currentLogo = logoImages[logoImageIndex % logoImages.length];
+      console.log('현재 로고:', currentLogo);
+      
+      try {
+        // 이미지 fetch (캐시에서 자동으로 가져옴)
+        const logoImageUrl = getProxyImageUrl(currentLogo.code);
+        const logoResponse = await fetch(logoImageUrl);
+        const logoBlob = await logoResponse.blob();
+        logoImage = await blobToBase64(logoBlob);
+        qrX = parseInt(currentLogo.qrx) || 0;
+        qrY = parseInt(currentLogo.qry) || 0;
+        
+        // 다음 출력을 위해 인덱스 증가
+        logoImageIndex++;
+        
+        console.log('로고 Base64 변환 완료, QR 위치:', qrX, qrY);
+      } catch (err) {
+        console.error('로고 이미지 로드 실패:', err);
+      }
+    }
+    
+    // DirectPrint용 영수증 데이터 구성
+    const receiptData = {
+      slipNo: selectedSaleSlip,
+      date: saleInfo.date,
+      storeName: 'AKOJEJU', // 또는 실제 매장명
+      website: 'www.akojeju.com',
+      qrUrl: qrUrl,
+      logoImage: logoImage,
+      qrX: qrX,
+      qrY: qrY,
+      items: detailItems.map(item => ({
+        itemName: item.itemName,
+        itemCode: item.itemCode,
+        quantity: item.quantity,
+        amount: item.amount,
+        isCash: item.isCash,
+        cashPrice: item.cashPrice,
+        cardPrice: item.cardPrice
+      })),
+      totalQty: summaryData.totalQty,
+      totalAmount: summaryData.totalAmount
+    };
+    
+    // DirectPrint 컴포넌트로 영수증 출력
+    if (directPrint) {
+      directPrint.directPrint('receipt', receiptData);
+    } else {
+      console.error('DirectPrint 컴포넌트 참조 없음');
+      showToast('❌ 프린터 초기화 오류', 'error');
+    }
+    
+  } catch (error) {
+    console.error('내역서 출력 오류:', error);
+    showToast(`❌ 출력 실패: ${error.message}`, 'error');
+  }
+}
 
 /*
   // 페이지 로드 시 초기화
@@ -2083,7 +1993,6 @@ let logoImageIndex = 0;
               <div class="border-b border-gray-200 flex items-center justify-between" style="padding: 10px 10px;">
                 <!-- 왼쪽: 제목 + 바코드 입력 + 전체 현금 체크박스 -->
                 <div class="flex items-center gap-1">
-                  <h3 class="text-gray-800 m-0" style="font-size: 0.9rem;">상세내역</h3>
                   <div class="flex items-center gap-1">
                     <!-- 바코드 입력 -->
                     <BarcodeInput
@@ -2325,7 +2234,13 @@ let logoImageIndex = 0;
   on:discontinuedUpdated={handleDiscontinuedUpdated}
 />
 
-
+<!-- 바코드 출력 컴포넌트 (숨겨져 있지만 직접 출력용) -->
+<DirectPrint 
+  bind:this={directPrint}
+  bind:productData={selectedProduct}
+  on:printSuccess={handlePrintSuccess}
+  on:printError={handlePrintError}
+/>
 <style>
   /* 사이드 메뉴 스크롤 제어 */
   .panel-scroll-container {

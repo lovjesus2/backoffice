@@ -16,8 +16,11 @@
   const categories = {
     site: { name: '사이트 설정', icon: '🌐', color: 'blue' },
     security: { name: '보안 설정', icon: '🔒', color: 'red' },
-    system: { name: '시스템 설정', icon: '⚙️', color: 'gray' },
-    user: { name: '사용자 설정', icon: '👥', color: 'green' }
+    system: { name: '시스템 설정', icon: '⚙️', color: 'blue' },
+    user: { name: '사용자 설정', icon: '👥', color: 'blue' },
+    sales: { name: '매출 설정', icon: '💰', color: 'blue' },
+    printer: { name: '프린터 설정', icon: '🖨️', color: 'blue' },
+    menu: { name: '메뉴 설정', icon: '📋', color: 'blue' }
   };
 
   // 설정을 카테고리별로 분류
@@ -30,9 +33,13 @@
 
   function getCategory(key) {
     if (key.includes('site_') || key.includes('admin_email')) return 'site';
-    if (key.includes('login') || key.includes('session') || key.includes('password')) return 'security';
-    if (key.includes('maintenance') || key.includes('enable_')) return 'system';
-    return 'user';
+    if (key.includes('login_') || key.includes('session_')) return 'security';
+    if (key.includes('maintenance_') || key.includes('enable_')) return 'system';
+    if (key.includes('user_')) return 'user';
+    if (key.includes('sales_')) return 'sales';
+    if (key.includes('printer_') || key.includes('computer_')) return 'printer';
+    if (key.includes('menu_save')) return 'menu';
+    return 'system'; // 기본값
   }
 
   // 시스템 정보 로드
@@ -133,20 +140,27 @@
     }, 4000);
   }
 
-  // 값 변경 핸들러
-  function handleValueChange(index, value) {
-    const settingIndex = settings.findIndex(s => s.id === filteredSettings[index].id);
+  // 🔧 수정된 값 변경 핸들러 - setting ID로 찾기
+  function handleValueChange(settingId, value) {
+    const settingIndex = settings.findIndex(s => s.id === settingId);
     if (settingIndex >= 0) {
       settings[settingIndex].setting_value = value;
-      filteredSettings[index].setting_value = value;
+      
+      // filteredSettings에서도 동일한 ID를 찾아서 업데이트
+      const filteredIndex = filteredSettings.findIndex(s => s.id === settingId);
+      if (filteredIndex >= 0) {
+        filteredSettings[filteredIndex].setting_value = value;
+      }
     }
   }
 
-  // 불린 값 토글
-  function toggleBoolean(index) {
-    const currentValue = filteredSettings[index].setting_value;
-    const newValue = !currentValue;
-    handleValueChange(index, newValue);
+  // 🔧 수정된 불린 값 토글 - setting ID 사용
+  function toggleBoolean(settingId) {
+    const setting = settings.find(s => s.id === settingId);
+    if (setting) {
+      const newValue = !setting.setting_value;
+      handleValueChange(settingId, newValue);
+    }
   }
 
   // 카테고리별 그룹화
@@ -309,7 +323,7 @@
                             <button
                               type="button"
                               class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {setting.setting_value ? 'bg-blue-600' : 'bg-gray-200'}"
-                              on:click={() => toggleBoolean(index)}
+                              on:click={() => toggleBoolean(setting.id)}
                             >
                               <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {setting.setting_value ? 'translate-x-5' : 'translate-x-0'}"></span>
                             </button>
@@ -322,14 +336,14 @@
                           <input 
                             type="number"
                             bind:value={setting.setting_value}
-                            on:change={() => handleValueChange(index, setting.setting_value)}
+                            on:change={() => handleValueChange(setting.id, setting.setting_value)}
                             class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                           />
                         {:else if setting.setting_type === 'json'}
                           <!-- JSON 텍스트 영역 -->
                           <textarea
                             bind:value={setting.setting_value}
-                            on:change={() => handleValueChange(index, setting.setting_value)}
+                            on:change={() => handleValueChange(setting.id, setting.setting_value)}
                             rows="4"
                             class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono text-xs"
                             placeholder="JSON 형식으로 입력하세요"
@@ -339,8 +353,9 @@
                           <input 
                             type="text"
                             bind:value={setting.setting_value}
-                            on:change={() => handleValueChange(index, setting.setting_value)}
+                            on:change={() => handleValueChange(setting.id, setting.setting_value)}
                             class="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            placeholder={setting.setting_key.includes('printer') || setting.setting_key.includes('computer') ? '프린터 또는 컴퓨터 이름을 입력하세요' : ''}
                           />
                         {/if}
                       </div>
