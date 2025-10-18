@@ -184,7 +184,9 @@
     try {
       console.log('로고 이미지 코드 조회 시작...');
       
-      const response = await fetch('/api/sales/sales-registration/get-logo-codes?gub1=A1&gub2=LG');
+      // ✅ 동적으로 현재 선택된 회사구분 사용
+      const gub1 = selectedCompany || 'A1'; // 기본값으로 A1 사용
+      const response = await fetch(`/api/sales/sales-registration/get-logo-codes?gub1=${gub1}&gub2=LG`);
       const result = await response.json();
       
       if (result.success && result.data) {
@@ -192,8 +194,8 @@
         console.log('로고 이미지 코드 조회 완료:', logoImages.length + '개');
         
         // 각 로고 이미지 미리 로드 (기존 방식 그대로)
-        const logoCodes = logoImages.map(logo => logo.code);
-        await simpleCache.preloadImages(logoCodes);
+        //const logoCodes = logoImages.map(logo => logo.code);
+        //await simpleCache.preloadImages(logoCodes);
         
         console.log('로고 이미지 캐싱 완료');
       }
@@ -1239,6 +1241,11 @@
       } catch (err) {
         console.error('로고 이미지 로드 실패:', err);
       }
+      setTimeout(() => {
+        if (barcodeInput) {
+          barcodeInput.focus();
+        }
+      }, 500);
     }
     
     // DirectPrint용 영수증 데이터 구성
@@ -1328,6 +1335,7 @@
 */
 
   onMount(async () => {
+ 
     layoutConstants = getLayoutConstants();
     
     const today = new Date().toISOString().split('T')[0];
@@ -1365,7 +1373,8 @@
     setTimeout(() => {
       if (barcodeInput) {
         barcodeInput.focus();
-      }
+      }  
+      
     }, 500);
     
     return () => {
@@ -1482,6 +1491,7 @@
           </div>
 
           <!-- 저장/삭제 결과 메시지 (기존 success/error 메시지 아래에 추가) -->
+          <!--
           {#if saveSuccess}
             <div class="mx-2 my-2.5 px-4 py-2.5 rounded" style="background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; font-size: 0.9rem;">
               ✅ {saveSuccess}
@@ -1493,6 +1503,7 @@
               ❌ {saveError}
             </div>
           {/if}
+          -->
         </div>
       </div>
     </div>
@@ -1996,6 +2007,7 @@
                   <div class="flex items-center gap-1">
                     <!-- 바코드 입력 -->
                     <BarcodeInput
+                      bind:this={barcodeInput}
                       bind:value={barcodeValue}
                       placeholder="바코드 스캔..."
                       showCamera="auto"

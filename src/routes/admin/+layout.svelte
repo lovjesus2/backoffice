@@ -1,6 +1,7 @@
+<!-- src/routes/admin/+layout.svelte -->
 <script>
   import { initPWA } from '$lib/pwa.js';
-  import { stateManager } from '$lib/utils/stateManager.js';
+ // import { stateManager } from '$lib/utils/stateManager.js';   이전상태 복원
   import TreeMenu from '$lib/components/TreeMenu.svelte';
   import ImageModal from '$lib/components/ImageModal.svelte';
   import { imageModalStore, initAutoImageModal } from '$lib/utils/imageModalUtils';
@@ -8,6 +9,7 @@
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
   import { onMount } from 'svelte';
+  import { openPages, currentPage, openPage } from '$lib/stores/openPagesStore.js';
   import '../../app.postcss';  // Tailwind
 
   export let data;
@@ -17,11 +19,48 @@
   let isPcSidebarOpen = true; // PC 사이드바 상태 추가
   
   // 디바운스용 타이머
-  let saveTimeout;
+  //let saveTimeout;
   
   // 자동 이미지 모달 정리 함수
   let cleanupImageModal;
 
+  // 컴포넌트 매핑
+  const pageComponents = {
+    '/admin': () => import('./+page.svelte'),
+    '/admin/common-codes': () => import('./common-codes/+page.svelte'),
+    '/admin/menu-management': () => import('./menu-management/+page.svelte'),
+    '/admin/users': () => import('./users/+page.svelte'),
+    '/admin/profile': () => import('./profile/+page.svelte'),
+    '/admin/settings': () => import('./settings/+page.svelte'),
+    //제품관리
+    '/admin/product-management/product-registration': () => import('./product-management/product-registration/+page.svelte'),
+    '/admin/product-management/product-stock': () => import('./product-management/product-stock/+page.svelte'),
+    //매출관리
+    '/admin/sales/calendar': () => import('./sales/calendar/+page.svelte'),
+    '/admin/sales/sale01': () => import('./sales/sale01/+page.svelte'),
+    '/admin/sales/sales-registration': () => import('./sales/sales-registration/+page.svelte'),
+    
+    // 필요한 페이지들 계속 추가
+  };
+
+  let loadedComponents = {};
+
+  // 열린 페이지들의 컴포넌트 미리 로딩
+  $: {
+    $openPages.forEach(async (href) => {
+      if (!loadedComponents[href] && pageComponents[href]) {
+        try {
+          const module = await pageComponents[href]();
+          loadedComponents[href] = module.default;
+          loadedComponents = { ...loadedComponents }; // 반응성 트리거
+        } catch (error) {
+          console.error(`Failed to load component for ${href}:`, error);
+        }
+      }
+    });
+  }
+
+  /*
   // 디바운스된 상태 저장 (너무 자주 저장하지 않도록)
   function debouncedSave(path) {
     clearTimeout(saveTimeout);
@@ -29,10 +68,12 @@
       await stateManager.saveState(path);
     }, 1000); // 1초 후 저장
   }
+  */
 
-  // 페이지 변경 시마다 상태 저장
+  // 페이지 변경 시마다 상태 저장 및 멀티탭 페이지 열기
   $: if (browser && $page.url.pathname && $page.url.pathname !== '/') {
-    debouncedSave($page.url.pathname);
+    openPage($page.url.pathname);
+    //debouncedSave($page.url.pathname);
   }
 
   // 이미지 모달 닫기 핸들러
@@ -43,107 +84,114 @@
     }));
   }
 
-  // +layout.svelte의 onMount 부분 (중복 방지)
-
-onMount(async () => {
-  // 화면 크기 변경 감지
-  const handleResize = () => {
-    if (window.innerWidth > 768) {
-      isMobileMenuOpen = false;
-    }
-  };
-  window.addEventListener('resize', handleResize);
-  
-  // PWA 초기화
-  initPWA();
-  
-  // 자동 이미지 모달 초기화
-  if (browser) {
-    cleanupImageModal = initAutoImageModal(true);
-  }
-  
-  // PC 사이드바 상태 복원
-  if (browser) {
-    const savedPcSidebar = localStorage.getItem('pcSidebarOpen');
-    if (savedPcSidebar) {
-      isPcSidebarOpen = JSON.parse(savedPcSidebar);
-    }
-  }
-  
-  // 초기 로드 시 상태 복원
-  const restoredPath = await stateManager.restoreState();
-  if (restoredPath && restoredPath !== $page.url.pathname) {
-    goto(restoredPath);
-  }
-
-  // 🔥 Firebase Messaging 설정 (Service Worker 중복 등록 방지)
-  console.log('🔥 Firebase Messaging 초기화 시작...');
-  
-  // 🚫 중복 초기화 방지
-  if (window.__fcmInitialized) {
-    console.log('ℹ️ FCM 이미 초기화됨, 건너뜀');
-    return;
-  }
-  
-  try {
-    const { getFCMToken, setupForegroundMessaging } = await import('$lib/utils/pushNotification.js');
-    console.log('✅ 푸시 모듈 로드 성공');
+  onMount(async () => {
+    // 화면 크기 변경 감지
+    const handleResize = () => {
+      if (window.innerWidth > 768) {
+        isMobileMenuOpen = false;
+      }
+    };
+    window.addEventListener('resize', handleResize);
     
-    const token = await getFCMToken();
-    console.log('🔥 FCM 토큰 결과:', token ? '토큰 생성됨' : '토큰 없음');
+    // PWA 초기화
+    initPWA();
     
-    if (token) {
-      // 🔥 중복 방지 플래그 설정
-      window.__fcmInitialized = true;
-      
-      // 포그라운드 메시징 설정 (한번만)
-      setupForegroundMessaging();
-      
-      // 토큰을 서버에 저장
-      try {
-        const response = await fetch('/api/push/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            token,
-            deviceInfo: {
-              userAgent: navigator.userAgent,
-              platform: navigator.platform,
-              timestamp: new Date().toISOString()
-            }
-          })
-        });
-        
-        if (response.ok) {
-          console.log('✅ FCM 토큰 서버 저장 성공');
-        } else {
-          const errorData = await response.json();
-          console.warn('⚠️ FCM 토큰 서버 저장 실패:', errorData.message);
-        }
-      } catch (error) {
-        console.error('❌ FCM 토큰 서버 저장 오류:', error);
+    // 자동 이미지 모달 초기화
+    if (browser) {
+      cleanupImageModal = initAutoImageModal(true);
+    }
+    
+    // PC 사이드바 상태 복원
+    if (browser) {
+      const savedPcSidebar = localStorage.getItem('pcSidebarOpen');
+      if (savedPcSidebar) {
+        isPcSidebarOpen = JSON.parse(savedPcSidebar);
       }
     }
-    
-  } catch (error) {
-    console.error('❌ Firebase Messaging 초기화 실패:', error);
-  }
 
-  // cleanup 함수
-  return () => {
-    window.removeEventListener('resize', handleResize);
-    if (cleanupImageModal) {
-      cleanupImageModal();
+    // 초기 페이지 열기
+    if (browser && $page.url.pathname) {
+      openPage($page.url.pathname);
     }
-  };
-});
+    
+    /*
+    // 초기 로드 시 상태 복원
+    const restoredPath = await stateManager.restoreState();
+    if (restoredPath && restoredPath !== $page.url.pathname) {
+      goto(restoredPath);
+    }
+    */
 
+    // 🔥 Firebase Messaging 설정 (Service Worker 중복 등록 방지)
+    console.log('🔥 Firebase Messaging 초기화 시작...');
+    
+    // 🚫 중복 초기화 방지
+    if (window.__fcmInitialized) {
+      console.log('ℹ️ FCM 이미 초기화됨, 건너뜀');
+      return;
+    }
+    
+    try {
+      const { getFCMToken, setupForegroundMessaging } = await import('$lib/utils/pushNotification.js');
+      console.log('✅ 푸시 모듈 로드 성공');
+      
+      const token = await getFCMToken();
+      console.log('🔥 FCM 토큰 결과:', token ? '토큰 생성됨' : '토큰 없음');
+      
+      if (token) {
+        // 🔥 중복 방지 플래그 설정
+        window.__fcmInitialized = true;
+        
+        // 포그라운드 메시징 설정 (한번만)
+        setupForegroundMessaging();
+        
+        // 토큰을 서버에 저장
+        try {
+          const response = await fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              token,
+              deviceInfo: {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                timestamp: new Date().toISOString()
+              }
+            })
+          });
+          
+          if (response.ok) {
+            console.log('✅ FCM 토큰 서버 저장 성공');
+          } else {
+            const errorData = await response.json();
+            console.warn('⚠️ FCM 토큰 서버 저장 실패:', errorData.message);
+          }
+        } catch (error) {
+          console.error('❌ FCM 토큰 서버 저장 오류:', error);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Firebase Messaging 초기화 실패:', error);
+    }
+
+    // cleanup 함수
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (cleanupImageModal) {
+        cleanupImageModal();
+      }
+    };
+  });
+
+  /*
   // 앱 종료 시 현재 상태 저장
   async function handleBeforeUnload() {
     if ($page.url.pathname && $page.url.pathname !== '/') {
       await stateManager.saveState($page.url.pathname);
     }
   }
+  */
 
   function toggleMenu() {
     isMobileMenuOpen = !isMobileMenuOpen;
@@ -169,7 +217,7 @@ onMount(async () => {
       const response = await fetch('/api/auth/logout', { method: 'POST' });
       if (response.ok) {
         // 저장된 상태 모두 정리
-        await stateManager.clearAll();
+        //await stateManager.clearAll();
         
         // PC 사이드바 상태도 초기화
         if (browser) {
@@ -260,11 +308,31 @@ onMount(async () => {
   </nav>
 
   <!-- 메인 콘텐츠 -->
-  <main class="p-2 max-w-none mx-auto mt-[var(--header-total-height)]
-              md:mt-[var(--header-height)] md:p-4 {isPcSidebarOpen ? 'md:ml-[280px]' : 'md:ml-0'} transition-all duration-300
-              max-[768px]:p-4
-              max-[480px]:p-1">
-    <slot />
+  <main class="transition-all duration-300 min-h-screen pt-[var(--header-total-height)]
+              md:pt-[var(--header-height)] {isPcSidebarOpen ? 'md:ml-[280px]' : 'md:ml-0'}">
+    
+    <!-- 모든 열린 페이지 렌더링 (DOM 유지) -->
+    <div class="relative">
+      {#each Array.from($openPages) as href (href)}
+        <div 
+          class="page-container"
+          style="display: {$currentPage === href ? 'block' : 'none'}"
+        >
+          {#if loadedComponents[href]}
+            <div class="p-2 max-w-none mx-auto md:p-4 max-[768px]:p-4 max-[480px]:p-1">
+              <svelte:component this={loadedComponents[href]} />
+            </div>
+          {:else}
+            <div class="flex items-center justify-center p-8">
+              <div class="flex items-center gap-3">
+                <div class="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <span class="text-gray-600">페이지 로딩 중...</span>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/each}
+    </div>
   </main>
 </div>
 
@@ -277,8 +345,22 @@ onMount(async () => {
   on:close={handleImageModalClose}
 />
 
-<!-- 에러 배너 스타일 (필요시 사용) -->
 <style>
+  .page-container {
+    min-height: calc(100vh - var(--header-total-height));
+  }
+  
+  @media (min-width: 768px) {
+    .page-container {
+      min-height: calc(100vh - var(--header-height));
+    }
+  }
+  
+  /* bg-green-25 커스텀 클래스 */
+  :global(.bg-green-25) {
+    background-color: #f7fef7;
+  }
+  
   .error-banner {
     @apply bg-red-100 text-red-800 p-4 rounded border border-red-200 mb-6;
   }

@@ -83,6 +83,7 @@ export async function GET({ url, locals }) {
     const sql = `
       SELECT p.PROH_CODE, 
              p.PROH_NAME, 
+             p.PROH_QRCD,
              d.DPRC_SOPR, 
              d.DPRC_BAPR,
              COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
@@ -117,6 +118,7 @@ export async function GET({ url, locals }) {
     const products = rows.map(row => ({
       code: row.PROH_CODE,
       name: row.PROH_NAME,
+      qrCode: row.PROH_QRCD || '',
       cost: parseInt(row.DPRC_BAPR) || 0,
       price: parseInt(row.DPRC_SOPR) || 0,
       stock: parseInt(row.CURRENT_STOCK) || 0,

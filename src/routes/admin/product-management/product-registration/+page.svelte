@@ -7,6 +7,7 @@
   import ImageUploader from '$lib/components/ImageUploader.svelte';
   import { getLayoutConstants } from '$lib/utils/deviceUtils';  // 이 줄 추가
   
+  
   export let data;
   
   // ImageUploader 컴포넌트 참조 변수 선언

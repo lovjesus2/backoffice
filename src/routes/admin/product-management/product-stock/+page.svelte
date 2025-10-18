@@ -1,3 +1,4 @@
+<!-- src/routes/admin/product-management/product-stock/+page.svelte -->
 <script>
   import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
@@ -629,8 +630,13 @@
                   
                   <button 
                     type="button"
-                    class="bg-purple-500 text-white border-0 rounded px-2 py-1 text-xs hover:bg-purple-600 flex-1"
-                    on:click={() => printQRCode(product)}
+                    class="border-0 rounded px-2 py-1 text-xs flex-1 {
+                      product.qrCode 
+                        ? 'bg-purple-500 text-white hover:bg-purple-600' 
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }"
+                    disabled={!product.qrCode}
+                    on:click={() => product.qrCode && printQRCode(product)}
                   >
                     QR코드
                   </button>

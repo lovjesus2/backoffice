@@ -256,21 +256,29 @@ export async function POST({ request, locals }) {
       
       await db.execute('COMMIT');
       
+
       //신규 저장만 푸시 알림
       if (existingRows.length <= 0) {
-        console.log('🔄 푸시 알림 시작:', { slipNo: sSlip, totalAmt });
-        // 🔥 여기에 푸시 알림 함수 호출
-        sendSaleNotification(
-          '매출 저장 완료',
-          `매출번호: ${sSlip}\n금액: ${totalAmt.toLocaleString()}원`,
-          { 
-            type: 'sale_saved', 
-            slipNo: sSlip,
-            amount: totalAmt.toString()
-          }
-        ).catch(error => {
-          console.error('푸시 알림 전송 실패:', error);
-        });
+        // 🔥 시스템 설정 확인 후 푸시 알림 발송
+        const { getSystemSetting } = await import('$lib/utils/systemSettings.js');
+        const isMessageEnabled = await getSystemSetting('sales_message_enabled', false);
+        
+        if (isMessageEnabled) {
+          console.log('🔄 푸시 알림 시작 (설정 활성화):', { slipNo: sSlip, totalAmt });
+          sendSaleNotification(
+            '매출 저장 완료',
+            `매출번호: ${sSlip}\n금액: ${totalAmt.toLocaleString()}원`,
+            { 
+              type: 'sale_saved', 
+              slipNo: sSlip,
+              amount: totalAmt.toString()
+            }
+          ).catch(error => {
+            console.error('푸시 알림 전송 실패:', error);
+          });
+        } else {
+          console.log('⏸️ 푸시 알림 비활성화됨 (sales_message_enabled: false)');
+        }
       }
       return json({
         success: true, 

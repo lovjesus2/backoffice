@@ -11,6 +11,7 @@
 
   let isMobile = false;
   let notes = [];
+  let notesReady = false;
   let selectedNote = null;
   let offset = { x: 0, y: 0 };
   let isDragging = false;
@@ -63,23 +64,37 @@
     }
   }
 
+
   async function loadNotes() {
+    notesReady = false;
+    
     try {
       const response = await fetch('/api/notes');
       if (response.ok) {
         notes = await response.json();
         
+        
+        // 실제 컨테이너 크기 확인
+        const actualContainer = document.querySelector('.relative.overflow-auto');
+        const safeWidth = actualContainer?.clientWidth || containerWidth || window.innerWidth || 390;
+        const safeHeight = actualContainer?.clientHeight || containerHeight || window.innerHeight || 844;
+        
+        console.log('🔍 실제 컨테이너 크기:', safeWidth, 'x', safeHeight);
+        console.log('🔍 기존 containerWidth:', containerWidth);
+        
         notes = notes.map(note => {
+          // ✅ 변수를 함수 내에서 명확하게 정의
           const noteWidth = note.width || 320;
           const noteHeight = note.height || 250;
           
           let x = note.position.x;
           let y = note.position.y;
           
+          // 🔧 최소한의 보정만 (음수만 방지)
           if (x < 0) x = 20;
           if (y < 0) y = 20;
-          if (x > containerWidth - noteWidth) x = containerWidth - noteWidth - 20;
-          if (y > containerHeight - noteHeight) y = containerHeight - noteHeight - 20;
+          
+          // 나머지는 원래 위치 그대로 유지
           
           return {
             ...note,
@@ -88,9 +103,12 @@
             height: noteHeight
           };
         });
+
+        notesReady = true;
       }
     } catch (error) {
       console.error('노트 로드 실패:', error);
+      notesReady = true;
     }
   }
 
@@ -127,7 +145,11 @@
         const createdNote = await response.json();
         createdNote.width = noteWidth;
         createdNote.height = noteHeight;
+        
+        notesReady = false;
         notes = [...notes, createdNote];
+        
+        notesReady = true;
       }
     } catch (error) {
       console.error('노트 추가 실패:', error);
@@ -318,6 +340,16 @@
   async function handleDeleteClick(noteId) {
     await deleteNote(noteId);
   }
+
+  function getNotesContainerWidth() {
+    if (!notes || notes.length === 0) return containerWidth || 320;
+    
+    const maxWidth = Math.max(...notes.map(note => 
+      (note.position?.x || 0) + (note.width || 320) + 20
+    ));
+    
+    return Math.max(maxWidth, containerWidth || 320);
+  }
 </script>
 
 <svelte:head>
@@ -325,100 +357,115 @@
 </svelte:head>
 
 <div class="relative min-h-screen bg-white" style="user-select: {isDragging || isResizing ? 'none' : 'auto'};">
-  <!-- Add Note Button - 우측 하단으로 이동 -->
+  
+  <!-- Add Note Button -->
   <button 
     on:click={addNote}
-    class="fixed bottom-8 right-8 w-14 h-14 md:w-16 md:h-16 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg hover:shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 z-50"
+    class="fixed bottom-4 right-4 w-12 h-12 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg hover:shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 z-50"
     title="새 노트 추가"
   >
-    <svg class="w-6 h-6 md:w-8 md:h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
       <line x1="12" y1="5" x2="12" y2="19"></line>
       <line x1="5" y1="12" x2="19" y2="12"></line>
     </svg>
   </button>
 
-  <!-- Page Header - 크기 축소 -->
+  <!-- Page Header -->
   <div class="p-3 md:p-4 pointer-events-none">
     <h2 class="text-lg md:text-xl font-bold text-gray-800">📝 알림판</h2>
   </div>
 
   <!-- Notes Container -->
-  <div class="relative" style="min-height: calc(100vh - 200px);">
-    {#each notes as note (note.id)}
-      <div
-        class="absolute rounded-xl shadow-lg transition-shadow duration-100 flex flex-col {selectedNote?.id === note.id ? 'shadow-2xl z-40 cursor-grabbing' : 'z-10 cursor-grab'}"
-        style="
-          left: {note.position.x}px; 
-          top: {note.position.y}px; 
-          width: {note.width || 320}px;
-          height: {note.height || 250}px;
-          background-color: {note.colors.colorBody}; 
-          color: {note.colors.colorText};
-          transform: {selectedNote?.id === note.id || resizeNote?.id === note.id ? 'scale(1.02)' : 'scale(1)'};
-        "
-        on:mousedown={(e) => handleMouseDown(e, note)}
-        on:touchstart={(e) => handleTouchStart(e, note)}
-        role="button"
-        tabindex="0"
-      >
-        <!-- Card Header - 크기 축소 -->
-        <div class="p-2 rounded-t-xl flex justify-between items-center cursor-grab flex-shrink-0" style="background-color: {note.colors.colorHeader};">
-          <!-- Color Picker -->
-          <div class="flex gap-1.5">
-            {#each colors as color}
-              <button
-                class="color-option w-5 h-5 rounded-full border-2 transition-all duration-200 hover:scale-110 active:scale-95 {note.colors.id === color.id ? 'border-black/30 scale-110' : 'border-transparent'}"
-                style="background-color: {color.colorHeader};"
-                on:click|stopPropagation={() => changeColor(note, color)}
-                on:touchend|stopPropagation|preventDefault={() => changeColor(note, color)}
-              ></button>
-            {/each}
+  <div 
+    class="relative pb-16"
+    style="
+      min-height: calc(100vh - 120px); 
+      width: 100%;
+      min-width: {getNotesContainerWidth()}px;
+    ">
+    
+    {#if notesReady}
+      {#each notes as note (note.id)}
+        <div
+          class="absolute rounded-xl shadow-lg transition-shadow duration-100 flex flex-col cursor-grab {selectedNote?.id === note.id ? 'shadow-2xl z-40 cursor-grabbing' : 'z-10'}"
+          style="
+            left: {note.position.x}px; 
+            top: {note.position.y}px; 
+            width: {note.width || 320}px;
+            height: {note.height || 250}px;
+            background-color: {note.colors.colorBody}; 
+            color: {note.colors.colorText};
+            transform: {selectedNote?.id === note.id || resizeNote?.id === note.id ? 'scale(1.02)' : 'scale(1)'};
+          "
+          on:mousedown={(e) => handleMouseDown(e, note)}
+          on:touchstart={(e) => handleTouchStart(e, note)}
+          role="button"
+          tabindex="0"
+        >
+          <!-- Card Header -->
+          <div class="p-2 rounded-t-xl flex justify-between items-center cursor-grab flex-shrink-0" style="background-color: {note.colors.colorHeader};">
+            <!-- Color Picker -->
+            <div class="flex gap-1.5">
+              {#each colors as color}
+                <button
+                  class="color-option w-5 h-5 rounded-full border-2 transition-all duration-200 hover:scale-110 active:scale-95 {note.colors.id === color.id ? 'border-black/30 scale-110' : 'border-transparent'}"
+                  style="background-color: {color.colorHeader};"
+                  on:click|stopPropagation={() => changeColor(note, color)}
+                  on:touchend|stopPropagation|preventDefault={() => changeColor(note, color)}
+                ></button>
+              {/each}
+            </div>
+
+            <!-- Close Button -->
+            <button 
+              class="card-close p-0.5 opacity-60 hover:opacity-100 active:opacity-100 transition-opacity"
+              on:click|stopPropagation={() => handleDeleteClick(note.id)}
+              on:touchend|stopPropagation|preventDefault={() => handleDeleteClick(note.id)}
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
           </div>
 
-          <!-- Close Button -->
-          <button 
-            class="card-close p-0.5 opacity-60 hover:opacity-100 active:opacity-100 transition-opacity"
-            on:click|stopPropagation={() => handleDeleteClick(note.id)}
-            on:touchend|stopPropagation|preventDefault={() => handleDeleteClick(note.id)}
+          <!-- Card Body -->
+          <textarea
+            class="flex-1 p-4 bg-transparent border-none outline-none resize-none font-sans text-sm leading-relaxed placeholder:opacity-50 cursor-text overflow-auto"
+            style="color: {note.colors.colorText}; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;"
+            placeholder="내용을 입력하세요..."
+            value={note.body}
+            on:input={(e) => handleInput(note, e)}
+          ></textarea>
+
+          <!-- Resize Handle -->
+          <div 
+            class="resize-handle absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize opacity-40 hover:opacity-80 transition-opacity"
+            on:mousedown|stopPropagation={(e) => handleResizeStart(e, note)}
+            on:touchstart|stopPropagation|preventDefault={(e) => handleResizeStart(e, note)}
           >
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
+            <svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M22 22H20V20H22V22M22 18H20V16H22V18M18 22H16V20H18V22M18 18H16V16H18V18M14 22H12V20H14V22M22 14H20V12H22V14Z"/>
             </svg>
-          </button>
+          </div>
         </div>
-
-        <!-- Card Body -->
-        <textarea
-          class="flex-1 p-4 bg-transparent border-none outline-none resize-none font-sans text-sm leading-relaxed placeholder:opacity-50 cursor-text overflow-auto"
-          style="color: {note.colors.colorText};"
-          placeholder="내용을 입력하세요..."
-          value={note.body}
-          on:input={(e) => handleInput(note, e)}
-        ></textarea>
-
-        <!-- Resize Handle - 우측 하단 -->
-        <div 
-          class="resize-handle absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize opacity-40 hover:opacity-80 transition-opacity"
-          on:mousedown|stopPropagation={(e) => handleResizeStart(e, note)}
-          on:touchstart|stopPropagation|preventDefault={(e) => handleResizeStart(e, note)}
-        >
-          <svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M22 22H20V20H22V22M22 18H20V16H22V18M18 22H16V20H18V22M18 18H16V16H18V18M14 22H12V20H14V22M22 14H20V12H22V14Z"/>
-          </svg>
-        </div>
+      {/each}
+    {:else}
+      <!-- Loading -->
+      <div class="flex items-center justify-center h-32">
+        <div class="text-gray-500">노트를 불러오는 중...</div>
       </div>
-    {/each}
+    {/if}
   </div>
 </div>
 
 <style>
   textarea {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     touch-action: none;
   }
   
   .resize-handle {
     touch-action: none;
   }
+
 </style>

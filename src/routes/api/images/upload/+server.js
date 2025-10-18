@@ -253,25 +253,6 @@ export async function POST({ request, cookies }) {
           const arrayBuffer = await file.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
           await writeFile(fullPath, buffer);
-          
-          // 파일 권한 설정
-          // 🔥 네트워크 드라이브 캐시 문제 해결 - 수정된 권한 설정
-          try {
-            const { chmod, open, fsync } = await import('fs/promises');
-            
-            // 1. 더 넓은 권한으로 설정 (0o644 → 0o666)
-            await chmod(fullPath, 0o666);
-            
-            // 2. 파일 시스템 강제 동기화
-            const fd = await open(fullPath, 'r');
-            await fsync(fd);
-            await fd.close();
-            
-            console.log(`✅ 네트워크 드라이브 최적화 완료: ${imagPcph}`);
-            
-          } catch (chmodError) {
-            console.warn('⚠️ 파일 최적화 실패 (무시됨):', chmodError.message);
-          }
 
           // 3. 추가 안전장치: 100ms 후 한번 더 동기화
           setTimeout(async () => {

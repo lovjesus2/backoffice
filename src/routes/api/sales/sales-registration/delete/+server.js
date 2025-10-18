@@ -233,19 +233,27 @@ export async function DELETE({ request, locals }) {
         
         console.log('=== 매출 삭제 완료 ===');
 
-        // 🔥 여기에 푸시 알림 함수 호출
-        sendSaleNotification(
-        '매출 삭제 완료',
-        `매출번호: ${saleSlip}이 삭제되었습니다.`,
-        { 
-            type: 'sale_deleted', 
-            slipNo: saleSlip,
-            shop: shop,
-            date: saleDate
+        // 🔥 시스템 설정 확인 후 푸시 알림 발송
+        const { getSystemSetting } = await import('$lib/utils/systemSettings.js');
+        const isMessageEnabled = await getSystemSetting('sales_message_enabled', false);
+
+        if (isMessageEnabled) {
+          console.log('🔄 매출 삭제 푸시 알림 시작 (설정 활성화):', { slipNo: saleSlip });
+          sendSaleNotification(
+            '매출 삭제 완료',
+            `매출번호: ${saleSlip}이 삭제되었습니다.`,
+            { 
+              type: 'sale_deleted', 
+              slipNo: saleSlip,
+              shop: shop,
+              date: saleDate
+            }
+          ).catch(error => {
+            console.error('푸시 알림 전송 실패:', error);
+          });
+        } else {
+          console.log('⏸️ 매출 삭제 푸시 알림 비활성화됨 (sales_message_enabled: false)');
         }
-        ).catch(error => {
-        console.error('푸시 알림 전송 실패:', error);
-        });
 
         return json({
             success: true, 
