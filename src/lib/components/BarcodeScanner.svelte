@@ -75,16 +75,16 @@
           }
         },
         locator: {
-          patchSize: "large",
-          halfSample: true
+          patchSize: "small", 
+          halfSample: false
         },
-        numOfWorkers: 4,
+        numOfWorkers: 0,        //동시에 실행되는 웹 워커(Web Worker)의 수를 지정합니다. PC 환경에서는 코어 수에 맞게 설정하는 것이 좋지만, 모바일에서는 CPU 부하를 줄이기 위해 0으로 설정하는 것이 더 안정적일 수 있습니다.
         multiple: false,
-        frequency:5,
+        frequency:5,            //이미지를 처리하는 사용빈도(이 값을 낮추면 초당 처리하는 프레임 수가 줄어들어 성능이 향상되지만, 반응 속도는 느려질 수 있습니다.)
         decoder: {
           readers: barcodeFormats
         },
-        locate: true
+        locate: false            //locate를 끄면 성능은 향상되지만, 바코드가 항상 화면 중앙에 있어야 잘 인식됩니다. 
       }, (err) => {
         if (err) {
           console.error('❌ QuaggaJS 초기화 오류:', err);

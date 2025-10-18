@@ -28,6 +28,16 @@
   // 카메라 버튼 표시 여부
   $: showCameraButton = showCamera === true || (showCamera === 'auto' && isMobile);
   
+  //포커스 설정
+  export function focus() {
+    if (!disabled) {
+      console.log('focus 호출됨');
+      inputElement?.focus();
+    } else {
+      console.log('focus 시도했지만 disabled');
+    }
+  }
+
   // 바코드 스캐너 열기
   function openBarcodeScanner() {
     if (disabled) return;
