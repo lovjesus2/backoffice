@@ -1,9 +1,7 @@
 import { json } from '@sveltejs/kit';
-import jwt from 'jsonwebtoken';
 import { getDb } from '$lib/database.js';
 import { clearSettingsCache } from '$lib/utils/systemSettings.js';
 
-const JWT_SECRET = 'your-secret-key';
 
 // 값 타입 변환 함수
 function convertValue(value, type) {
@@ -26,7 +24,7 @@ function convertValue(value, type) {
 }
 
 // 시스템 설정 조회
-export async function GET({ cookies, url }) {
+export async function GET({ locals, url }) {
   try {
     console.log('🔧 시스템 API 호출됨');
     
@@ -37,14 +35,11 @@ export async function GET({ cookies, url }) {
     if (mode === 'info') {
       console.log('📋 시스템 정보 모드 (보안 강화)');
       
-      // 토큰 검증 필요
-      const token = cookies.get('token');
-      if (!token) {
-        return json({ error: '인증이 필요합니다.' }, { status: 401 });
+      // 미들웨어에서 인증된 사용자 확인
+      const user = locals.user;
+      if (!user) {
+        return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
       }
-
-      const decoded = jwt.verify(token, JWT_SECRET);
-      console.log('✅ 인증 성공:', decoded.username);
       
       const db = getDb();
       const [rows] = await db.execute(
@@ -61,7 +56,7 @@ export async function GET({ cookies, url }) {
       const systemInfo = {
         ...settings,
         server_time: new Date().toISOString(),
-        user_role: decoded.role
+         user_role: user.role
       };
       
       console.log('✅ 보안 강화된 시스템 정보 반환 완료');
@@ -71,15 +66,11 @@ export async function GET({ cookies, url }) {
       });
     }
     
-    // 일반 설정 조회는 인증 필요
-    const token = cookies.get('token');
-    if (!token) {
-      console.log('❌ 인증 토큰 없음');
-      return json({ error: '인증이 필요합니다.' }, { status: 401 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    console.log('✅ 인증 성공:', decoded.username);
     
     const db = getDb();
     const key = url.searchParams.get('key');
@@ -91,7 +82,7 @@ export async function GET({ cookies, url }) {
       params = [key];
     } else {
       // 전체 설정 조회 (role에 따라 필터링)
-      if (decoded.role === 'admin') {
+      if (user.role === 'admin') {
         query = 'SELECT * FROM system_settings ORDER BY setting_key';
         params = [];
       } else {
@@ -126,18 +117,14 @@ export async function GET({ cookies, url }) {
 }
 
 // 시스템 설정 수정 (관리자만)
-export async function PUT({ request, cookies }) {
+export async function PUT({ request, locals }) {
   try {
     console.log('🔧 시스템 설정 수정 API 호출됨');
     
-    const token = cookies.get('token');
-    if (!token) {
-      return json({ error: '인증이 필요합니다.' }, { status: 401 });
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'admin') {
-      return json({ error: '권한이 없습니다.' }, { status: 403 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const { settings } = await request.json();
@@ -184,18 +171,14 @@ export async function PUT({ request, cookies }) {
   }
 }
 
-export async function POST({ request, cookies }) {
+export async function POST({ request, locals }) {
   try {
     console.log('🔧 시스템 설정 추가 API 호출됨');
     
-    const token = cookies.get('token');
-    if (!token) {
-      return json({ error: '인증이 필요합니다.' }, { status: 401 });
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'admin') {
-      return json({ error: '권한이 없습니다.' }, { status: 403 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const { setting_key, setting_value, setting_type, description, is_public } = await request.json();

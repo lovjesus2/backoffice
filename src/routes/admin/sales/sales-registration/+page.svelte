@@ -540,6 +540,96 @@
     setTimeout(() => error = '', 3000);
   }
 
+  // 할인 적용 검사 및 적용 함수 (파일 상단에 추가)
+  // 할인 적용 로직 함수 추가 (파일 상단 함수들 부분에)
+  function applyDiscountLogic(item) {
+    // 🆕 수량할인 타입 1이면 자동 현금 체크 (먼저 처리)
+    if (item.discountType === '1' && item.quantity >= item.discountQty) {
+      item.isCash = true;
+    }
+    
+    // 기본 금액 계산
+    const unitPrice = item.isCash ? item.cashPrice : item.cardPrice;
+    let finalAmount = item.quantity * unitPrice;
+    
+    // 할인 상태 초기화
+    item.isQuantityDiscountApplied = false;
+    
+    // 1순위: 현금할인 제품
+    if (item.hasPresetCashPrice) {
+      item.amount = finalAmount;
+      return;
+    }
+    
+    // 2순위: 수량할인
+    if (item.discountQty && item.discountAmount && item.discountType) {
+      // 타입 0: 현금/카드 상관없이
+      if (item.discountType === '0' && item.quantity >= item.discountQty) {
+        // 🔥 수량에 비례해서 할인 적용
+        const discountMultiplier = Math.floor(item.quantity / item.discountQty);
+        finalAmount += item.discountAmount * discountMultiplier;
+        item.isQuantityDiscountApplied = true;
+      }
+      // 타입 1: 현금일 때만 (위에서 이미 자동 체크함)
+      else if (item.discountType === '1' && item.quantity >= item.discountQty && item.isCash) {
+        const discountMultiplier = Math.floor(item.quantity / item.discountQty);
+        finalAmount += item.discountAmount * discountMultiplier;
+        item.isQuantityDiscountApplied = true;
+      }
+    }
+    
+    item.amount = finalAmount;
+  }
+
+  //체크박스용 할인 적용 로직 함수 추가 (파일 상단 함수들 부분에)
+  function calculateAmountOnly(item) {
+    // 기본 금액 계산
+    const unitPrice = item.isCash ? item.cashPrice : item.cardPrice;
+    let finalAmount = item.quantity * unitPrice;
+    
+    // 할인 상태 초기화
+    item.isQuantityDiscountApplied = false;
+    
+    // 1순위: 현금할인 제품
+    if (item.hasPresetCashPrice) {
+      item.amount = finalAmount;
+      return;
+    }
+    
+    // 2순위: 수량할인
+    if (item.discountQty && item.discountAmount && item.discountType) {
+      // 타입 0: 현금/카드 상관없이
+      if (item.discountType === '0' && item.quantity >= item.discountQty) {
+        // 🔥 수량에 비례해서 할인 적용
+        const discountMultiplier = Math.floor(item.quantity / item.discountQty);
+        finalAmount += item.discountAmount * discountMultiplier;
+      }
+      // 타입 1: 현금일 때만
+      // 타입 1: 현금일 때만 (위에서 이미 자동 체크함)
+      else if (item.discountType === '1' && item.quantity >= item.discountQty && item.isCash) {
+        const discountMultiplier = Math.floor(item.quantity / item.discountQty);
+        finalAmount += item.discountAmount * discountMultiplier;
+        
+      }
+    }
+    
+    item.amount = finalAmount;
+  }
+
+  // 현재 적용된 수량할인 금액 계산
+  function getQuantityDiscountAmount(item) {
+    if (!item.discountQty || !item.discountAmount) return 0;
+    
+    // 타입 1(현금할인)인데 현금 체크가 안되어 있으면 0
+    if (item.discountType === '1' && !item.isCash) return 0;
+    
+    if (item.quantity >= item.discountQty) {
+      const discountMultiplier = Math.floor(item.quantity / item.discountQty);
+      return item.discountAmount * discountMultiplier;
+    }
+    return 0;
+  }
+
   // 제품 검색 및 추가(바코드)
   async function searchAndAddProduct(productCode) {
     if (isSearchingProduct) return;
@@ -549,7 +639,9 @@
       console.log('제품 검색:', productCode);
       
       const params = new URLSearchParams({
-        code: productCode
+        code: productCode,
+        company_code: currentCompanyCode,
+        registration_code: currentRegistrationCode
       });
       
       const response = await fetch(`/api/sales/sales-registration/barcode-search?${params}`);
@@ -562,10 +654,8 @@
         
         if (existingIndex >= 0) {
           detailItems[existingIndex].quantity++;
-          const unitPrice = detailItems[existingIndex].isCash ? 
-            detailItems[existingIndex].cashPrice : 
-            detailItems[existingIndex].cardPrice;
-          detailItems[existingIndex].amount = detailItems[existingIndex].quantity * unitPrice;
+          // 🆕 기존 제품도 할인 로직 적용
+          applyDiscountLogic(detailItems[existingIndex]);
           console.log('기존 제품 수량 증가:', productInfo.code);
         } else {
           const newItem = {
@@ -573,8 +663,8 @@
             itemCode: productInfo.code,
             itemName: productInfo.name || '',
             itemDescription: productInfo.description || '',
-            hasPresetCashPrice: productInfo.cash_status || false,  // 현금할인
-            isCash: productInfo.cash_status || false,              // 현금체크
+            hasPresetCashPrice: productInfo.cash_status || false,
+            isCash: productInfo.cash_status || false,
             quantity: 1,
             cardPrice: productInfo.cardPrice || 0,
             cashPrice: productInfo.cashPrice || 0,
@@ -583,22 +673,21 @@
             stockManaged: productInfo.stockManaged || false,
             isOnline: productInfo.isOnline || false,
             qrCode: '',
-            discountQty: 0,
-            discountAmount: 0,
-            discountType: 0
+            // 🆕 할인 정보 추가
+            discountQty: productInfo.discountQty || 0,
+            discountAmount: productInfo.discountAmount || 0,
+            discountType: productInfo.discountType || '0',
+            isQuantityDiscountApplied: false
           };
           
-          // 👇 isCash 값에 따라 금액 계산
-          const unitPrice = newItem.isCash ? newItem.cashPrice : newItem.cardPrice;
-          newItem.amount = newItem.quantity * unitPrice;
-          //newItem.amount = newItem.quantity * newItem.cardPrice;
+          // 🆕 할인 로직 적용
+          applyDiscountLogic(newItem);
           
           detailItems = [newItem, ...detailItems];
           console.log('새 제품 추가:', productCode);
         }
         
         updateSummary();
-        
       } else {
         console.error('제품을 찾을 수 없습니다:', productCode);
         showToast(result.message || `제품 코드 '${productCode}'를 찾을 수 없습니다.`, 'error');
@@ -609,10 +698,6 @@
       showToast('제품 검색 중 오류가 발생했습니다.', 'error');
     } finally {
       isSearchingProduct = false;
-      
-      if (barcodeInput) {
-        setTimeout(() => barcodeInput.focus(), 100);
-      }
     }
   }
 
@@ -696,20 +781,18 @@
     return `${year}-${month}-${day}`;
   }
 
-  // 결제 타입 변경 시 금액 자동 계산
+  // 체크박스 결제 타입 변경 시 금액 자동 계산
   function handlePaymentTypeChange(index) {
     const item = detailItems[index];
-    const unitPrice = item.isCash ? item.cashPrice : item.cardPrice;
-    item.amount = unitPrice * item.quantity;
+    calculateAmountOnly(item);  // 자동 체크 X
     detailItems = [...detailItems];
     updateSummary();
   }
 
-  // 수량 변경 시 금액 자동 계산
+    // 수량 변경 시 금액 자동 계산
   function handleQuantityChange(index) {
     const item = detailItems[index];
-    const unitPrice = item.isCash ? item.cashPrice : item.cardPrice;
-    item.amount = unitPrice * item.quantity;
+    applyDiscountLogic(item);  // 자동 체크 O
     detailItems = [...detailItems];
     updateSummary();
   }
@@ -756,10 +839,7 @@
     if (existingIndex >= 0) {
       // 기존 제품이 있으면 수량 증가
       detailItems[existingIndex].quantity++;
-      const unitPrice = detailItems[existingIndex].isCash ? 
-        detailItems[existingIndex].cashPrice : 
-        detailItems[existingIndex].cardPrice;
-      detailItems[existingIndex].amount = detailItems[existingIndex].quantity * unitPrice;
+      applyDiscountLogic(detailItems[existingIndex]);  // ← 할인 로직 추가
       console.log('기존 제품 수량 증가:', product.code);
     } else {
       // 새 제품 추가 (바코드 스캔과 동일한 로직 사용)
@@ -771,51 +851,53 @@
 
   // 제품 코드로 상세 정보를 가져와서 추가하는 함수
   async function searchAndAddProductByCode(productCode) {
-    try {
-      const params = new URLSearchParams({
-        code: productCode
-      });
+  try {
+    const params = new URLSearchParams({
+      code: productCode,
+      company_code: currentCompanyCode,
+      registration_code: currentRegistrationCode
+    });
+    
+    const response = await fetch(`/api/sales/sales-registration/barcode-search?${params}`);
+    const result = await response.json();
+    
+    if (result.success && result.data) {
+      const productInfo = result.data;
       
-      const response = await fetch(`/api/sales/sales-registration/barcode-search?${params}`);
-      const result = await response.json();
+      const newItem = {
+        seq: detailItems.length + 1,
+        itemCode: productCode,
+        itemName: productInfo.name || '',
+        itemDescription: productInfo.description || '',
+        hasPresetCashPrice: productInfo.cash_status || false,
+        isCash: productInfo.cash_status || false,
+        quantity: 1,
+        cardPrice: productInfo.cardPrice || 0,
+        cashPrice: productInfo.cashPrice || 0,
+        deliveryPrice: productInfo.deliveryPrice || 0,
+        currentStock: productInfo.stock || 0,
+        stockManaged: productInfo.stockManaged || false,
+        isOnline: productInfo.isOnline || false,
+        qrCode: '',
+        // 🆕 할인 정보 추가
+        discountQty: productInfo.discountQty || 0,
+        discountAmount: productInfo.discountAmount || 0,
+        discountType: productInfo.discountType || '0',
+        isQuantityDiscountApplied: false
+      };
       
-      if (result.success && result.data) {
-        const productInfo = result.data;
-        
-        const newItem = {
-          seq: detailItems.length + 1,
-          itemCode: productCode,
-          itemName: productInfo.name || '',
-          itemDescription: productInfo.description || '',
-          hasPresetCashPrice: productInfo.cash_status || false,  // 현금할인
-          isCash: productInfo.cash_status || false,              // 현금체크
-          quantity: 1,
-          cardPrice: productInfo.cardPrice || 0,
-          cashPrice: productInfo.cashPrice || 0,
-          deliveryPrice: productInfo.deliveryPrice || 0,
-          currentStock: productInfo.stock || 0,
-          stockManaged: productInfo.stockManaged || false,
-          isOnline: productInfo.isOnline || false,
-          qrCode: '',
-          discountQty: 0,
-          discountAmount: 0,
-          discountType: 0
-        };
-        
-        // 👇 isCash 값에 따라 금액 계산
-        const unitPrice = newItem.isCash ? newItem.cashPrice : newItem.cardPrice;
-        newItem.amount = newItem.quantity * unitPrice;
-        //newItem.amount = newItem.quantity * newItem.cardPrice;
-        
-        detailItems = [newItem, ...detailItems];
-        console.log('새 제품 추가:', productCode);
-        
-        updateSummary();
-      }
-    } catch (error) {
-      console.error('제품 정보 조회 오류:', error);
+      // 🆕 할인 로직 적용
+      applyDiscountLogic(newItem);
+      
+      detailItems = [newItem, ...detailItems];
+      console.log('새 제품 추가:', productCode);
+      
+      updateSummary();
     }
+  } catch (error) {
+    console.error('제품 정보 조회 오류:', error);
   }
+}
 
   // 현금할인 적용
   function applyCashDiscount() {
@@ -824,35 +906,45 @@
       return;
     }
     
-    const cashItems = detailItems.filter(
-      item => item.isCash && !item.hasPresetCashPrice  // ✅ 수정
-    );
+    // 할인 가능한 항목 개수 확인
+    let eligibleCount = 0;
+    for (let i = 0; i < detailItems.length; i++) {
+      const item = detailItems[i];
+      if (item.isCash && 
+          !item.hasPresetCashPrice && 
+          !item.isQuantityDiscountApplied) {
+        eligibleCount++;
+      }
+    }
     
-    if (cashItems.length === 0) {
-      alert('현금할인을 적용할 수 있는 항목이 없습니다.\n(이미 현금할인가가 적용된 제품은 제외됩니다)');
+    if (eligibleCount === 0) {
+      alert('현금할인을 적용할 수 있는 항목이 없습니다.');
       return;
     }
     
-    const confirmMessage = `현금으로 체크된 ${cashItems.length}개 항목에 5% 할인을 적용하시겠습니까?\n(100원 단위 절삭 처리됩니다)\n\n※ 이미 현금가가 설정된 제품은 제외됩니다.`;
-    
-    if (!confirm(confirmMessage)) {
+    if (!confirm(`${eligibleCount}개 항목에 5% 할인을 적용하시겠습니까?`)) {
       return;
     }
     
-    detailItems = detailItems.map(item => {
-      if (item.isCash && !item.hasPresetCashPrice) {  // ✅ 수정
+    // 실제 할인 적용
+    for (let i = 0; i < detailItems.length; i++) {
+      const item = detailItems[i];
+      
+      // 조건 체크해서 할인 적용
+      if (item.isCash && 
+          !item.hasPresetCashPrice && 
+          !item.isQuantityDiscountApplied) {
+        
         const originalAmount = item.quantity * item.cashPrice;
         const discountedAmount = originalAmount * 0.95;
         const roundedAmount = Math.floor(discountedAmount / 100) * 100;
         
-        return {
-          ...item,
-          amount: roundedAmount
-        };
+        detailItems[i].amount = roundedAmount;
       }
-      return item;
-    });
+    }
     
+    // 화면 업데이트
+    detailItems = [...detailItems];
     updateSummary();
   }
 
@@ -1059,7 +1151,7 @@
       if (result.success) {
         // 토스트 메시지 표시
         const amount = summaryData.totalAmount || 0;
-        showToast(`💰 매출 저장 완료!\n💳 ${amount.toLocaleString()}원 (${result.slipNo})`, 'success');
+        showToast(`💰 매출 저장 완료!\n ${amount.toLocaleString()}원 (${result.slipNo})`, 'success');
         
         saveSuccess = result.message || '매출이 성공적으로 저장되었습니다.';
         
@@ -1285,54 +1377,6 @@
   }
 }
 
-/*
-  // 페이지 로드 시 초기화
-  onMount(async () => {
-    layoutConstants = getLayoutConstants();
-    
-    const today = new Date().toISOString().split('T')[0];
-    startDate = today;
-    endDate = today;
-    saleInfo.date = today;
-
-    await loadSaleCategoryList();
-    await loadShopList();
-    await loadCustomerList();
-
-    leftPanelVisible = window.innerWidth > 740;
-    
-    await loadCompanyList();
-    
-    const detectBackofficeMenu = () => {
-      const sidebar = document.querySelector('.sidebar');
-      if (sidebar) {
-        backofficeMenuOpen = sidebar.classList.contains('open');
-        if (window.innerWidth <= 740 && backofficeMenuOpen) {
-          leftPanelVisible = false;
-        }
-      }
-    };
-    
-    const observer = new MutationObserver(detectBackofficeMenu);
-    const sidebar = document.querySelector('.sidebar');
-    if (sidebar) {
-      observer.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
-    }
-
-    setTimeout(() => {
-      if (barcodeInput) {
-        barcodeInput.focus();
-      }
-    }, 500);
-    
-    return () => {
-      observer.disconnect();
-      if (typeof document !== 'undefined') {
-        document.body.style.overflow = '';
-      }
-    };
-  });
-*/
 
   onMount(async () => {
  
@@ -1950,14 +1994,14 @@
               <div class="grid grid-cols-3 gap-2">
                 
                 <!-- 전체 합계 -->
-                <div class="bg-white rounded border border-green-200 relative overflow-hidden" style="padding: 5px; padding-top: 40px;">
+                <div class="bg-white rounded border border-pink-200 relative overflow-hidden" style="padding: 5px; padding-top: 40px;">
                   <!-- 상단 배지 바 -->
-                  <div class="absolute top-0 left-0 right-0 bg-green-400 text-white text-center py-1">
+                  <div class="absolute top-0 left-0 right-0 bg-pink-300 text-white text-center py-1">
                     <span class="text-xs font-bold">전체</span>
                   </div>
                   <!-- 금액 + 수량 -->
                   <div class="text-center">
-                    <div class="font-bold text-gray-800 mb-1" style="font-size: 0.85rem;">
+                    <div class="font-bold text-red-600 mb-1" style="font-size: 0.85rem;">
                       {summaryData.totalAmount.toLocaleString('ko-KR')}원
                       ({summaryData.totalQty.toLocaleString('ko-KR')}개)
                     </div>
@@ -1980,9 +2024,9 @@
                 </div>
                 
                 <!-- 현금 합계 -->
-                <div class="bg-white rounded border border-pink-200 relative overflow-hidden" style="padding: 5px; padding-top: 40px;">
+                <div class="bg-white rounded border border-gray-200 relative overflow-hidden" style="padding: 5px; padding-top: 40px;">
                   <!-- 상단 배지 바 -->
-                  <div class="absolute top-0 left-0 right-0 bg-pink-300 text-white text-center py-1">
+                  <div class="absolute top-0 left-0 right-0 bg-gray-100 border-b border-gray-300 text-gray-800 text-center py-1">
                     <span class="text-xs font-bold">현금</span>
                   </div>
                   <!-- 금액 + 수량 -->
@@ -2061,7 +2105,7 @@
                     <!-- 수정: 아래와 같이 조건부 클래스 적용 -->
 
                     {#each detailItems as item, index}
-                      <div class="rounded-lg p-1 relative transition-colors duration-200 {item.isCash ? 'border border-pink-200 bg-pink-50' : 'border border-gray-200 bg-white'}" 
+                      <div class="rounded-lg p-1 relative transition-colors duration-200 {item.isCash ? 'border border-pink-200 bg-pink-50' : 'border border-gray-200 bg-white'} {item.quantity > 1 ? 'border-2 border-yellow-400' : ''}" 
                           style="transition: all 0.2s ease;">
                         <!-- 삭제 버튼 (오른쪽 상단) -->
                         <button 
@@ -2137,9 +2181,25 @@
                             <!-- 가격정보 각각 한줄로 -->
                             <div class="flex gap-0.5 text-xs">
                               <span class="text-gray-500 px-1 py-1 rounded">카드: {item.cardPrice.toLocaleString('ko-KR')}</span>
-                              <span class="text-gray-500 px-1 py-1 rounded">현금: {item.cashPrice.toLocaleString('ko-KR')}</span>
+                              
+                                <span class="px-1 py-1 rounded" 
+                                      style="color: {item.hasPresetCashPrice ? '#dc2626' : '#6b7280'}; {item.hasPresetCashPrice ? 'font-weight: 600;' : ''}">
+                                  현금: {item.cashPrice.toLocaleString('ko-KR')}
+                                </span>
+                              
                               <span class="text-gray-500 px-1 py-1 rounded">납품: {item.deliveryPrice.toLocaleString('ko-KR')}</span>
                             </div>
+
+                            <!-- 수량할인 정보 표시 -->
+                            {#if item.discountQty && item.discountAmount}
+                              {@const currentDiscountAmount = getQuantityDiscountAmount(item)}
+                              <div class="text-xs mt-1">
+                                <span class="text-red-600 px-1 py-1 rounded">수량할인: </span>
+                                <span class="text-red-600 font-medium px-1 py-1">
+                                  {currentDiscountAmount > 0 ? '-' : ''}{currentDiscountAmount.toLocaleString('ko-KR')}({item.discountQty})
+                                </span>
+                              </div>
+                            {/if}
                           </div>
                         </div>
                         
@@ -2175,7 +2235,7 @@
                                   type="number" 
                                   bind:value={item.quantity}
                                   on:input={() => handleQuantityChange(index)}
-                                  class="w-8 text-center border-0 text-xs"
+                                  class="w-8 text-center border-0 text-xs {item.quantity > 1 ? 'bg-yellow-100' : 'bg-white'}"
                                   style="padding: 1px;"
                                   min="1"
                                 />
@@ -2253,6 +2313,7 @@
   on:printSuccess={handlePrintSuccess}
   on:printError={handlePrintError}
 />
+
 <style>
   /* 사이드 메뉴 스크롤 제어 */
   .panel-scroll-container {

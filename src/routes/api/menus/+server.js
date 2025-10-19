@@ -1,8 +1,6 @@
 import { json } from '@sveltejs/kit';
-import jwt from 'jsonwebtoken';
 import { getDb } from '$lib/database.js';
 
-const JWT_SECRET = 'your-secret-key';
 
 // 안전한 값 변환 함수
 function safeString(value) {
@@ -23,16 +21,12 @@ function safeBoolean(value) {
 }
 
 // 메뉴 목록 조회 (권한 정보 포함)
-export async function GET({ cookies }) {
+export async function GET({ locals }) {
   try {
-    const token = cookies.get('token');
-    if (!token) {
-      return json({ error: '인증이 필요합니다.' }, { status: 401 });
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'admin') {
-      return json({ error: '권한이 없습니다.' }, { status: 403 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const db = getDb();
@@ -64,16 +58,12 @@ export async function GET({ cookies }) {
 }
 
 // 새 메뉴 생성
-export async function POST({ request, cookies }) {
+export async function POST({ request, locals }) {
   try {
-    const token = cookies.get('token');
-    if (!token) {
-      return json({ error: '인증이 필요합니다.' }, { status: 401 });
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'admin') {
-      return json({ error: '권한이 없습니다.' }, { status: 403 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const data = await request.json();
@@ -156,16 +146,12 @@ export async function POST({ request, cookies }) {
 }
 
 // 메뉴 순서 변경
-export async function PUT({ request, cookies }) {
+export async function PUT({ request, locals }) {
   try {
-    const token = cookies.get('token');
-    if (!token) {
-      return json({ error: '인증이 필요합니다.' }, { status: 401 });
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'admin') {
-      return json({ error: '권한이 없습니다.' }, { status: 403 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const { menuOrders } = await request.json();

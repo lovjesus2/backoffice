@@ -1,9 +1,14 @@
 import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/database.js';  // ← 이렇게 수정
 
-export async function GET({ url }) {
-  
+export async function GET({ url, locals }) {
   try {
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
+    
     // 쿼리 파라미터 추출
     const company_code = url.searchParams.get('company_code') || '';
     const registration_code = url.searchParams.get('registration_code') || '';

@@ -284,11 +284,12 @@
   <!-- 오버레이 -->
   {#if isMobileMenuOpen}
     <div class="fixed top-[var(--header-total-height)] left-0 right-0 bottom-0 bg-black/50 z-[90] backdrop-blur-sm
-                md:hidden" 
-         on:click={closeMenu} 
-         role="button" 
-         tabindex="0" 
-         aria-label="메뉴 닫기"></div>
+            md:hidden" 
+     on:click={closeMenu}
+     on:keydown={(e) => e.key === 'Enter' && closeMenu()}
+     role="button" 
+     tabindex="0" 
+     aria-label="메뉴 닫기"></div>
   {/if}
 
   <!-- 사이드바 -->
@@ -335,6 +336,11 @@
     </div>
   </main>
 </div>
+<!-- 빌드 경고 해결용 숨겨진 슬롯 -->
+<div style="display: none;">
+  <slot />
+</div>
+
 
 <!-- 글로벌 이미지 확대 모달 -->
 <ImageModal 

@@ -1,21 +1,18 @@
 import { json } from '@sveltejs/kit';
-import jwt from 'jsonwebtoken';
 import { getDb } from '$lib/database.js';
 
-const JWT_SECRET = 'your-secret-key';
+
 
 // 시스템 정보 조회 (인증된 사용자만)
-export async function GET({ cookies }) {
-  try {
+export async function GET({ locals }) {
+  try {  // 🆕 try 문 추가!
     console.log('📋 시스템 정보 API 호출됨 (보안 강화됨)');
     
-    // 토큰 검증 (이미 미들웨어에서 확인했지만 이중 체크)
-    const token = cookies.get('token');
-    if (!token) {
-      return json({ error: '인증이 필요합니다.' }, { status: 401 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
     
     const db = getDb();
     const [rows] = await db.execute(
@@ -51,7 +48,7 @@ export async function GET({ cookies }) {
       server_time: new Date().toISOString(),
       // version 제거 (보안)
       // environment 제거 (보안)
-      user_role: decoded.role  // 현재 사용자 역할만 포함
+      user_role: user.role  // 🆕 decoded.role 대신 user.role
     };
     
     console.log('✅ 안전한 시스템 정보 반환 완료');

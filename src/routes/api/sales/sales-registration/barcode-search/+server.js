@@ -5,14 +5,23 @@ export async function GET({ url, locals }) {
   try {
     console.log('=== 바코드 검색 API 호출 시작 ===');
     
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
     if (!user) {
       return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const productCode = url.searchParams.get('code');
+    // 🆕 동적으로 회사구분, 등록구분 받기 (기본값 설정)
+    const companyCode = url.searchParams.get('company_code') || user.company_code || 'A1';
+    const registrationCode = url.searchParams.get('registration_code') || 'AK';
     
-    console.log('바코드 검색 요청:', { productCode, user: user.username });
+    console.log('바코드 검색 요청:', { 
+      productCode, 
+      companyCode, 
+      registrationCode, 
+      user: user.username 
+    });
     
     if (!productCode || productCode.trim() === '') {
       return json({
@@ -23,7 +32,7 @@ export async function GET({ url, locals }) {
     
     const db = getDb();
     
-    // product-stock/search와 동일한 쿼리 구조, 하지만 정확한 코드 매칭
+    // 🆕 동적 파라미터로 수정
     const sql = `
       SELECT p.PROH_CODE, 
              p.PROH_NAME, 
@@ -36,7 +45,10 @@ export async function GET({ url, locals }) {
              MAX(CASE WHEN prod.PROD_COD2 = 'L3' THEN prod.PROD_TXT1 END) as cash_status,
              MAX(CASE WHEN prod.PROD_COD2 = 'L5' THEN prod.PROD_TXT1 END) as discontinued_status,
              MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed,
-             MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status
+             MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status,
+             y.YOUL_QTY1,
+             y.YOUL_AMT1,
+             y.YOUL_GUBN
       FROM ASSE_PROH p
       INNER JOIN ASSE_PROD prod
          ON p.PROH_GUB1 = prod.PROD_GUB1
@@ -46,17 +58,19 @@ export async function GET({ url, locals }) {
          ON p.PROH_CODE = d.DPRC_CODE
       LEFT JOIN STOK_HYUN h
         ON p.PROH_CODE = h.HYUN_ITEM
-      WHERE p.PROH_GUB1 = 'A1'
-        AND p.PROH_GUB2 = 'AK'
+      LEFT JOIN BISH_YOUL y
+        ON p.PROH_CODE = y.YOUL_ITEM
+      WHERE p.PROH_GUB1 = ?
+        AND p.PROH_GUB2 = ?
         AND prod.PROD_COD2 IN ('L3', 'L5', 'L6', 'L7')
         AND p.PROH_CODE = ?
-      GROUP BY p.PROH_CODE, p.PROH_NAME, p.PROH_BIGO, d.DPRC_SOPR, d.DPRC_BAPR, d.DPRC_DCPR, d.DPRC_DEPR, h.HYUN_QTY1
+      GROUP BY p.PROH_CODE, p.PROH_NAME, p.PROH_BIGO, d.DPRC_SOPR, d.DPRC_BAPR, d.DPRC_DCPR, d.DPRC_DEPR, h.HYUN_QTY1, y.YOUL_QTY1, y.YOUL_AMT1, y.YOUL_GUBN
     `;
     
     console.log('실행할 SQL:', sql);
-    console.log('파라미터:', [productCode.trim().toUpperCase()]);
+    console.log('파라미터:', [companyCode, registrationCode, productCode.trim().toUpperCase()]);
     
-    const [rows] = await db.execute(sql, [productCode.trim().toUpperCase()]);
+    const [rows] = await db.execute(sql, [companyCode, registrationCode, productCode.trim().toUpperCase()]);
     console.log('DB 조회 결과:', rows.length, '개 행');
     
     if (rows.length === 0) {
@@ -78,7 +92,11 @@ export async function GET({ url, locals }) {
       cash_status : rows[0].cash_status === '1',
       discontinued: rows[0].discontinued_status === '1',
       stockManaged: rows[0].stock_managed === '1',
-      isOnline: rows[0].online_status === '1'
+      isOnline: rows[0].online_status === '1',
+      // 할인 정보 추가
+      discountQty: parseInt(rows[0].YOUL_QTY1) || 0,
+      discountAmount: parseInt(rows[0].YOUL_AMT1) || 0,
+      discountType: rows[0].YOUL_GUBN || '0'
     };
 
     console.log('변환된 제품 데이터:', product);

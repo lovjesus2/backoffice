@@ -184,10 +184,9 @@ export async function POST({ request, locals }) {
         // 미들웨어에서 인증된 사용자 확인
         const user = locals.user;
         if (!user) {
-            console.log('인증되지 않은 사용자');
-            return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+        return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
         }
-
+        
         const { product_code, quantity } = await request.json();
         
         console.log('재고 조정 요청:', { product_code, quantity, user: user.username });

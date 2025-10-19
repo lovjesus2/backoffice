@@ -6,9 +6,9 @@ export async function GET({ url, locals }) {
   try {
     console.log('=== Product Detail API 호출 시작 ===');
     
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
     if (!user) {
-      console.log('인증되지 않은 사용자');
       return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
@@ -33,6 +33,7 @@ export async function GET({ url, locals }) {
             d.DPRC_SOPR, 
             d.DPRC_BAPR,
             COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
+            MAX(CASE WHEN prod.PROD_COD2 = 'L3' THEN prod.PROD_TXT1 END) as cash_status,
             MAX(CASE WHEN prod.PROD_COD2 = 'L5' THEN prod.PROD_TXT1 END) as discontinued_status,
             MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed,
             MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status
@@ -41,7 +42,7 @@ export async function GET({ url, locals }) {
         ON p.PROH_GUB1 = prod.PROD_GUB1
         AND p.PROH_GUB2 = prod.PROD_GUB2
         AND p.PROH_CODE = prod.PROD_CODE
-        AND prod.PROD_COD2 IN ('L5', 'L6', 'L7')
+        AND prod.PROD_COD2 IN ('L3', 'L5', 'L6', 'L7')
       INNER JOIN BISH_DPRC d
         ON p.PROH_CODE = d.DPRC_CODE
       LEFT JOIN STOK_HYUN h
@@ -73,6 +74,7 @@ export async function GET({ url, locals }) {
       cost: parseInt(rows[0].DPRC_BAPR) || 0,
       price: parseInt(rows[0].DPRC_SOPR) || 0,
       stock: parseInt(rows[0].CURRENT_STOCK) || 0,
+      cash_status: rows[0].cash_status === '1',        // 현금세팅!
       discontinued: rows[0].discontinued_status === '1',
       stockManaged: rows[0].stock_managed === '1',        // 통일!
       isOnline: rows[0].online_status === '1'

@@ -9,35 +9,43 @@
 
   async function login() {
     if (!username || !password) {
-      errorMessage = '사용자명과 비밀번호를 입력해주세요.';
-      return;
+        errorMessage = '사용자명과 비밀번호를 입력해주세요.';
+        return;
     }
 
     isLoading = true;
     errorMessage = '';
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      });
+        const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username, password }),
+        });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (response.ok) {
-        goto('/admin');
-      } else {
-        errorMessage = data.error || '로그인에 실패했습니다.';
-      }
+        if (response.ok) {
+            // 🔧 수정된 부분: 약간의 지연 후 리다이렉트
+            //setTimeout(() => {
+            //    goto('/admin', { replaceState: true });
+            //}, 100);
+            
+            // 또는 강제 새로고침 방식
+             setTimeout(() => {
+                 window.location.href = '/admin';
+             }, 100);
+        } else {
+            errorMessage = data.error || '로그인에 실패했습니다.';
+        }
     } catch (error) {
-      errorMessage = '서버 오류가 발생했습니다.';
+        errorMessage = '서버 오류가 발생했습니다.';
     }
 
     isLoading = false;
-  }
+  } 
 
   function handleKeyPress(event) {
     if (event.key === 'Enter') {

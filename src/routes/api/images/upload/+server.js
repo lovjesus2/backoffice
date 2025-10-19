@@ -1,36 +1,21 @@
 // src/routes/api/images/upload/+server.js (캐시 무효화 추가 버전)
 import { json } from '@sveltejs/kit';
 import { writeFile, mkdir, access, stat } from 'fs/promises';
-import { existsSync } from 'fs';
 import path from 'path';
-import jwt from 'jsonwebtoken';
 import { getDb } from '$lib/database.js';
 
-// ✅ JWT_SECRET 문제 해결
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 const IMAGE_BASE_DIR = '/volume1/image'; // NAS 이미지 저장소
 
 // 🔍 GET: 기존 이미지 목록 조회
-export async function GET({ url, cookies }) {
+export async function GET({ url, locals }) {
   try {
     console.log('🔍 이미지 조회 API 호출됨');
     
-    // 인증 확인
-    const token = cookies.get('token');
-    if (!token) {
-      console.log('❌ 토큰이 없습니다');
-      return json({ error: '인증이 필요합니다.' }, { status: 401 });
-    }
-
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      console.log('✅ JWT 토큰 검증 성공:', decoded.username);
-    } catch (jwtError) {
-      console.error('❌ JWT 토큰 검증 실패:', jwtError.message);
-      return json({ 
-        error: '토큰이 유효하지 않습니다. 다시 로그인해주세요.' 
-      }, { status: 401 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
     
     // 쿼리 파라미터 추출
@@ -115,26 +100,14 @@ export async function GET({ url, cookies }) {
 }
 
 // POST: 수정된 업로드 로직 - 파일명 충돌 해결
-export async function POST({ request, cookies }) {
+export async function POST({ request, locals }) {
   try {
     console.log('📤 이미지 업로드 API 호출됨');
     
-    // 인증 확인
-    const token = cookies.get('token');
-    if (!token) {
-      console.log('❌ 토큰이 없습니다');
-      return json({ error: '인증이 필요합니다.' }, { status: 401 });
-    }
-
-    let decoded;
-    try {
-      decoded = jwt.verify(token, JWT_SECRET);
-      console.log('✅ JWT 토큰 검증 성공:', decoded.username);
-    } catch (jwtError) {
-      console.error('❌ JWT 토큰 검증 실패:', jwtError.message);
-      return json({ 
-        error: '토큰이 유효하지 않습니다. 다시 로그인해주세요.' 
-      }, { status: 401 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const formData = await request.formData();
@@ -144,7 +117,7 @@ export async function POST({ request, cookies }) {
     const imagGub2 = formData.get('IMAG_GUB2'); 
     const imagCode = formData.get('IMAG_CODE');
     const imagGub3 = '0';
-    const imagIusr = decoded.username;
+    const imagIusr = user.username;
     
     // 최종 순서 정보 받기
     const finalOrderData = formData.get('finalOrder');

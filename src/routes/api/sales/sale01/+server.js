@@ -2,7 +2,14 @@
 import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/database.js';
 
-export async function GET({ url }) {
+export async function GET({ url, locals }) { 
+
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
+
   const searchParams = url.searchParams;
   const date1 = searchParams.get('date1');
   const date2 = searchParams.get('date2');

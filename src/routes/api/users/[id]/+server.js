@@ -5,8 +5,11 @@ import bcrypt from 'bcryptjs';
 // 사용자 상세 조회 - 미들웨어에서 admin 권한 체크됨
 export async function GET({ params, locals }) {
   try {
-    // 미들웨어에서 admin 권한이 이미 체크됨
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
 
     const db = getDb();
     const [rows] = await db.execute(
@@ -32,8 +35,11 @@ export async function GET({ params, locals }) {
 // 사용자 정보 수정 - 미들웨어에서 admin 권한 체크됨
 export async function PUT({ params, request, locals }) {
   try {
-    // 미들웨어에서 admin 권한이 이미 체크됨
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
 
     const { username, email, role, password } = await request.json();
     
@@ -89,8 +95,11 @@ export async function PUT({ params, request, locals }) {
 // 사용자 삭제 - 미들웨어에서 admin 권한 체크됨
 export async function DELETE({ params, locals }) {
   try {
-    // 미들웨어에서 admin 권한이 이미 체크됨
-    const currentUser = locals.user;
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
 
     if (parseInt(params.id) === currentUser.id) {
       return json({ error: '자기 자신은 삭제할 수 없습니다.' }, { status: 400 });

@@ -9,7 +9,6 @@ export async function POST({ request, locals }) {
     // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
     if (!user) {
-      console.log('인증되지 않은 사용자');
       return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
@@ -25,13 +24,14 @@ export async function POST({ request, locals }) {
       }, { status: 400 });
     }
     
-    // 지원하는 속성 코드 체크 (L7 추가)
+    // 지원하는 속성 코드 체크
     const supportedAttributes = {
+      'L3': { name: '현금세팅', active: '활성화', inactive: '비활성화' },        // ✅ L3 추가
       'L5': { name: '단종 상태', active: '단종', inactive: '정상' },
       'L6': { name: '재고 사용', active: '사용', inactive: '미사용' },
       'L7': { name: '온라인 판매', active: '활성화', inactive: '비활성화' }
     };
-    
+
     if (!supportedAttributes[attribute_code]) {
       return json({
         success: false,

@@ -8,14 +8,10 @@ export async function POST({ request, locals }) {
   try {
     console.log('=== 제품등록 통합 저장 API 시작 ===');
     
-    // 인증 확인
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
     if (!user) {
-      console.log('❌ 인증되지 않은 사용자');
-      return json({ 
-        success: false, 
-        message: '인증이 필요합니다.' 
-      }, { status: 401 });
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const data = await request.json();
@@ -172,12 +168,10 @@ export async function PUT({ request, locals }) {
   try {
     console.log('=== 제품등록 수정 저장 API 시작 ===');
     
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
     if (!user) {
-      return json({ 
-        success: false, 
-        message: '인증이 필요합니다.' 
-      }, { status: 401 });
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const data = await request.json();

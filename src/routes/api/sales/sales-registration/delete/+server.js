@@ -156,13 +156,10 @@ export async function DELETE({ request, locals }) {
   const db = getDb();
   
   try {
-    // 인증 확인
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
-    if (!user || !user.username) {
-      return json({ 
-        success: false, 
-        message: '인증이 필요합니다.' 
-      }, { status: 401 });
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const username = user.username;

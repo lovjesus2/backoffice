@@ -136,8 +136,9 @@ export async function POST({ request, locals }) {
   const db = getDb();
   
   try {
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
-    if (!user?.username) {
+    if (!user) {
       return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 

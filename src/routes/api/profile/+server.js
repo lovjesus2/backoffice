@@ -1,12 +1,15 @@
 import { json } from '@sveltejs/kit';
-import bcrypt from 'bcryptjs';
 import { getDb } from '$lib/database.js';
 
 // GET: 현재 사용자 프로필 조회
 export async function GET({ locals }) {
   try {
-    // 미들웨어에서 검증된 사용자 정보 사용
+    
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
 
     const db = getDb();
     
@@ -33,8 +36,12 @@ export async function GET({ locals }) {
 // PUT: 프로필 정보 수정
 export async function PUT({ request, locals }) {
   try {
-    // 미들웨어에서 검증된 사용자 정보 사용
+    
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
 
     const { username, email } = await request.json();
     

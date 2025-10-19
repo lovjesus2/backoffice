@@ -1,19 +1,13 @@
 import { json } from '@sveltejs/kit';
-import jwt from 'jsonwebtoken';
 import { getDb } from '$lib/database.js';
 
-const JWT_SECRET = 'your-secret-key';
 
-export async function GET({ url, cookies }) {
+export async function GET({ url, locals }) { 
   try {
-    const token = cookies.get('token');
-    if (!token) {
-      return json({ error: '인증이 필요합니다.' }, { status: 401 });
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'admin') {
-      return json({ error: '권한이 없습니다.' }, { status: 403 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const action = url.searchParams.get('action');

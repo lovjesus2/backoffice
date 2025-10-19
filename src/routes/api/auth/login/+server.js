@@ -59,14 +59,17 @@ export async function POST({ request, cookies }) {
         cookies.set('token', token, {
             path: '/',
             httpOnly: true,
-            secure: false,
+            secure: true,
             sameSite: 'lax',
-            maxAge: sessionTimeoutSeconds // 720시간 = 30일
+            maxAge: sessionTimeoutSeconds, // 720시간 = 30일
+            // 즉시 적용을 위한 설정
+            encode: false
         });
         
         return json({
             success: true,
             message: '로그인 성공',
+            token, // 클라이언트용 토큰 추가
             user: {
                 id: user.id,
                 username: user.username,

@@ -1,18 +1,14 @@
 // src/routes/api/common-codes/minr/+server.js
 import { json } from '@sveltejs/kit';
 import { getDb } from '$lib/database.js';
-import { verifyToken } from '$lib/middleware/auth.js';
 
 // BISH_MINR 조회 (GET) - 특정 대분류의 소분류들
-export async function GET({ url, cookies }) {
+export async function GET({ url, locals }) {
   try {
-    // 인증 확인
-    const tokenResult = verifyToken(cookies);
-    if (!tokenResult.success) {
-      return json({
-        success: false,
-        message: '인증이 필요합니다.'
-      }, { status: 401 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const db = getDb();
@@ -58,18 +54,15 @@ export async function GET({ url, cookies }) {
 }
 
 // BISH_MINR 저장/수정 (POST)
-export async function POST({ request, cookies }) {
+export async function POST({ request, locals }) {
   try {
-    // 인증 확인
-    const tokenResult = verifyToken(cookies);
-    if (!tokenResult.success) {
-      return json({
-        success: false,
-        message: '인증이 필요합니다.'
-      }, { status: 401 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
-    const currentUser = tokenResult.user; // 로그인한 사용자 정보
+    const currentUser = user; // 로그인한 사용자 정보
     const db = getDb();
     const data = await request.json();
     const { MINR_MJCD, MINR_CODE, MINR_NAME, MINR_BIGO, MINR_BIG2, isUpdate, originalCode } = data;
@@ -146,15 +139,12 @@ export async function POST({ request, cookies }) {
 }
 
 // BISH_MINR 삭제 (DELETE)
-export async function DELETE({ url, cookies }) {
+export async function DELETE({ url, locals }) { 
   try {
-    // 인증 확인
-    const tokenResult = verifyToken(cookies);
-    if (!tokenResult.success) {
-      return json({
-        success: false,
-        message: '인증이 필요합니다.'
-      }, { status: 401 });
+    // 미들웨어에서 인증된 사용자 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
     }
 
     const db = getDb();

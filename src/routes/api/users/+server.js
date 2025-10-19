@@ -5,8 +5,11 @@ import bcrypt from 'bcryptjs';
 // 사용자 목록 조회 - 미들웨어에서 admin 권한 체크됨
 export async function GET({ url, locals }) {
   try {
-    // 미들웨어에서 admin 권한이 이미 체크됨
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
 
     const page = parseInt(url.searchParams.get('page') || '1');
     const limit = parseInt(url.searchParams.get('limit') || '10');
@@ -49,8 +52,11 @@ export async function GET({ url, locals }) {
 // 새 사용자 생성 - 미들웨어에서 admin 권한 체크됨
 export async function POST({ request, locals }) {
   try {
-    // 미들웨어에서 admin 권한이 이미 체크됨
+    // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
 
     const { username, email, password, role } = await request.json();
     

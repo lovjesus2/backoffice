@@ -9,14 +9,7 @@ export async function DELETE({ request, locals }) {
     // 미들웨어에서 인증된 사용자 확인
     const user = locals.user;
     if (!user) {
-      console.log('인증되지 않은 사용자');
       return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
-    }
-
-    // admin 권한 체크
-    if (user.role !== 'admin') {
-      console.log('권한 없는 사용자:', user.role);
-      return json({ success: false, message: '관리자 권한이 필요합니다.' }, { status: 403 });
     }
 
     const { product_code, company_code, registration_code } = await request.json();
