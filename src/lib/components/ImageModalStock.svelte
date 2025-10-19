@@ -2,9 +2,10 @@
 <script>
   import { onMount, tick, createEventDispatcher } from 'svelte';
   import { browser } from '$app/environment';
-  import { imageModalStore, closeImageModal } from '$lib/utils/imageModalUtils';
-  import { simpleCache } from '$lib/utils/simpleImageCache.js';
-  import DirectPrint from '$lib/components/DirectPrint.svelte';
+  import { imageModalStore, closeImageModal } from '$lib/utils/imageModalUtils';  //이미지 모달 서버쪽유틸
+  import { simpleCache } from '$lib/utils/simpleImageCache.js';                 //캐쉬 이미지 컴포넌트
+  import DirectPrint from '$lib/components/DirectPrint.svelte';                 //출력 컴포넌트
+  import PriceInfoModal from './PriceInfoModal.svelte';                         //가격수정 컴포넌트
 
   const dispatch = createEventDispatcher();
 
@@ -33,6 +34,10 @@
   let adjustingStock = new Set();
   let selectedProduct = null;
   let directPrint;
+
+  // 가격 모달 관련 변수들 (기존 변수들 아래에 추가)
+  let showPriceModal = false;
+
 
   // 모바일 체크
   function checkMobile() {
@@ -256,6 +261,58 @@
     } finally {
       adjustingStock.delete(productCode);
       adjustingStock = adjustingStock;
+    }
+  }
+
+  // ✅ L3 현금세팅 토글 함수 추가
+  async function toggleCash(productCode) {
+    try {
+      console.log('현금세팅 토글 시작, 현재 상태:', productData?.cash_status);
+      
+      const response = await fetch('/api/product-management/product-stock/toggle-attribute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          product_code: productCode, 
+          attribute_code: 'L3'  // 현금결제
+        })
+      });
+      
+      const result = await response.json();
+      console.log('API 응답:', result);
+      
+      if (result.success) {
+        const isCashAllowed = result.new_status === '1';
+        console.log('새로운 현금세팅 상태:', isCashAllowed);
+        
+        // productData 업데이트 (강제 재할당으로 반응성 보장)
+        if (productData && productData.code === productCode) {
+          productData = {
+            ...productData,
+            cash_status: isCashAllowed
+          };
+          // 강제 반응성 트리거
+          productData = productData;
+        }
+        
+        console.log('업데이트된 productData:', productData);
+        
+        showToast(result.message, 'success');
+        
+        // 부모 컴포넌트에 변경 사항 알림
+        dispatch('cashStatusUpdated', {
+          productCode,
+          cash_status: isCashAllowed
+        });
+        
+      } else {
+        showToast(result.message || '처리 실패', 'error');
+      }
+    } catch (err) {
+      console.error('현금세팅 처리 오류:', err);
+      showToast('처리 중 오류가 발생했습니다.', 'error');
     }
   }
 
@@ -503,6 +560,19 @@
     }
   }
 
+  // 금액 클릭 핸들러
+function handlePriceClick() {
+  console.log('💰 가격 클릭됨:', productData?.code, productData?.name);
+  
+  if (!productData?.code) {
+    showToast('제품 정보가 없습니다.', 'error');
+    return;
+  }
+  
+  showPriceModal = true;
+}
+
+
   // 토스트 메시지 표시
   function showToast(message, type = 'info') {
     // 기존 토스트 제거
@@ -691,7 +761,14 @@
                 원가: {productData.cost ? productData.cost.toLocaleString() : '0'}원
               </div>
               <div class="text-gray-700" style="font-size: 0.8rem; line-height: 1.3;">
-                금액: {productData.price ? productData.price.toLocaleString() : '0'}원
+                <button 
+                  class="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left w-full bg-transparent border-none p-0 font-medium"
+                  style="font-size: 0.8rem; line-height: 1.3;"
+                  on:click={handlePriceClick}
+                  title="클릭하여 가격 수정"
+                >
+                  금액: {productData.price ? productData.price.toLocaleString() : '0'}원 🔗
+                </button>
               </div>
             </div>
             
@@ -767,7 +844,7 @@
         <div class="mt-3 w-full max-w-[600px] bg-white border border-gray-300 rounded-lg shadow-sm">
           <div class="p-3">
             <div class="flex justify-center gap-2">
-              
+
               <!-- 정상/단종 토글 버튼 -->
               <button 
                 type="button"
@@ -778,7 +855,7 @@
               >
                 {productData.discontinued ? '단종(단종)' : '단종(정상)'}
               </button>
-              
+
               <!-- 사용/미사용 토글 버튼 -->
               <button 
                 type="button"
@@ -789,6 +866,17 @@
               >
                 {productData.stockManaged ? '재고(사용)' : '재고(미사용)'}
               </button>
+              
+              <!-- L3 현금세팅 토글 버튼 추가 -->
+              <button 
+                type="button"
+                class="border-0 rounded px-4 py-2 text-xs transition-all duration-200 {productData.cash_status ? 
+                  'bg-green-500 text-white hover:bg-blue-600' : 
+                  'bg-gray-500 text-white hover:bg-gray-500'}"
+                on:click={() => toggleCash(productData.code)}
+              >
+                {productData.cash_status ? '현금(세팅)' : '현금(미세팅)'}
+              </button>              
               
               <!-- ON/OFF 토글 버튼 -->
               <button 
@@ -840,6 +928,22 @@
   bind:productData={selectedProduct}
   on:printSuccess={handlePrintSuccess}
   on:printError={handlePrintError}
+/>
+
+<!-- 가격 정보 모달 (디버깅용 표시) -->
+<PriceInfoModal
+  show={showPriceModal}
+  productCode={productData?.code || ''}
+  productName={productData?.name || ''}
+  on:close={() => showPriceModal = false}
+  on:save={(event) => {
+    console.log('가격 저장 완료:', event.detail);
+    showToast('가격 정보가 저장되었습니다.', 'success');
+    // 제품 정보 다시 로드
+    if (productData?.code) {
+      loadProductData(productData.code);
+    }
+  }}
 />
 
 <style>

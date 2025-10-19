@@ -1,3 +1,4 @@
+// src/lib/middleware/auth.js
 import jwt from 'jsonwebtoken';
 import { isMaintenanceMode } from '$lib/utils/systemSettings.js';
 
@@ -5,17 +6,33 @@ const JWT_SECRET = 'your-secret-key';
 
 // JWT 토큰 검증
 export function verifyToken(cookies) {
-  try {
-    const token = cookies.get('token');
-    if (!token) {
-      throw new Error('인증 토큰이 없습니다. 다시 로그인해주세요.');
+    try {
+        // 쿠키에서 토큰 조회
+        let token = cookies.get('token');
+        
+        // 쿠키에 없으면 헤더에서 조회 (Authorization Bearer)
+        if (!token && typeof window !== 'undefined') {
+            const authHeader = document.cookie
+                .split('; ')
+                .find(row => row.startsWith('token='));
+            if (authHeader) {
+                token = authHeader.split('=')[1];
+            }
+        }
+
+        if (!token) {
+            return { success: false, error: '토큰이 없습니다.' };
+        }
+
+        const decoded = jwt.verify(token, JWT_SECRET);
+        return { success: true, user: decoded };
+        
+    } catch (error) {
+        if (error.name === 'TokenExpiredError') {
+            return { success: false, error: '토큰이 만료되었습니다.' };
+        }
+        return { success: false, error: '유효하지 않은 토큰입니다.' };
     }
-    
-    const decoded = jwt.verify(token, JWT_SECRET);
-    return { success: true, user: decoded };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
 }
 
 // 사용자 역할 권한 체크
@@ -34,6 +51,8 @@ export function getApiPermissionLevel(url) {
   const pathname = url.pathname;
   const searchParams = url.searchParams;
   
+  console.log('🔍 API 경로 권한 체크:', pathname);
+  
   // PUBLIC: 인증 불필요
   const publicPaths = [
     '/api/auth/login'
@@ -44,6 +63,7 @@ export function getApiPermissionLevel(url) {
     '/api/auth/me',
     '/api/auth/logout',
     '/api/profile',
+    '/api/profile/password',
     '/api/user-menus',
     '/api/system/info'
   ];
@@ -51,10 +71,10 @@ export function getApiPermissionLevel(url) {
   // ADMIN_ONLY: 관리자 전용
   const adminOnlyPaths = [
     '/api/users',
-    '/api/menus'
+    '/api/menus',
+    '/api/settings',
+    '/api/system'
   ];
-  
-  console.log('🔍 API 경로 권한 체크:', pathname);
   
   // 🔧 특별 처리: /api/system?mode=info는 AUTHENTICATED
   if (pathname === '/api/system' && searchParams.get('mode') === 'info') {
@@ -78,10 +98,13 @@ export function getApiPermissionLevel(url) {
     return 'ADMIN_ONLY';
   }
   
-  // 패턴 매칭 체크
+  // 패턴 매칭 체크 (동적 경로들)
   if (pathname.startsWith('/api/users/') || 
       pathname.startsWith('/api/menus/') ||
-      pathname === '/api/system') {
+      pathname.startsWith('/api/sales/calendar') ||
+      pathname.startsWith('/api/sales/sale01') ||
+      pathname.startsWith('/api/product-management/')
+    ) {
     console.log('👑 ADMIN_ONLY API (패턴)');
     return 'ADMIN_ONLY';
   }
@@ -89,6 +112,11 @@ export function getApiPermissionLevel(url) {
   if (pathname.startsWith('/api/profile/')) {
     console.log('🔐 AUTHENTICATED API (패턴)');
     return 'AUTHENTICATED';
+  }
+  
+  if (pathname === '/api/system') {
+    console.log('👑 ADMIN_ONLY API (시스템)');
+    return 'ADMIN_ONLY';
   }
   
   // 기본값: AUTHENTICATED (보안 강화)
@@ -156,6 +184,8 @@ export function createAuthHandle() {
   return async ({ event, resolve }) => {
     const { url, cookies } = event;
     
+    console.log(`🌐 요청: ${event.request.method} ${url.pathname}${url.search}`);
+    
     // 🚧 점검 모드 확인 (관리자 제외)
     if (!url.pathname.startsWith('/api/auth/login')) {
       const maintenanceMode = await isMaintenanceMode();
@@ -170,7 +200,7 @@ export function createAuthHandle() {
             return new Response(
               JSON.stringify({ 
                 error: '시스템 점검 중입니다. 잠시 후 다시 이용해주세요.',
-                maintenance: true
+                maintenance: true 
               }),
               { 
                 status: 503,
@@ -178,64 +208,67 @@ export function createAuthHandle() {
               }
             );
           } else {
-            // 점검 페이지 HTML 반환
-            return new Response(`
-              <!DOCTYPE html>
-              <html lang="ko">
-              <head>
-                <meta charset="utf-8">
-                <title>시스템 점검 중</title>
-                <style>
-                  body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f8f9fa; }
-                  .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-                  h1 { color: #dc3545; margin-bottom: 20px; }
-                  p { color: #6c757d; line-height: 1.6; }
-                  .icon { font-size: 4rem; margin-bottom: 20px; }
-                </style>
-              </head>
-              <body>
-                <div class="container">
-                  <div class="icon">🔧</div>
-                  <h1>시스템 점검 중</h1>
-                  <p>현재 시스템 점검으로 인해 서비스를 일시적으로 중단합니다.</p>
-                  <p>빠른 시간 내에 정상 서비스로 복구하겠습니다.</p>
-                  <p>이용에 불편을 드려 죄송합니다.</p>
-                </div>
-              </body>
-              </html>
-            `, {
-              status: 503,
-              headers: { 'Content-Type': 'text/html; charset=utf-8' }
+            // 페이지 요청인 경우 점검 페이지로 리다이렉트
+            return new Response(null, {
+              status: 302,
+              headers: { 'Location': '/maintenance' }
             });
           }
         }
       }
     }
     
-    // API 요청인 경우에만 권한 체크
-    if (url.pathname.startsWith('/api/')) {
-      const permissionResult = await checkApiPermission(url, cookies);
+    // 🆕 API와 이미지 프록시 요청 모두 처리
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/proxy-images/')) {
+      let permissionCheck;
       
-      if (!permissionResult.allowed) {
+      if (url.pathname.startsWith('/proxy-images/')) {
+        // 🖼️ 이미지 프록시는 로그인만 필요
+        console.log('🖼️ 이미지 프록시 권한 체크');
+        const tokenResult = verifyToken(cookies);
+        
+        if (!tokenResult.success) {
+          console.log('❌ 이미지 접근 거부:', tokenResult.error);
+          permissionCheck = {
+            allowed: false,
+            error: tokenResult.error,
+            status: 401
+          };
+        } else {
+          console.log('✅ 이미지 접근 허용:', tokenResult.user.username);
+          permissionCheck = {
+            allowed: true,
+            user: tokenResult.user
+          };
+        }
+      } else {
+        // 🔧 일반 API 권한 체크
+        permissionCheck = await checkApiPermission(url, cookies);
+      }
+      
+      if (!permissionCheck.allowed) {
+        console.log(`🚫 접근 차단: ${url.pathname} - ${permissionCheck.error}`);
         return new Response(
           JSON.stringify({ 
-            error: permissionResult.error || '접근이 거부되었습니다.' 
+            error: permissionCheck.error,
+            authenticated: false 
           }),
           { 
-            status: permissionResult.status || 403,
+            status: permissionCheck.status || 401,
             headers: { 'Content-Type': 'application/json' }
           }
         );
       }
       
-      // 사용자 정보를 event.locals에 저장
-      if (permissionResult.user) {
-        event.locals.user = permissionResult.user;
-        console.log('✅ 사용자 정보 locals에 저장:', permissionResult.user.username);
+      // 인증된 사용자 정보를 locals에 저장
+      if (permissionCheck.user) {
+        event.locals.user = permissionCheck.user;
+        console.log('✅ 사용자 정보 locals에 저장:', permissionCheck.user.username);
       }
+      
+      console.log(`✅ 접근 허용: ${url.pathname} (사용자: ${permissionCheck.user?.username || 'anonymous'})`);
     }
     
-    console.log('✅ 권한 체크 통과');
     return resolve(event);
   };
 }
