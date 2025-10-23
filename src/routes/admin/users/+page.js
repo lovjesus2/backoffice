@@ -1,23 +1,16 @@
-import { redirect } from '@sveltejs/kit';
+
 
 // 사용자 관리 페이지는 관리자만 접근 가능
 export async function load({ parent }) {
   const { user } = await parent();
   
-  console.log('users 페이지 접근 시도, user:', user?.username, user?.role);
+  // 🎯 미들웨어에서 모든 권한 체크 완료!
+  // DB의 role_menu_permissions에서 권한 확인됨
   
-  // 로그인하지 않은 경우 → 루트 페이지로 (실제 로그인 페이지)
-  if (!user) {
-    console.log('❌ 로그인하지 않은 사용자, 루트 페이지로 리다이렉트');
-    throw redirect(302, '/?redirectTo=/admin/users');
-  }
+  console.log('✅ 사용자 관리 페이지 접근 허용:', user?.username, user?.role);
   
-  // 관리자가 아닌 경우 → admin 대시보드로
-  if (user.role !== 'admin') {
-    console.log('❌ 권한 없음 (', user.role, '), 대시보드로 리다이렉트');
-    throw redirect(302, '/admin?error=access_denied');
-  }
-  
-  console.log('✅ 관리자 접근 허용');
-  return {};
+  return {
+    pageTitle: '사용자 관리',
+    actionButtons: []
+  };
 }

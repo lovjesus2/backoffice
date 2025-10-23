@@ -5,6 +5,7 @@
   import { simpleCache } from '$lib/utils/simpleImageCache';
   import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
   import DirectPrint from '$lib/components/DirectPrint.svelte';
+  import PriceInfoModal from '$lib/components/PriceInfoModal.svelte';                         //가격수정 컴포넌트
 
   // 상태 관리
   let searchTerm = '';
@@ -19,7 +20,9 @@
   // 바코드 출력 관련 상태 (변경됨)
   let directPrint; // ref로 사용
   let selectedProduct = null;
-  let shouldAutoPrint = false;
+  
+  // 가격 모달 관련 변수들 (기존 변수들 아래에 추가)
+  let showPriceModal = false;
   
   // ESC 키로 검색, Enter 키로 검색
   function handleKeydown(event) {
@@ -209,6 +212,52 @@
     }
   }
   
+
+  // ✅ L3 현금세팅 토글 함수 추가
+  async function toggleCash(productCode) {
+    if (!authenticated) return;
+    
+    try {
+      console.log('현금세팅 토글 시작, 제품코드:', productCode);
+      
+      const response = await fetch('/api/product-management/product-stock/toggle-attribute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          product_code: productCode, 
+          attribute_code: 'L3'  // 현금결제
+        })
+      });
+      
+      const result = await response.json();
+      console.log('API 응답:', result);
+      
+      if (result.success) {
+        const isCashAllowed = result.new_status === '1';
+        console.log('새로운 현금세팅 상태:', isCashAllowed);
+        
+        // ✅ products는 배열이므로 map으로 업데이트
+        products = products.map(p => 
+          p.code === productCode 
+            ? { ...p, cash_status: isCashAllowed }
+            : p
+        );
+        
+        console.log('업데이트된 products 배열');
+        
+        showToast(result.message, 'success');
+        
+      } else {
+        showToast(result.message || '처리 실패', 'error');
+      }
+    } catch (err) {
+      console.error('현금세팅 처리 오류:', err);
+      showToast('처리 중 오류가 발생했습니다.', 'error');
+    }
+  }
+
   // ✅ 온라인 처리 함수 추가
   async function toggleOnline(productCode) {
     if (!authenticated) return;
@@ -389,6 +438,20 @@
     showToast('❌ 바코드 출력 실패: ' + event.detail.error, 'error');
   }
   
+  // 금액 클릭 핸들러
+  function handlePriceClick(product) {
+    console.log('💰 가격 클릭됨:', product?.code, product?.name);
+    
+    if (!product?.code) {
+      showToast('제품 정보가 없습니다.', 'error');
+      return;
+    }
+    
+    // 선택된 제품 정보 저장
+    selectedProduct = product;
+    showPriceModal = true;
+  }
+
   // 간단한 토스트 메시지 표시
   function showToast(message, type = 'info') {
     // 기존 토스트 제거
@@ -579,7 +642,16 @@
                 <h3 class="font-semibold text-gray-900 mb-1" style="font-size: 0.8rem; line-height: 1.3;">{product.name}</h3>
                 <div class="text-blue-600 font-bold mb-1" style="font-size: 0.7rem;">코드: {product.code}</div>
                 <div class="text-gray-600" style="font-size: 0.65rem;">원가: {product.cost ? product.cost.toLocaleString('ko-KR') : '0'}원</div>
-                <div class="text-gray-700" style="font-size: 0.65rem;">금액: {product.price ? product.price.toLocaleString('ko-KR') : '0'}원</div>
+                <div class="text-gray-700" style="font-size: 0.8rem; line-height: 1.3;">
+                  <button 
+                    class="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left w-full bg-transparent border-none p-0 font-medium"
+                    style="font-size: 0.8rem; line-height: 1.3;"
+                    on:click={() => handlePriceClick(product)} 
+                    title="클릭하여 가격 수정"
+                  >
+                    금액: {product.price ? product.price.toLocaleString() : '0'}원 🔗
+                  </button>
+                </div>
               </div>
               <!-- ✅ 좌우 분할선 추가 -->
               <div class="border-l border-gray-300" style="margin: 0 8px;"></div>
@@ -675,6 +747,16 @@
                 {product.stockManaged ? '재고(사용)' : '재고(미사용)'}
               </button>
               
+              <!-- ✅ 현금세팅 버튼 (수정된 버전) -->
+              <button 
+                type="button"
+                style="border: 0; border-radius: 4px; padding: 4px 12px; font-size: 12px; color: white; transition: all 0.2s; {product.cash_status ? 'background: #10b981;' : 'background: #6b7280;'}"
+                class="hover:opacity-90"
+                on:click={() => toggleCash(product.code)}
+              >
+                {product.cash_status ? '현금(세팅)' : '현금(미세팅)'}
+              </button>   
+
               <!-- ON/OFF 버튼 -->
               <button 
                 type="button"
@@ -705,6 +787,30 @@
   bind:productData={selectedProduct}
   on:printSuccess={handlePrintSuccess}
   on:printError={handlePrintError}
+/>
+
+<!-- 가격 정보 모달 (디버깅용 표시) -->
+<PriceInfoModal
+  show={showPriceModal}
+  productCode={selectedProduct?.code || ''}
+  productName={selectedProduct?.name || ''}
+  on:close={() => {
+    showPriceModal = false;
+    selectedProduct = null;  // 모달 닫을 때 선택 초기화
+  }}
+  on:save={(event) => {
+    console.log('가격 저장 완료:', event.detail);
+    showToast('가격 정보가 저장되었습니다.', 'success');
+    
+    // 해당 제품의 정보를 products 배열에서 업데이트
+    if (selectedProduct?.code) {
+      // 검색을 다시 실행하여 최신 정보 가져오기
+      handleSearch();
+    }
+    
+    showPriceModal = false;
+    selectedProduct = null;
+  }}
 />
 
 {:else}

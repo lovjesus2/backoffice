@@ -11,7 +11,7 @@
   import { onMount } from 'svelte';
   import { openPages, currentPage, openPage } from '$lib/stores/openPagesStore.js';
   import '../../app.postcss';  // Tailwind
-
+  
   export let data;
   $: ({ user } = data);
 
@@ -85,6 +85,7 @@
   }
 
   onMount(async () => {
+        
     // 화면 크기 변경 감지
     const handleResize = () => {
       if (window.innerWidth > 768) {
@@ -175,6 +176,7 @@
       console.error('❌ Firebase Messaging 초기화 실패:', error);
     }
 
+    
     // cleanup 함수
     return () => {
       window.removeEventListener('resize', handleResize);

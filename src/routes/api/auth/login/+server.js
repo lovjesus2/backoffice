@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import jwt from 'jsonwebtoken';
 import { findUser, getDb } from '$lib/database.js';
 
-const JWT_SECRET = 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 // 시스템 설정에서 세션 타임아웃 조회
 async function getSessionTimeout() {

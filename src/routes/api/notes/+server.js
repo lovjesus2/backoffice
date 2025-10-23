@@ -10,7 +10,7 @@ export async function GET({ locals }) {
   try {
     const db = getDb();
     const [notes] = await db.execute(
-      'SELECT id, body, colors, position, width, height FROM notes WHERE user_id = ? ORDER BY id ASC',
+      'SELECT n.id, n.body, n.colors, n.position, n.width, n.height, n.user_id, u.username FROM notes n LEFT JOIN users u ON n.user_id = u.id ORDER BY n.id ASC',
       [locals.user.id]
     );
 
@@ -23,7 +23,15 @@ export async function GET({ locals }) {
       height: note.height || 250
     }));
 
-    return json(parsedNotes);
+    // 🎯 user 정보도 함께 반환
+    return json({
+      user: {
+        id: locals.user.id,
+        username: locals.user.username,
+        role: locals.user.role
+      },
+      notes: parsedNotes
+    });
   } catch (error) {
     console.error('노트 조회 실패:', error);
     return json({ error: '노트 조회 실패' }, { status: 500 });
@@ -53,7 +61,7 @@ export async function POST({ request, locals }) {
     );
 
     const [newNote] = await db.execute(
-      'SELECT id, body, colors, position, width, height FROM notes WHERE id = ?',
+      'SELECT id, body, colors, position, width, height, user_id FROM notes WHERE id = ?',
       [result.insertId]
     );
 
@@ -89,10 +97,6 @@ export async function PUT({ request, locals }) {
 
     if (checkNote.length === 0) {
       return json({ error: '노트를 찾을 수 없습니다' }, { status: 404 });
-    }
-
-    if (checkNote[0].user_id !== locals.user.id) {
-      return json({ error: '권한이 없습니다' }, { status: 403 });
     }
 
     await db.execute(
@@ -132,10 +136,6 @@ export async function DELETE({ request, locals }) {
 
     if (checkNote.length === 0) {
       return json({ error: '노트를 찾을 수 없습니다' }, { status: 404 });
-    }
-
-    if (checkNote[0].user_id !== locals.user.id) {
-      return json({ error: '권한이 없습니다' }, { status: 403 });
     }
 
     await db.execute('DELETE FROM notes WHERE id = ?', [id]);

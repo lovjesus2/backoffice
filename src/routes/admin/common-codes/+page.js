@@ -1,18 +1,14 @@
 // src/routes/admin/common-codes/+page.js
-import { redirect } from '@sveltejs/kit';
 
-export async function load({ parent, fetch }) {
+export async function load({ parent }) {
   const { user } = await parent();
   
-  if (!user) {
-    throw redirect(302, '/');
-  }
+  // 🎯 미들웨어에서 모든 권한 체크 완료!
   
-  if (user.role !== 'admin') {
-    throw redirect(302, '/admin');
-  }
+  console.log('✅ 공통코드 페이지 접근 허용:', user?.username, user?.role);
   
   return {
-    user
+    pageTitle: '공통코드 관리',
+    actionButtons: []
   };
 }

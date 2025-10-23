@@ -1774,6 +1774,7 @@
                       <tbody>
                           {#each products as sale}
                             <tr class="border-b border-gray-100 cursor-pointer hover:bg-blue-50
+                                      {selectedSaleSlip === sale.DNHD_SLIP ? 'border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'}
                                       {Number(sale.CASH_AMT) > 0 && Number(sale.CARD_AMT) === 0 ? 'bg-pink-50 hover:bg-pink-100' : 
                                       Number(sale.CASH_AMT) > 0 && Number(sale.CARD_AMT) > 0 ? 'bg-green-50 hover:bg-green-100' : 
                                       'hover:bg-gray-50'}"
@@ -1994,7 +1995,11 @@
               <div class="grid grid-cols-3 gap-2">
                 
                 <!-- 전체 합계 -->
-                <div class="bg-white rounded border border-pink-200 relative overflow-hidden" style="padding: 5px; padding-top: 40px;">
+                <div class="rounded border relative overflow-hidden
+                            {summaryData.cashAmount > 0 && summaryData.cardAmount === 0 ? 'bg-pink-50 border-pink-200' : 
+                            summaryData.cashAmount > 0 && summaryData.cardAmount > 0 ? 'bg-green-50 border-green-200' : 
+                            'bg-white border-pink-200'}"
+                    style="padding: 5px; padding-top: 40px;">
                   <!-- 상단 배지 바 -->
                   <div class="absolute top-0 left-0 right-0 bg-pink-300 text-white text-center py-1">
                     <span class="text-xs font-bold">전체</span>

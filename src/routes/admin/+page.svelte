@@ -2,6 +2,9 @@
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   
+  let user = null;  // ← 이 한 줄만 추가!
+  
+
   let stats = {
     users: 0,
     posts: 0,
@@ -30,6 +33,7 @@
   ];
 
   onMount(async () => {
+
     checkScreenSize();
     window.addEventListener('resize', checkScreenSize);
     
@@ -54,7 +58,10 @@
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);
     };
+
+    
   });
+
 
   function checkScreenSize() {
     if (browser) {
@@ -71,8 +78,15 @@
     try {
       const response = await fetch('/api/notes');
       if (response.ok) {
-        notes = await response.json();
+        const data = await response.json();  // ← 이 줄 수정
         
+        // 🎯 user 정보는 한 번만 받아서 저장 (추가)
+        if (data.user && !user) {
+          user = data.user;
+          console.log('✅ 사용자 정보:', user.username, user.id);
+        }
+        
+        notes = data.notes || data;  // ← 이 줄 수정 (기존 notes = await response.json();)
         
         // 실제 컨테이너 크기 확인
         const actualContainer = document.querySelector('.relative.overflow-auto');
@@ -302,6 +316,13 @@
   }
 
   async function deleteNote(noteId) {
+    const noteToDelete = notes.find(n => n.id === noteId);
+    if (!noteToDelete) return;
+    
+    if (user.role !== 'admin' && noteToDelete.user_id !== user.id) {
+      console.error('❌ 삭제 권한이 없습니다');
+      return;
+    }
     try {
       const response = await fetch('/api/notes', {
         method: 'DELETE',
@@ -355,6 +376,7 @@
 <svelte:head>
   <title>관리자 대시보드</title>
 </svelte:head>
+
 
 <div class="relative min-h-screen bg-white" style="user-select: {isDragging || isResizing ? 'none' : 'auto'};">
   
@@ -417,16 +439,18 @@
             </div>
 
             <!-- Close Button -->
-            <button 
-              class="card-close p-0.5 opacity-60 hover:opacity-100 active:opacity-100 transition-opacity"
-              on:click|stopPropagation={() => handleDeleteClick(note.id)}
-              on:touchend|stopPropagation|preventDefault={() => handleDeleteClick(note.id)}
-            >
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
+            {#if user && (user.role === 'admin' || note.user_id === user.id)}
+              <button 
+                class="card-close p-0.5 opacity-60 hover:opacity-100 active:opacity-100 transition-opacity"
+                on:click|stopPropagation={() => handleDeleteClick(note.id)}
+                on:touchend|stopPropagation|preventDefault={() => handleDeleteClick(note.id)}
+              >
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            {/if}
           </div>
 
           <!-- Card Body -->
@@ -437,7 +461,13 @@
             value={note.body}
             on:input={(e) => handleInput(note, e)}
           ></textarea>
-
+          
+         
+          {#if note.username || note.user_id || user}
+            <div class="text-xs text-gray-500 mt-1 px-4 pb-2">
+              작성자: {note.username || user?.username || `사용자${note.user_id || user?.id}`}
+            </div>
+          {/if}
           <!-- Resize Handle -->
           <div 
             class="resize-handle absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize opacity-40 hover:opacity-80 transition-opacity"

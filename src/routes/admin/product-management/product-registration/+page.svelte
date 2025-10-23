@@ -711,6 +711,10 @@
     
     // 이미지 업로더 초기화
     if (imageUploader) {
+      // ✅ 새로 추가: 메모리 누적 문제 해결
+      if (imageUploader.resetMemoryState) {
+        imageUploader.resetMemoryState();
+      }      
       imageUploader.clearAll(); // 기존 이미지들 제거
       imageUploader.forceReload(); // 강제 리로드
     }

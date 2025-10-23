@@ -1,23 +1,14 @@
-import { redirect } from '@sveltejs/kit';
-
-// 매출 캘린더는 관리자만 접근 가능
+// src/routes/admin/sales/calendar/+page.js
 export async function load({ parent }) {
   const { user } = await parent();
   
-  console.log('매출 캘린더 접근 시도, user:', user?.username, user?.role);
+  // 🎯 미들웨어에서 모든 권한 체크 완료!
+
   
-  // 로그인하지 않은 경우 → 루트 페이지로
-  if (!user) {
-    console.log('❌ 로그인하지 않은 사용자, 루트 페이지로 리다이렉트');
-    throw redirect(302, '/?redirectTo=/admin/sales/calendar');
-  }
+  console.log('✅ 매출캘린더 페이지 접근 허용:', user?.username, user?.role);
   
-  // 관리자가 아닌 경우 → admin 대시보드로
-  if (user.role !== 'admin') {
-    console.log('❌ 권한 없음 (', user.role, '), 대시보드로 리다이렉트');
-    throw redirect(302, '/admin?error=access_denied');
-  }
-  
-  console.log('✅ 관리자 접근 허용');
-  return {};
+  return {
+    pageTitle: '매출캘린더',
+    actionButtons: []
+  };
 }
