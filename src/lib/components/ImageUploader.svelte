@@ -219,6 +219,36 @@
       await loadExistingImages();
     }
   }
+
+  // ✅ 추가: 동기식 리사이즈 함수
+  async function resizeImageSync(file) {
+    if (!enableResize) {
+      return file; // 리사이즈 비활성화면 원본 반환
+    }
+    
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        canvas.width = selectedWidth;
+        canvas.height = selectedHeight;
+        ctx.drawImage(img, 0, 0, selectedWidth, selectedHeight);
+        
+        canvas.toBlob((blob) => {
+          // 원본 파일명 유지
+          const resizedFile = new File([blob], file.name, {
+            type: 'image/jpeg',
+            lastModified: Date.now()
+          });
+          resolve(resizedFile);
+        }, 'image/jpeg', quality);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  }
   
   // 리사이즈 설정 업데이트
   function updateResizeSettings() {
@@ -723,7 +753,50 @@
       console.error('동기화 오류:', error);
     }
   }
-  
+
+  function updateImageResolution(filename, width, height) {
+    allImages = allImages.map(img => {
+      if (img.name === filename) {
+        return {
+          ...img,
+          width: width,
+          height: height
+        };
+      }
+      return img;
+    });
+  }
+
+  // resetMemoryState 함수 추가
+  function resetMemoryState() {
+    console.log('🧹 메모리 상태 초기화 시작');
+    
+    // 모든 상태 변수 초기화
+    newImages = [];
+    existingImages = [];
+    allImages = [];
+    processedFiles.clear();
+    
+    // UI 상태 초기화
+    errorMessage = '';
+    successMessage = '';
+    uploadProgress = 0;
+    uploading = false;
+    selectedImageIndex = null;
+    
+    // FilePond 초기화
+    if (pond && typeof pond.removeFiles === 'function') {
+      try {
+        pond.removeFiles();
+      } catch (error) {
+        console.warn('FilePond 정리 실패:', error);
+      }
+    }
+    
+    console.log('✅ 메모리 상태 초기화 완료');
+  }
+
+
   
   // 2. 간단한 handleImageAddClick 함수 (스크롤 문제 해결)
   function handleImageAddClick() {
@@ -749,7 +822,8 @@
     `;
     
     // 파일 선택 처리
-    const handleFileChange = (event) => {
+    // 파일 선택 처리
+      const handleFileChange = async (event) => {  // ← async 추가
       const files = Array.from(event.target.files || []);
       
       if (files.length === 0) {
@@ -786,21 +860,24 @@
         return;
       }
       
-      // 전체 용량 체크 - 리사이즈 예상 크기로 계산
+      // ✅ 동기 방식: 먼저 모든 이미지 리사이즈 처리
+      const resizedFiles = [];
+      for (const file of imageFiles) {
+        const resizedFile = await resizeImageSync(file);
+        resizedFiles.push(resizedFile);
+      }
+
+      // 기존 파일들 크기
       const currentNewFilesSize = newImages.reduce((total, img) => {
         const processedFile = processedFiles.get(img.name);
-        const fileSize = processedFile ? processedFile.size : (img.size || 0);
+        const fileSize = processedFile ? processedFile.size : (img.file?.size || 0);
         return total + fileSize;
       }, 0);
 
-      // 새로 추가될 파일들의 예상 리사이즈 크기 계산 (대략 30% 감소 추정)
-      const estimatedNewFilesSize = imageFiles.reduce((total, file) => {
-        // 리사이즈 활성화 시 대략적인 크기 추정
-        const estimatedSize = enableResize ? file.size * 0.3 : file.size;
-        return total + estimatedSize;
-      }, 0);
+      // 새로 추가될 파일들의 실제 리사이즈된 크기
+      const newFilesSize = resizedFiles.reduce((total, file) => total + file.size, 0);
 
-      const totalNewSize = currentNewFilesSize + estimatedNewFilesSize;
+      const totalNewSize = currentNewFilesSize + newFilesSize;
       const maxTotalNewSize = 50 * 1024 * 1024; // 50MB (전체 새 파일들 제한)
 
       if (totalNewSize > maxTotalNewSize) {
@@ -811,8 +888,9 @@
       }
       
       // FilePond에 파일 추가
+      // FilePond에 파일 추가
       try {
-        imageFiles.forEach(file => {
+        resizedFiles.forEach(file => {  // ← imageFiles 대신 resizedFiles 사용
           if (pond) {
             pond.addFile(file);
           }
@@ -1359,7 +1437,7 @@
     isLibraryLoaded = false;
   }
   
-  export { clearAll, destroy, toggleResize, uploadToServer, loadExistingImages };
+  export { clearAll, destroy, toggleResize, uploadToServer, loadExistingImages, resetMemoryState };
   
   export function forceReload(newImagGub1, newImagGub2, newImagCode) {
     console.log('강제 리로드 시작');
