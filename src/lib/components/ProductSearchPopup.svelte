@@ -216,7 +216,7 @@
         params.append('product_type', selectedProductType);
       }
 
-      const response = await fetch(`/api/product-management/product-registration/search?${params}`);
+      const response = await fetch(`/api/product-management/product-stock/search?${params}`);
       const result = await response.json();
 
       if (result.success) {

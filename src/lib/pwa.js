@@ -20,12 +20,18 @@ let deferredPrompt;
 
 // Service Worker 등록 (브라우저에서만)
 export async function registerServiceWorker() {
-  if (!browser || !('serviceWorker' in navigator)) return;
+
+
+  if (!browser || !('serviceWorker' in navigator)) {
+
+    console.log('❌ Service Worker 지원 안함 - 함수 종료');
+    return;
+  }
+
   
   try {
     const registration = await navigator.serviceWorker.register('/sw.js');
     console.log('Service Worker 등록 성공:', registration);
-    
     // 업데이트 확인
     registration.addEventListener('updatefound', () => {
       const newWorker = registration.installing;
@@ -319,6 +325,7 @@ export async function initPWA() {
   }
   
   try {
+
     await registerServiceWorker();
     setupInstallPrompt();
     
@@ -406,8 +413,11 @@ export async function initPWA() {
       }
       
       // Safe Area 지원
-      if (window.innerWidth <= 480) {
+      if (window.innerWidth <= 480 && /iPhone/.test(navigator.userAgent)) {
         refreshBtn.style.top = 'calc(env(safe-area-inset-top, 0px) + 19px)';
+      }else {
+        // 아이패드 및 기타: 고정 위치
+        refreshBtn.style.top = '19px';
       }
       
       document.body.appendChild(refreshBtn);

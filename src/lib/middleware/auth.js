@@ -67,8 +67,9 @@ export function getApiPermissionLevel(url) {
   
   console.log('🔍 API 경로 권한 체크:', pathname);
   
+  // ✅ 1단계:구체적인 경로 체크 (정확한 매칭) 우선순위
   const publicPaths = [
-    '/api/auth/login'
+    '/api/auth/login',
   ];
   
   const authenticatedPaths = [
@@ -77,51 +78,55 @@ export function getApiPermissionLevel(url) {
     '/api/profile',
     '/api/profile/password',
     '/api/user-menus',
-    '/api/common-codes',
     '/api/notes',
-    '/api/system/info'
+    '/api/system/info',
+    '/api/system',  // ← 이거 추가
+    '/api/push/subscribe'  // ✅ 이거 추가!
   ];
   
   const adminOnlyPaths = [
     '/api/users',
     '/api/menus',
     '/api/settings',
-    '/api/system',
     '/api/admin'
   ];
   
-  const menuBasedPaths = [
-    '/api/sales',
-    '/api/product-management',
-  ];
-  
-  // 특별 처리
+   // 특별 처리 (구체적인 경로)
   if (pathname === '/api/system' && searchParams.get('mode') === 'info') {
     console.log('📋 시스템 정보 모드 (AUTHENTICATED)');
     return 'AUTHENTICATED';
   }
   
+  // 로그인 상관없이
   if (publicPaths.includes(pathname)) {
     console.log('🌍 PUBLIC API');
     return 'PUBLIC';
   }
   
+  // 모든사용자
   if (authenticatedPaths.includes(pathname)) {
     console.log('🔐 AUTHENTICATED API');
     return 'AUTHENTICATED';
   }
   
+  // 관라자
   if (adminOnlyPaths.includes(pathname)) {
     console.log('👑 ADMIN_ONLY API');
     return 'ADMIN_ONLY';
   }
+  //----------------------------------------------------------------------------
+  // ✅ 2단계: 패턴 매칭 (중간 우선순위)
   
-  if (menuBasedPaths.some(path => pathname.startsWith(path))) {
-    console.log('📄 MENU_BASED API');
-    return 'MENU_BASED';
+  
+  // AUTHENTICATED 패턴들
+  if (pathname.startsWith('/api/common-codes') ||
+      pathname.startsWith('/api/product-management/product-stock') ||
+      pathname.startsWith('/api/sales/sales-registration')) {
+    console.log('🔐 AUTHENTICATED API (패턴)');
+    return 'AUTHENTICATED';
   }
-  
-  // 패턴 매칭
+    
+  // ADMIN_ONLY 패턴들
   if (pathname.startsWith('/api/users/') || 
       pathname.startsWith('/api/menus/') ||
       pathname.startsWith('/api/settings/') ||
@@ -130,21 +135,10 @@ export function getApiPermissionLevel(url) {
     return 'ADMIN_ONLY';
   }
   
-  if (pathname.startsWith('/api/profile/')) {
-    console.log('🔐 AUTHENTICATED API (패턴)');
-    return 'AUTHENTICATED';
-  }
-  
-  if (pathname.startsWith('/api/sales/') ||
-      pathname.startsWith('/api/products-management/')) {
-    console.log('📄 MENU_BASED API (패턴)');
-    return 'MENU_BASED';
-  }
-  
-  console.log('🔐 AUTHENTICATED API (기본값)');
-  return 'AUTHENTICATED';
+  // ✅ 3단계: 기본값 (최저 우선순위)
+  console.log('👑 ADMIN_ONLY API (기본값)');
+  return 'ADMIN_ONLY';
 }
-
 // API 권한 체크 함수
 export async function checkApiPermission(url, cookies) {
   const permissionLevel = getApiPermissionLevel(url);
@@ -194,7 +188,6 @@ export async function checkApiPermission(url, cookies) {
     
     const apiToPageMapping = {
       '/api/sales': '/admin/sales/sales-registration',
-      '/api/products': '/admin/product-management/product-registration',
       '/api/inventory': '/admin/inventory',
       '/api/reports': '/admin/reports',
       '/api/orders': '/admin/orders',

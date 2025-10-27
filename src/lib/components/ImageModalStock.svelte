@@ -9,6 +9,9 @@
 
   const dispatch = createEventDispatcher();
 
+  // ✅ 추가: 사용자 정보 props
+  export let user = null; // { username, role } 형태
+
   // store 구독 - productCode로 변경
   $: ({ show, imageSrc, imagePath, imageAlt, zIndex, productCode } = $imageModalStore);
 
@@ -38,6 +41,17 @@
   // 가격 모달 관련 변수들 (기존 변수들 아래에 추가)
   let showPriceModal = false;
 
+  // ✅ 추가: 권한 체크 함수들
+  function isAdmin() {
+    return user?.role === 'admin';
+  }
+  function canViewCost() {
+    return isAdmin(); // admin만 원가 보기 가능
+  }
+
+  function canEditPrice() {
+    return isAdmin(); // admin만 가격 수정 가능
+  }
 
   // 모바일 체크
   function checkMobile() {
@@ -757,18 +771,28 @@ function handlePriceClick() {
               <div class="text-gray-700 mb-3" style="font-size: 0.8rem; line-height: 1.3;">
                 코드: {productData.code || ''}
               </div>
-              <div class="text-gray-700 mb-3" style="font-size: 0.8rem; line-height: 1.3;">
-                원가: {productData.cost ? productData.cost.toLocaleString() : '0'}원
-              </div>
+              {#if canViewCost()}
+                <div class="text-gray-700 mb-3" style="font-size: 0.8rem; line-height: 1.3;">
+                  원가: {productData.cost ? productData.cost.toLocaleString() : '0'}원
+                </div>
+              {/if}
+              <!-- ✅ 수정: 권한에 따라 링크/텍스트 분기 -->
               <div class="text-gray-700" style="font-size: 0.8rem; line-height: 1.3;">
-                <button 
-                  class="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left w-full bg-transparent border-none p-0 font-medium"
-                  style="font-size: 0.8rem; line-height: 1.3;"
-                  on:click={handlePriceClick}
-                  title="클릭하여 가격 수정"
-                >
-                  금액: {productData.price ? productData.price.toLocaleString() : '0'}원 🔗
-                </button>
+                {#if canEditPrice()}
+                  <button 
+                    class="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left w-full bg-transparent border-none p-0 font-medium"
+                    style="font-size: 0.8rem; line-height: 1.3;"
+                    on:click={handlePriceClick}
+                    title="클릭하여 가격 수정"
+                  >
+                    금액: {productData.price ? productData.price.toLocaleString() : '0'}원 🔗
+                  </button>
+                {:else}
+                  <!-- user는 텍스트만 표시 -->
+                  <span class="text-gray-700" style="font-size: 0.8rem;">
+                    금액: {productData.price ? productData.price.toLocaleString() : '0'}원
+                  </span>
+                {/if}
               </div>
             </div>
             
