@@ -1,0 +1,388 @@
+// src/routes/api/images/upload/+server.js (운영 안전 버전 - 트랜잭션 분리)
+import { json } from '@sveltejs/kit';
+import { writeFile, mkdir, access, stat, copyFile, rename, unlink, readdir } from 'fs/promises';
+import { existsSync } from 'fs';
+import path from 'path';
+import { getDb } from '$lib/database.js';
+
+const IMAGE_BASE_DIR = '/volume1/image'; // NAS 이미지 저장소
+
+// 🔍 GET: 기존 이미지 목록 조회 (기존 코드 유지)
+export async function GET({ url, locals }) {
+  try {
+    console.log('🔍 이미지 조회 API 호출됨');
+    
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
+    
+    const imagGub1 = url.searchParams.get('IMAG_GUB1');
+    const imagGub2 = url.searchParams.get('IMAG_GUB2');
+    const imagCode = url.searchParams.get('IMAG_CODE');
+    
+    console.log('🔍 조회 파라미터:', { imagGub1, imagGub2, imagCode });
+    
+    if (!imagGub1 || !imagGub2 || !imagCode) {
+      return json({ error: '필수 파라미터가 누락되었습니다.' }, { status: 400 });
+    }
+
+    const db = getDb();
+    
+    const [rows] = await db.execute(
+      `SELECT IMAG_CNT1, IMAG_PCPH, IMAG_IUSR, IMAG_IDAT
+       FROM ASSE_IMAG 
+       WHERE IMAG_GUB1 = ? AND IMAG_GUB2 = ? AND IMAG_CODE = ? AND IMAG_GUB3 = '0'
+       ORDER BY CAST(IMAG_CNT1 AS UNSIGNED) ASC `,
+      [imagGub1, imagGub2, imagCode]
+    );
+
+    console.log(`📋 DB 조회 결과: ${rows.length}개 이미지 발견`);
+
+    const images = [];
+    
+    for (const row of rows) {
+      const filePath = path.join(IMAGE_BASE_DIR, row.IMAG_PCPH);
+      
+      try {
+        const fileStats = await stat(filePath);
+        
+        images.push({
+          id: `${imagCode}_${row.IMAG_CNT1}`,
+          name: row.IMAG_PCPH,
+          url: `/proxy-images/${row.IMAG_PCPH}`,
+          cnt: row.IMAG_CNT1,
+          uploadedBy: row.IMAG_IUSR,
+          uploadedAt: row.IMAG_IDAT,
+          size: fileStats.size,
+          exists: true
+        });
+        
+        console.log(`✅ 파일 존재 확인: ${row.IMAG_PCPH} (${fileStats.size} bytes)`);
+        
+      } catch (fileError) {
+        console.warn(`⚠️ 파일 누락: ${row.IMAG_PCPH} - DB에는 있지만 실제 파일 없음`);
+        
+        images.push({
+          id: `${imagCode}_${row.IMAG_CNT1}`,
+          name: row.IMAG_PCPH,
+          url: `/proxy-images/${row.IMAG_PCPH}`,
+          cnt: row.IMAG_CNT1,
+          uploadedBy: row.IMAG_IUSR,
+          uploadedAt: row.IMAG_IDAT,
+          size: 0,
+          exists: false
+        });
+      }
+    }
+
+    console.log(`📷 최종 응답: ${images.length}개 이미지 (존재: ${images.filter(img => img.exists).length}개)`);
+
+    return json({
+      success: true,
+      images: images,
+      count: images.length
+    });
+
+  } catch (error) {
+    console.error('❌ 이미지 목록 조회 오류:', error);
+    return json({ 
+      success: false,
+      error: '이미지 목록 조회에 실패했습니다.', 
+      details: error.message
+    }, { status: 500 });
+  }
+}
+
+// POST: 트랜잭션 분리된 안전한 업로드 로직
+export async function POST({ request, locals }) {
+  const timestamp = Date.now();
+  const processedFiles = []; // 처리 완료된 파일 정보
+  const tempFiles = []; // 정리할 임시 파일 목록
+  
+  try {
+    console.log('📤 이미지 업로드 API 호출됨 (트랜잭션 분리 안전 버전)');
+    
+    // 1. 인증 확인
+    const user = locals.user;
+    if (!user) {
+      return json({ success: false, message: '인증이 필요합니다.' }, { status: 401 });
+    }
+
+    const formData = await request.formData();
+    
+    // 2. 파라미터 추출 및 검증
+    const imagGub1 = formData.get('IMAG_GUB1');
+    const imagGub2 = formData.get('IMAG_GUB2'); 
+    const imagCode = formData.get('IMAG_CODE');
+    const imagGub3 = '0';
+    const imagIusr = user.username;
+    
+    const finalOrderData = formData.get('finalOrder');
+    if (!finalOrderData) {
+      return json({ error: '이미지 순서 정보가 누락되었습니다.' }, { status: 400 });
+    }
+    
+    const finalOrder = JSON.parse(finalOrderData);
+    const newFiles = formData.getAll('files');
+    
+    console.log('📋 처리 정보:', {
+      finalOrderCount: finalOrder.length,
+      newFilesCount: newFiles.length,
+      imagCode,
+      user: imagIusr
+    });
+
+    if (!imagGub1 || !imagGub2 || !imagCode) {
+      return json({ error: '필수 파라미터가 누락되었습니다.' }, { status: 400 });
+    }
+
+    if (finalOrder.length === 0) {
+      return json({ error: '저장할 이미지가 없습니다.' }, { status: 400 });
+    }
+
+    // ========================================
+    // 🔧 1단계: 파일 처리 (트랜잭션 외부)
+    // ========================================
+    console.log('📁 1단계: 파일 처리 시작 (트랜잭션 외부)');
+    
+    // 1-1. 기존 파일을 안전한 임시명으로 백업
+    const tempFileMap = new Map();
+    
+    for (let i = 0; i < finalOrder.length; i++) {
+      const item = finalOrder[i];
+      
+      if (item.isExisting) {
+        const oldFileName = item.name;
+        const tempFileName = `backup_${timestamp}_${i}_${oldFileName}`;
+        const oldPath = path.join(IMAGE_BASE_DIR, oldFileName);
+        const tempPath = path.join(IMAGE_BASE_DIR, tempFileName);
+        
+        try {
+          // 원본 파일이 존재하는지 확인
+          await access(oldPath);
+          
+          // 안전한 백업 복사
+          await copyFile(oldPath, tempPath);
+          
+          tempFileMap.set(i, {
+            tempFileName: tempFileName,
+            originalFileName: oldFileName,
+            tempPath: tempPath,
+            finalPath: path.join(IMAGE_BASE_DIR, `${imagCode}_${i + 1}.jpg`)
+          });
+          
+          tempFiles.push(tempFileName);
+          console.log(`💾 백업 생성: ${oldFileName} → ${tempFileName}`);
+          
+        } catch (copyError) {
+          console.error(`❌ 파일 백업 실패: ${oldFileName}`, copyError.message);
+          throw new Error(`파일 백업 실패: ${oldFileName} - ${copyError.message}`);
+        }
+      }
+    }
+
+    // 1-2. 최종 파일명으로 순서대로 저장
+    let newFileIndex = 0;
+    
+    for (let i = 0; i < finalOrder.length; i++) {
+      const item = finalOrder[i];
+      const imagCnt1 = i + 1;
+      const imagPcph = `${imagCode}_${imagCnt1}.jpg`;
+      const finalPath = path.join(IMAGE_BASE_DIR, imagPcph);
+      
+      if (item.isExisting) {
+        // 기존 이미지: 백업에서 최종 위치로 복사
+        const tempInfo = tempFileMap.get(i);
+        if (!tempInfo) {
+          throw new Error(`백업 파일 정보를 찾을 수 없습니다: 순서 ${i + 1}`);
+        }
+        
+        try {
+          await copyFile(tempInfo.tempPath, finalPath);
+          console.log(`📋 기존 파일 배치: ${tempInfo.tempFileName} → ${imagPcph}`);
+          
+        } catch (moveError) {
+          console.error(`❌ 파일 배치 실패: ${tempInfo.tempFileName}`, moveError.message);
+          throw new Error(`파일 배치 실패: ${tempInfo.tempFileName} - ${moveError.message}`);
+        }
+        
+      } else {
+        // 새 이미지: 업로드된 파일 저장
+        if (newFileIndex >= newFiles.length) {
+          throw new Error(`새 파일 부족: 필요 ${newFileIndex + 1}개, 실제 ${newFiles.length}개`);
+        }
+        
+        const file = newFiles[newFileIndex];
+        
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          await writeFile(finalPath, buffer);
+          
+          // 파일 무결성 검증
+          const savedStats = await stat(finalPath);
+          if (savedStats.size !== buffer.length) {
+            throw new Error(`파일 크기 불일치: 예상 ${buffer.length}, 실제 ${savedStats.size}`);
+          }
+          
+          console.log(`💾 새 파일 저장: ${imagPcph} (${buffer.length} bytes)`);
+          newFileIndex++;
+          
+        } catch (saveError) {
+          console.error(`❌ 새 파일 저장 실패: ${imagPcph}`, saveError.message);
+          throw new Error(`새 파일 저장 실패: ${imagPcph} - ${saveError.message}`);
+        }
+      }
+      
+      // 처리 완료된 파일 정보 저장
+      processedFiles.push({
+        fileName: imagPcph,
+        path: `/proxy-images/${imagPcph}`,
+        cnt: imagCnt1,
+        isExisting: item.isExisting,
+        imagGub1,
+        imagGub2,
+        imagCode,
+        imagGub3,
+        imagIusr
+      });
+    }
+    
+    console.log(`✅ 파일 처리 완료: ${processedFiles.length}개 파일`);
+
+    // ========================================
+    // 🗄️ 2단계: DB 트랜잭션 (빠른 처리)
+    // ========================================
+    console.log('🗄️ 2단계: DB 트랜잭션 시작');
+    
+    const db = getDb();
+    await db.execute('START TRANSACTION');
+    
+    try {
+      // 2-1. 기존 이미지 정보 삭제 (DB만)
+      const deleteResult = await db.execute(
+        `DELETE FROM ASSE_IMAG 
+         WHERE IMAG_GUB1 = ? AND IMAG_GUB2 = ? AND IMAG_CODE = ? AND IMAG_GUB3 = ?`,
+        [imagGub1, imagGub2, imagCode, imagGub3]
+      );
+      
+      console.log(`🗑️ 기존 DB 레코드 ${deleteResult[0].affectedRows}개 삭제`);
+
+      // 2-2. 새 이미지 정보 저장
+      for (const fileInfo of processedFiles) {
+        await db.execute(
+          `INSERT INTO ASSE_IMAG 
+           (IMAG_GUB1, IMAG_GUB2, IMAG_CODE, IMAG_GUB3, IMAG_CNT1, IMAG_PCPH, IMAG_IUSR) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [fileInfo.imagGub1, fileInfo.imagGub2, fileInfo.imagCode, fileInfo.imagGub3, 
+           fileInfo.cnt, fileInfo.fileName, fileInfo.imagIusr]
+        );
+        
+        console.log(`✅ DB 저장: 순서 ${fileInfo.cnt} - ${fileInfo.fileName} ${fileInfo.isExisting ? '(기존)' : '(신규)'}`);
+      }
+      
+      // 2-3. 트랜잭션 커밋
+      await db.execute('COMMIT');
+      console.log('✅ DB 트랜잭션 커밋 완료');
+      
+    } catch (dbError) {
+      // DB 실패 시 롤백
+      await db.execute('ROLLBACK');
+      console.error('❌ DB 트랜잭션 롤백:', dbError.message);
+      
+      // 저장된 파일들 정리 (원상복구)
+      console.log('🔄 DB 실패로 인한 파일 원상복구 시작...');
+      
+      for (const fileInfo of processedFiles) {
+        try {
+          const filePath = path.join(IMAGE_BASE_DIR, fileInfo.fileName);
+          await access(filePath);
+          await unlink(filePath);
+          console.log(`🗑️ 롤백 파일 삭제: ${fileInfo.fileName}`);
+        } catch (deleteError) {
+          console.warn(`⚠️ 롤백 파일 삭제 실패: ${fileInfo.fileName} - ${deleteError.message}`);
+        }
+      }
+      
+      throw new Error(`DB 저장 실패: ${dbError.message}`);
+    }
+
+    // ========================================
+    // 🧹 3단계: 정리 작업
+    // ========================================
+    console.log('🧹 3단계: 임시 파일 정리');
+    await cleanupTempFiles(tempFiles);
+    
+    // 성공 응답
+    return json({
+      success: true,
+      message: `${finalOrder.length}개 이미지가 성공적으로 저장되었습니다.`,
+      files: processedFiles.map(f => ({
+        fileName: f.fileName,
+        path: f.path,
+        cnt: f.cnt,
+        isExisting: f.isExisting
+      })),
+      invalidate_cache: imagCode,
+      debug: {
+        finalOrderCount: finalOrder.length,
+        newFilesCount: newFiles.length,
+        existingCount: finalOrder.filter(item => item.isExisting).length,
+        processedFilesCount: processedFiles.length,
+        user: imagIusr,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ 이미지 업로드 총 오류:', error.message);
+    
+    // 모든 임시 파일 정리
+    await cleanupTempFiles(tempFiles);
+    
+    // 처리된 파일들도 정리 (에러 발생 시)
+    if (processedFiles.length > 0) {
+      console.log('🔄 에러로 인한 처리 파일 정리...');
+      for (const fileInfo of processedFiles) {
+        try {
+          const filePath = path.join(IMAGE_BASE_DIR, fileInfo.fileName);
+          await access(filePath);
+          await unlink(filePath);
+          console.log(`🗑️ 에러 정리: ${fileInfo.fileName}`);
+        } catch (cleanupError) {
+          console.warn(`⚠️ 에러 정리 실패: ${fileInfo.fileName}`);
+        }
+      }
+    }
+    
+    return json({ 
+      success: false,
+      error: '이미지 업로드에 실패했습니다.', 
+      details: error.message
+    }, { status: 500 });
+  }
+}
+
+// 🧹 임시 파일 정리 함수
+async function cleanupTempFiles(tempFiles) {
+  if (!tempFiles || tempFiles.length === 0) {
+    return;
+  }
+  
+  console.log(`🧹 임시 파일 정리: ${tempFiles.length}개`);
+  
+  for (const tempFile of tempFiles) {
+    try {
+      const tempPath = path.join(IMAGE_BASE_DIR, tempFile);
+      await access(tempPath);
+      await unlink(tempPath);
+      console.log(`🗑️ 임시 파일 삭제: ${tempFile}`);
+    } catch (cleanupError) {
+      // 이미 삭제되었거나 없는 파일 - 정상적인 상황
+      console.log(`ℹ️ 임시 파일 정리 완료: ${tempFile} (이미 처리됨)`);
+    }
+  }
+  
+  console.log('✅ 임시 파일 정리 완료');
+}
