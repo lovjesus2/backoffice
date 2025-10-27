@@ -1,6 +1,6 @@
 {
   "name": "관리자 시스템",
-  "short_name": "아코제주",
+  "short_name": "관리자",
   "description": "모바일 최적화된 관리자 백오피스 시스템",
   "start_url": "/admin",
   "display": "standalone",
