@@ -1,12 +1,7 @@
-// 🖨️ 프린터 서버 v2.2 - 기존 내역서 기능 + iOS 인증서 프로필
-// 바코드프린터/printer-server.js
-
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const url = require('url');
-const os = require('os');
 const { exec } = require('child_process');
 
 const sharp = require('sharp');
@@ -17,7 +12,7 @@ const iconv = require('iconv-lite');
 process.stdout.setEncoding('utf8');
 process.stderr.setEncoding('utf8');
 
-console.log('🖨️ 프린터 서버 v2.2 시작 (iOS 인증서 지원)');
+console.log('프린터 서버 v2.1 시작');
 
 const CONFIG = {
   httpPort: 8080,
@@ -38,22 +33,22 @@ const CONFIG = {
 };
 
 function loadSSLCert() {
-  console.log('🔐 인증서 로드 중...');
+  console.log('인증서 로드 중...');
   const certFile = 'localhost+2.pem';
   const keyFile = 'localhost+2-key.pem';
   
   if (!fs.existsSync(certFile) || !fs.existsSync(keyFile)) {
-    console.error('❌ 인증서 파일 없음');
+    console.error('인증서 파일 없음');
     return null;
   }
   
   try {
     const cert = fs.readFileSync(certFile, 'utf8');
     const key = fs.readFileSync(keyFile, 'utf8');
-    console.log('✅ 인증서 로드 성공');
+    console.log('인증서 로드 성공');
     return { key, cert };
   } catch (e) {
-    console.error('❌ 인증서 읽기 실패:', e.message);
+    console.error('인증서 읽기 실패:', e.message);
     return null;
   }
 }
@@ -63,15 +58,15 @@ async function printToWindowsShare(commands, printerConfig) {
     const printerName = printerConfig.name;
     const printerPC = printerConfig.pc;
     
-    console.log(`🖨️ 프린터 출력: \\\\${printerPC}\\${printerName}`);
+    console.log(`프린터 출력: \\\\${printerPC}\\${printerName}`);
     
     const tempFile = `print_${Date.now()}.prn`;
     
     try {
       fs.writeFileSync(tempFile, commands, 'binary');
-      console.log(`📄 임시 파일: ${tempFile} (${commands.length} bytes)`);
+      console.log(`임시 파일: ${tempFile} (${commands.length} bytes)`);
     } catch (writeError) {
-      console.error('❌ 파일 생성 실패:', writeError.message);
+      console.error('파일 생성 실패:', writeError.message);
       resolve({ success: false, message: writeError.message });
       return;
     }
@@ -79,34 +74,81 @@ async function printToWindowsShare(commands, printerConfig) {
     const cmd = `copy /b "${tempFile}" "\\\\${printerPC}\\${printerName}"`;
     
     exec(cmd, { timeout: CONFIG.timeout }, (error, stdout, stderr) => {
-      try { 
-        fs.unlinkSync(tempFile); 
-      } catch (e) { 
-        console.warn('⚠️ 임시 파일 삭제 실패:', e.message); 
-      }
+      try { fs.unlinkSync(tempFile); } catch (e) {}
       
       if (error) {
-        console.error('❌ 출력 실패:', error.message);
+        console.error('출력 실패:', error.message);
         resolve({ success: false, message: error.message });
       } else {
-        console.log('✅ 출력 성공');
+        console.log('출력 성공');
         resolve({ success: true, message: '출력 완료' });
       }
     });
   });
 }
 
-// 🔄 기존 복잡한 QR 코드 생성 함수 (그대로 유지)
+async function imageToESCPOS(imagePath) {
+  try {
+    console.log(`이미지 처리: ${imagePath}`);
+    
+    if (!fs.existsSync(imagePath)) {
+      console.error('이미지 없음:', imagePath);
+      return Buffer.alloc(0);
+    }
+    
+    const imageBuffer = fs.readFileSync(imagePath);
+    const processed = await sharp(imageBuffer)
+      .resize(384, null, { fit: 'inside' })
+      .grayscale()
+      .threshold(128)
+      .toFormat('png')
+      .toBuffer();
+    
+    const png = PNG.sync.read(processed);
+    const width = png.width;
+    const height = png.height;
+    
+    console.log(`이미지 변환: ${width}x${height}px`);
+    
+    // ESC/POS GS v 0 명령어
+    const result = [];
+    result.push(0x1D, 0x76, 0x30, 0x00); // GS v 0 m
+    result.push((width / 8) & 0xFF, ((width / 8) >> 8) & 0xFF);
+    result.push(height & 0xFF, (height >> 8) & 0xFF);
+    
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x += 8) {
+        let byte = 0;
+        for (let bit = 0; bit < 8; bit++) {
+          if (x + bit < width) {
+            const idx = (y * width + x + bit) * 4;
+            if (png.data[idx] < 128) {
+              byte |= (1 << (7 - bit));
+            }
+          }
+        }
+        result.push(byte);
+      }
+    }
+    
+    return Buffer.from(result);
+  } catch (error) {
+    console.error('이미지 변환 실패:', error.message);
+    return Buffer.alloc(0);
+  }
+}
+
 async function generateQRCodeESCPOS(qrData, options = {}) {
   try {
     console.log(`QR코드 생성: ${qrData}`);
     
+    // QR코드를 더 크게 생성 (256x256)
     const size = options.size || 256;
     
     const qrBuffer = await QRCode.toBuffer(qrData, {
       width: size,
       margin: 2,
-      errorCorrectionLevel: options.errorCorrectionLevel || 'H',
+      errorCorrectionLevel: options.errorCorrectionLevel || 'H', // 높은 오류 수정
       type: 'png',
       color: {
         dark: '#000000',
@@ -160,7 +202,7 @@ async function generateQRCodeESCPOS(qrData, options = {}) {
   }
 }
 
-// XML 이스케이프 함수
+// ⭐ 여기에 추가 (generateReceiptFromLayout 함수 바로 위)
 function escapeXml(unsafe) {
   if (!unsafe) return '';
   return String(unsafe)
@@ -171,7 +213,6 @@ function escapeXml(unsafe) {
     .replace(/'/g, '&apos;');
 }
 
-// 🔄 기존 복잡한 영수증 레이아웃 처리 함수 (그대로 유지)
 async function generateReceiptFromLayout(receiptData) {
   console.log(`영수증 이미지 생성 (${receiptData.layout?.length || 0}개 요소)`);
   
@@ -551,6 +592,7 @@ async function generateReceiptFromLayout(receiptData) {
   return final;
 }
 
+
 async function checkPrinterStatus() {
   return new Promise((resolve) => {
     exec('wmic printer get name', (error, stdout) => {
@@ -564,7 +606,6 @@ async function checkPrinterStatus() {
 }
 
 function handleRequest(req, res) {
-  // CORS 헤더 설정
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -575,132 +616,27 @@ function handleRequest(req, res) {
     return;
   }
   
-  const parsedUrl = url.parse(req.url, true);
-  console.log(`📡 요청: ${req.method} ${parsedUrl.pathname}`);
-
-  // ✅ iOS 프로필 다운로드 라우트 (새로 추가)
-  if (parsedUrl.pathname === '/ios-profile' && req.method === 'GET') {
-    try {
-      console.log('📱 iOS 프로필 요청 받음');
-      
-      // 인증서 파일 읽기
-      const certPath = path.join(__dirname, 'localhost+2.pem');
-      
-      if (!fs.existsSync(certPath)) {
-        console.error('❌ 인증서 파일 없음:', certPath);
-        res.writeHead(404, {'Content-Type': 'application/json; charset=utf-8'});
-        res.end(JSON.stringify({error: '인증서 파일이 없습니다'}, null, 2));
-        return;
-      }
-      
-      const certContent = fs.readFileSync(certPath, 'utf8');
-      
-      // PEM 인증서를 Base64로 변환 (헤더/푸터 제거)
-      const certBase64 = certContent
-        .replace(/-----BEGIN CERTIFICATE-----/g, '')
-        .replace(/-----END CERTIFICATE-----/g, '')
-        .replace(/\n/g, '');
-      
-      // 현재 컴퓨터명 가져오기
-      const computerName = os.hostname();
-      
-      // UUID 생성 함수
-      function generateUUID() {
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          const r = Math.random() * 16 | 0;
-          const v = c == 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16).toUpperCase();
-        });
-      }
-      
-      // iOS 구성 프로필 XML 생성
-      const mobileConfig = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>PayloadContent</key>
-    <array>
-        <dict>
-            <key>PayloadCertificateFileName</key>
-            <string>printer-server-cert.crt</string>
-            <key>PayloadContent</key>
-            <data>${certBase64}</data>
-            <key>PayloadDescription</key>
-            <string>프린터 서버 인증서 - ${computerName}.local 접속용</string>
-            <key>PayloadDisplayName</key>
-            <string>프린터 서버 인증서</string>
-            <key>PayloadIdentifier</key>
-            <string>com.printerserver.certificate.${computerName}</string>
-            <key>PayloadType</key>
-            <string>com.apple.security.root</string>
-            <key>PayloadUUID</key>
-            <string>${generateUUID()}</string>
-            <key>PayloadVersion</key>
-            <integer>1</integer>
-        </dict>
-    </array>
-    <key>PayloadDescription</key>
-    <string>프린터 서버(${computerName}.local:8443)에 안전하게 연결하기 위한 인증서입니다. 이 프로필을 설치하면 PWA에서 프린터를 영구적으로 사용할 수 있습니다.</string>
-    <key>PayloadDisplayName</key>
-    <string>🖨️ 프린터 서버 - ${computerName}</string>
-    <key>PayloadIdentifier</key>
-    <string>com.printerserver.profile.${computerName}</string>
-    <key>PayloadRemovalDisallowed</key>
-    <false/>
-    <key>PayloadType</key>
-    <string>Configuration</string>
-    <key>PayloadUUID</key>
-    <string>${generateUUID()}</string>
-    <key>PayloadVersion</key>
-    <integer>1</integer>
-    <key>PayloadOrganization</key>
-    <string>프린터 서버</string>
-</dict>
-</plist>`;
-      
-      console.log(`✅ iOS 프로필 생성 완료: ${computerName}`);
-      
-      res.writeHead(200, {
-        'Content-Type': 'application/x-apple-aspen-config',
-        'Content-Disposition': `attachment; filename="printer-${computerName}.mobileconfig"`,
-        'Content-Length': Buffer.byteLength(mobileConfig, 'utf8')
-      });
-      res.end(mobileConfig);
-      
-      console.log(`📱 iOS 프로필 다운로드 완료: ${computerName}`);
-      
-    } catch (error) {
-      console.error('❌ iOS 프로필 생성 오류:', error);
-      res.writeHead(500, {'Content-Type': 'application/json; charset=utf-8'});
-      res.end(JSON.stringify({error: error.message}, null, 2));
-    }
-    return;
-  }
-
-  // 🔄 기존 기능들 (그대로 유지)
-  
-  // 상태 확인
-  if (parsedUrl.pathname === '/status' && req.method === 'GET') {
+  if (req.url === '/status') {
     checkPrinterStatus().then(status => {
       res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
-      res.end(JSON.stringify({
-        success: true,
-        printers: status,
-        server: 'v2.2 (iOS 지원)',
-        timestamp: new Date().toISOString()
-      }, null, 2));
+      res.end(JSON.stringify(status, null, 2));
     });
     return;
   }
-
-  // 바코드 출력
-  if (parsedUrl.pathname === '/print' && req.method === 'POST') {
+  
+  if (req.url === '/print' && req.method === 'POST') {
     let body = '';
-    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('data', chunk => body += chunk.toString('utf8'));
     req.on('end', async () => {
       try {
         const data = JSON.parse(body);
-        const result = await printToWindowsShare(data.commands, CONFIG.printers.barcode);
+        console.log('바코드 출력:', data.product?.code);
+        
+        const result = await printToWindowsShare(data.commands, {
+          name: data.printerName || CONFIG.printers.barcode.name,
+          pc: data.printerPC || CONFIG.printers.barcode.pc,
+          type: 'barcode'
+        });
         
         res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
         res.end(JSON.stringify(result, null, 2));
@@ -711,14 +647,15 @@ function handleRequest(req, res) {
     });
     return;
   }
-
-  // 🔄 영수증 출력 (기존 복잡한 기능 그대로 유지)
-  if (parsedUrl.pathname === '/print-receipt' && req.method === 'POST') {
+  
+  if (req.url === '/print-receipt' && req.method === 'POST') {
     let body = '';
-    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('data', chunk => body += chunk.toString('utf8'));
     req.on('end', async () => {
       try {
         const data = JSON.parse(body);
+        console.log('영수증 출력');
+        
         const commands = await generateReceiptFromLayout(data.receiptData);
         const result = await printToWindowsShare(commands, {
           name: data.printerName || CONFIG.printers.receipt.name,
@@ -735,221 +672,39 @@ function handleRequest(req, res) {
     });
     return;
   }
-
-  // 메인 웹 인터페이스 (iOS 프로필 다운로드 포함)
-  if (parsedUrl.pathname === '/' && req.method === 'GET') {
-    const html = `<!DOCTYPE html>
+  
+  const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>프린터 서버</title>
-<style>
-body{font-family:system-ui;margin:40px;background:#f5f7fa}
-.container{max-width:900px;background:white;padding:30px;border-radius:10px;margin:0 auto}
-.header{background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:20px;margin:-30px -30px 30px -30px;border-radius:10px 10px 0 0;text-align:center}
-button{background:#667eea;color:white;border:none;padding:12px 24px;margin:10px 5px;border-radius:5px;cursor:pointer;transition:background 0.3s}
-button:hover{background:#5a6fd8}
-.ios-button{background:#007AFF;font-size:16px;padding:15px 30px;border-radius:8px}
-.ios-button:hover{background:#0056CC}
-.ios-section{background:#f8f9ff;border:2px solid #007AFF;border-radius:10px;padding:20px;margin:20px 0}
-.guide-box{margin-top:15px;padding:15px;background:#fff3cd;border:1px solid #ffeaa7;border-radius:5px;font-size:14px}
-.step{margin:5px 0;padding:5px 0}
-#result{background:#f8f9fa;border:1px solid #ddd;padding:15px;margin-top:20px;white-space:pre-wrap;font-family:monospace;font-size:13px;display:none;max-height:500px;overflow-y:auto;border-radius:5px}
-.test-section{background:#f8f9fa;padding:20px;border-radius:10px;margin:20px 0}
-.status{padding:10px;background:#e8f5e8;border:1px solid #c3e6c3;border-radius:5px;margin:10px 0}
-</style>
-</head><body>
-<div class="container">
-<div class="header">
-<h1>🖨️ 프린터 서버 v2.2</h1>
-<p>바코드 + 영수증 + QR + iOS 인증서 + 실제 내역서</p>
-</div>
-
-<div class="ios-section">
-<h3>📱 iPhone/iPad 인증서 설치</h3>
-<p style="color:#333;margin-bottom:15px;">
-<strong>🚨 PWA에서 프린터 사용 시 필수!</strong><br>
-이 인증서를 설치하면 모바일에서 영구적으로 프린터를 사용할 수 있습니다.
-</p>
-<button class="ios-button" onclick="downloadIOSProfile()">📱 iOS 프로필 다운로드</button>
-<div class="guide-box">
-<strong>📋 설치 방법:</strong>
-<div class="step"><strong>1단계:</strong> 위 버튼으로 프로필 다운로드</div>
-<div class="step"><strong>2단계:</strong> iPhone 설정 → 일반 → VPN 및 기기 관리</div>
-<div class="step"><strong>3단계:</strong> 다운로드된 프로필에서 "프린터 서버" 선택</div>
-<div class="step"><strong>4단계:</strong> "설치" 버튼 클릭 (암호 입력 필요)</div>
-<div class="step"><strong>5단계:</strong> 일반 → 정보 → 인증서 신뢰 설정</div>
-<div class="step"><strong>6단계:</strong> "프린터 서버 인증서" 스위치 ON</div>
-<div style="margin-top:10px;color:#d63384;"><strong>⚠️ 중요:</strong> 6단계를 꼭 해야 작동합니다!</div>
-</div>
-</div>
-
-<div class="test-section">
-<h3>🧪 프린터 테스트</h3>
-<div class="status" id="printer-status">프린터 상태 확인 중...</div>
-<button onclick="checkStatus()">🔍 상태 확인</button>
-<button onclick="testBarcode()">📊 바코드 테스트</button>
-<button onclick="testReceipt()">🧾 영수증 테스트</button>
-<button onclick="testRealReceipt()">📋 실제 내역서 테스트</button>
-</div>
-
-<div id="result"></div>
-</div>
-
+<style>body{font-family:system-ui;margin:40px;background:#f5f7fa}.container{max-width:900px;background:white;padding:30px;border-radius:10px}.header{background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:20px;margin:-30px -30px 30px -30px;border-radius:10px 10px 0 0;text-align:center}button{background:#667eea;color:white;border:none;padding:12px 24px;margin:10px 5px;border-radius:5px;cursor:pointer}#result{background:#f8f9fa;border:1px solid #ddd;padding:15px;margin-top:20px;white-space:pre-wrap;font-family:monospace;font-size:13px;display:none;max-height:500px;overflow-y:auto}</style>
+</head><body><div class="container"><div class="header"><h1>프린터 서버 v2.1</h1><p>바코드 + 영수증 + QR</p></div><h3>테스트</h3>
+<button onclick="testBarcode()">바코드 테스트</button>
+<button onclick="testReceipt()">영수증 (한글)</button>
+<button onclick="testQR()">영수증 + QR</button>
+<div id="result"></div></div>
 <script>
-function show(text) {
-  const result = document.getElementById('result');
-  result.style.display = 'block';
-  result.textContent = text;
+async function testBarcode(){show('바코드 출력 중...');try{const r=await fetch('/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({commands:'SIZE 30 mm, 10 mm\\r\\nCLS\\r\\nTEXT 50,20,"3",0,1,1,"TEST"\\r\\nBARCODE 50,50,"128",40,1,0,2,2,"1234567890"\\r\\nPRINT 1,1\\r\\n',product:{code:'TEST123'}})});const data=await r.json();show('결과:\\n\\n'+JSON.stringify(data,null,2));}catch(e){show('오류: '+e.message);}}
+async function testReceipt(){show('영수증 출력 중...');try{const r=await fetch('/print-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receiptData:{images:[],layout:[{type:'text',content:'비숍매장',align:'center',bold:true,fontSize:2},{type:'text',content:'제주시 XXX',align:'center'},{type:'space',lines:1},{type:'line',char:'=',length:40},{type:'items',items:[{name:'테스트 상품1',price:10000,quantity:2},{name:'테스트 상품2',price:15000,quantity:1}]},{type:'line',char:'=',length:40},{type:'text',content:'합계: 35,000원',align:'right',bold:true,fontSize:2},{type:'text',content:'감사합니다',align:'center'}]}})});const data=await r.json();show('결과:\\n\\n'+JSON.stringify(data,null,2));}catch(e){show('오류: '+e.message);}}
+async function testQR(){show('QR 출력 중...');try{const r=await fetch('/print-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receiptData:{images:[],layout:[{type:'text',content:'비숍매장',align:'center',bold:true,fontSize:2},{type:'text',content:'제주시 XXX',align:'center'},{type:'space',lines:1},{type:'line',char:'=',length:40},{type:'items',items:[{name:'테스트 상품1',price:10000,quantity:2}]},{type:'line',char:'=',length:40},{type:'text',content:'합계: 20,000원',align:'right',bold:true,fontSize:2},{type:'space',lines:2},{type:'text',content:'영수증 확인',align:'center'},{type:'space',lines:1},{type:'qrcode',data:'https://bishop.com/receipt/12345',size:256,errorCorrectionLevel:'H'},{type:'space',lines:1},{type:'text',content:'감사합니다',align:'center',bold:true}]}})});const data=await r.json();show('결과:\\n\\n'+JSON.stringify(data,null,2));}catch(e){show('오류: '+e.message);}}
+function show(text){const r=document.getElementById('result');r.style.display='block';r.textContent=text;}
+</script></body></html>`;
+  
+  res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
+  res.end(html);
 }
 
-// iOS 프로필 다운로드
-function downloadIOSProfile() {
-  show('📱 iOS 프로필 다운로드 중...');
-  window.location.href = '/ios-profile';
-  setTimeout(() => {
-    show('✅ iOS 프로필이 다운로드되었습니다!\\n\\niPhone/iPad에서 설정 → 일반 → VPN 및 기기 관리로 이동하여 설치해주세요.');
-  }, 1000);
-}
-
-// 상태 확인
-async function checkStatus() {
-  show('🔍 프린터 상태 확인 중...');
-  try {
-    const r = await fetch('/status');
-    const data = await r.json();
-    show('📊 프린터 상태:\\n\\n' + JSON.stringify(data, null, 2));
-    
-    const statusDiv = document.getElementById('printer-status');
-    if (data.success) {
-      statusDiv.innerHTML = '✅ 서버 온라인 (v2.2) - 바코드: ' + 
-        (data.printers.barcode.online ? '🟢 연결됨' : '🔴 연결 안됨') +
-        ' | 영수증: ' + (data.printers.receipt.online ? '🟢 연결됨' : '🔴 연결 안됨');
-      statusDiv.style.background = '#e8f5e8';
-    } else {
-      statusDiv.innerHTML = '🔴 서버 오프라인';
-      statusDiv.style.background = '#f8e8e8';
-    }
-  } catch (e) {
-    show('❌ 상태 확인 오류: ' + e.message);
-    document.getElementById('printer-status').innerHTML = '❌ 연결 실패';
-  }
-}
-
-// 바코드 테스트
-async function testBarcode() {
-  show('📊 바코드 출력 중...');
-  try {
-    const r = await fetch('/print', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        commands: 'SIZE 30 mm, 10 mm\\r\\nCLS\\r\\nTEXT 50,20,"3",0,1,1,"TEST"\\r\\nBARCODE 50,50,"128",40,1,0,2,2,"1234567890"\\r\\nPRINT 1,1\\r\\n',
-        product: {code: 'TEST123'}
-      })
-    });
-    const data = await r.json();
-    show('📊 바코드 테스트 결과:\\n\\n' + JSON.stringify(data, null, 2));
-  } catch (e) {
-    show('❌ 바코드 테스트 오류: ' + e.message);
-  }
-}
-
-// 간단한 영수증 테스트
-async function testReceipt() {
-  show('🧾 간단한 영수증 출력 중...');
-  try {
-    const r = await fetch('/print-receipt', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        receiptData: {
-          layout: [
-            {type: 'text', content: '🖨️ 프린터 테스트', align: 'center', bold: true, fontSize: 32},
-            {type: 'text', content: '제주시 연동', align: 'center', fontSize: 24},
-            {type: 'space', lines: 1},
-            {type: 'line', char: '=', length: 40},
-            {type: 'text', content: '감사합니다! 🙏', align: 'center', fontSize: 24}
-          ]
-        }
-      })
-    });
-    const data = await r.json();
-    show('🧾 간단한 영수증 테스트 결과:\\n\\n' + JSON.stringify(data, null, 2));
-  } catch (e) {
-    show('❌ 영수증 테스트 오류: ' + e.message);
-  }
-}
-
-// 실제 내역서 테스트 (복잡한 레이아웃)
-async function testRealReceipt() {
-  show('📋 실제 내역서 출력 중...');
-  try {
-    const r = await fetch('/print-receipt', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        receiptData: {
-          layout: [
-            {type: 'text', content: 'AKOJEJU', align: 'center', bold: true, fontSize: 32},
-            {type: 'text', content: '제주시 연동', align: 'center', fontSize: 24},
-            {type: 'space', lines: 1},
-            {type: 'text', content: '일자  2025-01-15', fontSize: 22},
-            {type: 'text', content: '번호  TEST001', fontSize: 22},
-            {type: 'space', lines: 1},
-            {type: 'line', char: '=', length: 40},
-            {type: 'product-line', name: '제주 감귤 5kg', quantity: 2, total: 30000, fontSize: 22},
-            {type: 'product-line', name: '한라봉 3kg 선물세트', quantity: 1, total: 25000, fontSize: 22},
-            {type: 'product-line', name: '제주 흑돼지 구이용 1kg 냉장포장', quantity: 1, total: 35000, fontSize: 22},
-            {type: 'line', char: '=', length: 40},
-            {type: 'product-line', name: '합계', quantity: 4, total: 90000, fontSize: 22},
-            {type: 'space', lines: 2},
-            {type: 'text', content: 'www.akojeju.com', align: 'center', fontSize: 22}
-          ]
-        }
-      })
-    });
-    const data = await r.json();
-    show('📋 실제 내역서 테스트 결과:\\n\\n' + JSON.stringify(data, null, 2));
-  } catch (e) {
-    show('❌ 실제 내역서 테스트 오류: ' + e.message);
-  }
-}
-
-// 페이지 로드 시 상태 확인
-window.onload = function() {
-  checkStatus();
-};
-</script>
-</body></html>`;
-    
-    res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
-    res.end(html);
-    return;
-  }
-
-  // 404 Not Found
-  res.writeHead(404, {'Content-Type': 'application/json; charset=utf-8'});
-  res.end(JSON.stringify({error: 'Not Found'}, null, 2));
-}
-
-// HTTP 서버 시작
-console.log('🌐 HTTP 서버 시작...');
+console.log('HTTP 서버 시작...');
 const httpServer = http.createServer(handleRequest);
 httpServer.listen(CONFIG.httpPort, '0.0.0.0', () => {
-  console.log(`✅ HTTP: http://localhost:${CONFIG.httpPort}`);
+  console.log(`HTTP: http://localhost:${CONFIG.httpPort}`);
 });
 
-// HTTPS 서버 시작
-console.log('🔒 HTTPS 서버 시작...');
+console.log('HTTPS 서버 시작...');
 const sslCert = loadSSLCert();
 if (sslCert) {
   const httpsServer = https.createServer(sslCert, handleRequest);
   httpsServer.listen(CONFIG.httpsPort, '0.0.0.0', () => {
-    console.log(`✅ HTTPS: https://localhost:${CONFIG.httpsPort}`);
-    console.log(`📱 iOS 프로필: https://localhost:${CONFIG.httpsPort}/ios-profile`);
+    console.log(`HTTPS: https://localhost:${CONFIG.httpsPort}`);
   });
-} else {
-  console.error('❌ HTTPS 서버 시작 실패 - 인증서 없음');
 }
 
-console.log('\n🎉 프린터 서버 v2.2 준비 완료!');
-console.log('📱 iOS 인증서 지원 + 실제 내역서 출력 기능');
-console.log('🌐 웹 인터페이스에서 iOS 프로필을 다운로드하세요\n');
+console.log('준비 완료\n');
