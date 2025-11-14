@@ -71,7 +71,7 @@ export async function GET({ url, locals }) {
       code: rows[0].PROH_CODE,
       name: rows[0].PROH_NAME,
       qrCode: rows[0].PROH_QRCD || '',
-      cost: parseInt(rows[0].DPRC_BAPR) || 0,
+      cost: user.role === 'admin' ? (parseInt(rows[0].DPRC_BAPR) || 0) : 0, // admin만 원가 조회 가능
       price: parseInt(rows[0].DPRC_SOPR) || 0,
       stock: parseInt(rows[0].CURRENT_STOCK) || 0,
       cash_status: rows[0].cash_status === '1',        // 현금세팅!

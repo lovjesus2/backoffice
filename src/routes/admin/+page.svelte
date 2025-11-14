@@ -557,7 +557,7 @@
 
   <!-- Page Header -->
   <div class="p-3 md:p-4 pointer-events-none">
-    <h2 class="text-lg md:text-xl font-bold text-gray-800">📋 알림판</h2>
+    <h2 class="text-base md:text-lg font-bold text-gray-800">📋 알림판</h2>
   </div>
 
   <!-- Notes Container -->
@@ -664,7 +664,7 @@
                       handleCheckItemKeydown(e, note, index);
                     }}
                     placeholder="할 일을 입력하세요..."
-                    class="flex-1 bg-transparent border-none outline-none text-sm {getInputClass(note)}"
+                    class="flex-1 bg-transparent border-none outline-none text-xs md:text-xs {getInputClass(note)}"
                     style="color: {note.colors.colorText};"
                   />
                   {#if canEditNote(note)}
@@ -680,7 +680,7 @@
           {:else}
             <!-- 기존 텍스트 모드 -->
             <textarea
-              class="flex-1 p-4 bg-transparent border-none outline-none resize-none font-sans text-sm leading-relaxed placeholder:opacity-50 cursor-text overflow-auto"
+              class="flex-1 p-4 bg-transparent border-none outline-none resize-none font-sans text-xs md:text-xs leading-relaxed placeholder:opacity-50 cursor-text overflow-auto"
               style="color: {note.colors.colorText}; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;"
               placeholder="내용을 입력하세요..."
               value={note.body}

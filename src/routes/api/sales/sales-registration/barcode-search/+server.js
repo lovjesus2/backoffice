@@ -84,7 +84,7 @@ export async function GET({ url, locals }) {
       code: rows[0].PROH_CODE,
       name: rows[0].PROH_NAME,
       description: rows[0].PROH_BIGO || '',
-      cost: parseInt(rows[0].DPRC_BAPR) || 0,
+      cost: user.role === 'admin' ? (parseInt(rows[0].DPRC_BAPR) || 0) : 0,
       cardPrice: parseInt(rows[0].DPRC_SOPR) || 0,
       cashPrice: parseInt(rows[0].DPRC_DCPR) || 0,
       deliveryPrice: parseInt(rows[0].DPRC_DEPR) || 0,

@@ -593,13 +593,13 @@
         // 🔥 수량에 비례해서 할인 적용
         const discountMultiplier = Math.floor(item.quantity / item.discountQty);
         finalAmount += item.discountAmount * discountMultiplier;
+        item.isQuantityDiscountApplied = true;  // ✅ 플래그 설정 추가
       }
-      // 타입 1: 현금일 때만
       // 타입 1: 현금일 때만 (위에서 이미 자동 체크함)
       else if (item.discountType === '1' && item.quantity >= item.discountQty && item.isCash) {
         const discountMultiplier = Math.floor(item.quantity / item.discountQty);
         finalAmount += item.discountAmount * discountMultiplier;
-        
+        item.isQuantityDiscountApplied = true;  // ✅ 플래그 설정 추가
       }
     }
     
@@ -1550,9 +1550,9 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<div class="min-h-screen relative" style="background-color: #f5f5f5;" >
+<div class="relative" style="background-color: #f5f5f5;">
   <!-- 메인 컨텐츠 -->
-  <div class="flex flex-col" style="padding: 0; min-height: calc(100vh - var(--header-height));">
+  <div class="flex flex-col" style="padding: 0; height: calc(100vh - var(--header-total-height) - 40px);">
     <!-- 헤더 (고정 + 버튼 오른쪽 정렬) -->
     <div class="bg-white border-b mb-2.5" style="position: fixed; top: var(--header-total-height); left: 0; right: 0; border-color: #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 50;">
       <div style="padding: 10px 8px;">
@@ -1701,7 +1701,7 @@
           style:transform={typeof window !== 'undefined' && window.innerWidth <= 740 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
           on:click={handlePanelClick}>
         
-        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? '1px' : '8px'}; height: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? 'calc(100vh + 20px)' : layoutConstants.sideMenuHeight};"
+        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? '1px' : '8px'}; height: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? 'calc(80vh)' : layoutConstants.sideMenuHeight};"
               on:click={handlePanelClick}
               on:wheel={handlePanelWheel}
               on:touchmove|nonpassive={handlePanelTouchMove}>
@@ -1722,7 +1722,6 @@
             <div class="space-y-3">
               <!-- 회사구분 -->
               <div class="flex flex-row items-center gap-2">
-                <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">회사구분</label>
                 <select 
                   bind:value={selectedCompany}
                   on:change={handleCompanyChange}
@@ -1752,7 +1751,6 @@
 
               <!-- 기간 선택 -->
               <div class="flex flex-row items-center gap-2">
-                <label class="mb-0 text-gray-600 font-medium min-w-0 flex-shrink-0" style="color: #555; font-weight: 500; font-size: 0.75rem; width: 60px;">기간</label>
                 <div class="flex gap-1 flex-1">
                   <input 
                     type="date" 
@@ -1815,7 +1813,7 @@
           <!-- 목록 -->
           <div 
             class="overflow-y-auto" 
-            style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 ? layoutConstants.listMaxHeight : 'calc(100vh - 150px)'}; overscroll-behavior: contain;"
+            style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 ? layoutConstants.listMaxHeight : 'calc(80vh - 180px)'}; overscroll-behavior: contain;"
             on:wheel={handlePanelWheel}
             on:touchmove={handlePanelTouchMove}
           >
@@ -1829,7 +1827,7 @@
                 검색 중...
               </div>
             {:else if products.length > 0}
-              <div style="padding: 10px;">
+              <div style="padding: 10px; max-height: {typeof window !== 'undefined' && window.innerWidth <= 768 ? 'calc(65vh)' : 'calc(53vh)'}; overflow-y: auto;">
                 
                 <!-- 매출 합계 카드 (상단 한번만) -->
                 <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg mb-3" style="padding: 4px;">
@@ -2213,7 +2211,7 @@
                 </div>
               </div>
               
-              <div style="padding: 10px;">
+              <div style="padding: 10px; max-height: {typeof window !== 'undefined' && window.innerWidth <= 768 ? 'calc(65vh)' : 'calc(53vh)'}; overflow-y: auto;">
                 {#if detailItems.length > 0}
                   <div class="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-2 gap-1.5">
                     <!-- 상세내역 항목 부분 수정 (각 항목의 div 클래스를 조건부로 변경) -->
@@ -2410,6 +2408,7 @@
 <!-- 제품 조회 팝업 -->
 <ProductSearchPopup 
   bind:visible={showProductPopup}
+  {user}
   currentCompanyCode={selectedCompany}
   currentRegistrationCode={selectedRegistration}
   on:productSelected={handleProductSelected}
