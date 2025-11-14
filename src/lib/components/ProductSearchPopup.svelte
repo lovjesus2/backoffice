@@ -4,10 +4,14 @@
   import { getLayoutConstants } from '$lib/utils/deviceUtils.js';
   import { simpleCache } from '$lib/utils/simpleImageCache.js';
   import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils.js';
+  import { browser } from '$app/environment';
 
   export let visible = false;
   export let currentCompanyCode = '';
   export let currentRegistrationCode = '';
+
+  // ✅ 추가: 사용자 정보 props
+  export let user = null; // { username, role } 형태
 
   const dispatch = createEventDispatcher();
   
@@ -39,16 +43,43 @@
     });
   }
 
-  onMount(() => {
-    layoutConstants = getLayoutConstants();
-    if (currentCompanyCode && currentRegistrationCode) {
-      selectedCompany = currentCompanyCode;
-      selectedRegistration = currentRegistrationCode;
-      loadInitialData();
-    } else {
-      loadCompanyList();
+  let isMobile = false;
+
+  function checkMobile() {
+    if (browser) {
+      isMobile = window.innerWidth < 768;
     }
-  });
+  }
+
+onMount(() => {
+  layoutConstants = getLayoutConstants();
+  
+  // 모바일 감지 기능 추가
+  checkMobile();
+  const handleResize = () => checkMobile();
+  window.addEventListener('resize', handleResize);
+  
+  if (currentCompanyCode && currentRegistrationCode) {
+    selectedCompany = currentCompanyCode;
+    selectedRegistration = currentRegistrationCode;
+    loadInitialData();
+  } else {
+    loadCompanyList();
+  }
+  
+  // cleanup 함수 반환
+  return () => {
+    window.removeEventListener('resize', handleResize);
+  };
+});
+
+  // ✅ 추가: 권한 체크 함수들
+  function isAdmin() {
+    return user?.role === 'admin';
+  }
+  function canViewCost() {
+    return isAdmin(); // admin만 원가 보기 가능
+  }
 
   // 이미지 캐싱 함수
   async function cacheImage(event) {
@@ -272,7 +303,7 @@
 
   // 오버레이 클릭 시 팝업 닫기
   function handleOverlayClick() {
-    closePopup();
+   // closePopup();
   }
 
   // 제품구분 표시 여부
@@ -289,9 +320,15 @@
 <!-- 팝업 오버레이 -->
 {#if visible}
   <div 
-    class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center pt-16"
+    class="fixed bg-black/50 flex flex-col items-center justify-center transition-opacity duration-200 z-[9999]"
+    style="
+      {isMobile ? 
+        'top: 0; left: 0; right: 0; bottom: 0;' : 
+        'top: 0; left: 256px; right: 0; bottom: 0;'
+      }
+      touch-action: none;
+    "
     on:click={handleOverlayClick}
-    on:keydown
   >
     <!-- 팝업 컨텐츠 -->
     <div 
@@ -475,7 +512,10 @@
                       
                       <!-- 가격 정보 (제품정보일 때만) -->
                       {#if isProductInfo}
-                        <div class="text-gray-700" style="font-size: 0.7rem;">원가: {product.cost ? product.cost.toLocaleString('ko-KR') : '0'}원</div>
+                        <!-- 원가는 admin 권한에서만 표시 -->
+                        {#if canViewCost()}
+                          <div class="text-gray-700" style="font-size: 0.7rem;">원가: {product.cost ? product.cost.toLocaleString('ko-KR') : '0'}원</div>
+                        {/if}
                         <div class="text-gray-700" style="font-size: 0.7rem;">금액: {product.price ? product.price.toLocaleString('ko-KR') : '0'}원</div>
                       {/if}
                     </div>

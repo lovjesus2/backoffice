@@ -1,14 +1,14 @@
 /**
- * IndexedDB 이미지 캐시 (비동기 충돌 해결 + ImageUploader 연동 버전)
+ * IndexedDB 이미지 캐시 (DOM 독립적 + groupKey 자동 추출 버전)
  */
 class SimpleImageCache {
   constructor() {
     this.dbName = 'SimpleImageCache';
-    this.dbVersion = 2; // 버전 업그레이드 (groupKey 인덱스 추가용)
+    this.dbVersion = 2;
     this.storeName = 'images';
     this.db = null;
-    this.blobUrls = new Map(); // blob URL 관리
-    this.pendingRequests = new Map(); // 진행 중인 요청 관리
+    this.blobUrls = new Map();
+    this.pendingRequests = new Map();
   }
 
   async init() {
@@ -26,9 +26,8 @@ class SimpleImageCache {
         if (!db.objectStoreNames.contains(this.storeName)) {
           const store = db.createObjectStore(this.storeName, { keyPath: 'url' });
           store.createIndex('etag', 'etag', { unique: false });
-          store.createIndex('groupKey', 'groupKey', { unique: false }); // 새로 추가
+          store.createIndex('groupKey', 'groupKey', { unique: false });
         } else if (event.oldVersion < 2) {
-          // 기존 DB에 groupKey 인덱스 추가
           const transaction = event.target.transaction;
           const store = transaction.objectStore(this.storeName);
           if (!store.indexNames.contains('groupKey')) {
@@ -65,64 +64,59 @@ class SimpleImageCache {
   async checkETag(url) {
     try {
       const response = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-      
-      const etag = response.headers.get('etag');
-      const lastModified = response.headers.get('last-modified');
-
-      console.log('[checkETag]', url, { etag, lastModified, all: [...response.headers] });
-
-      return etag;
+      return response.headers.get('etag');
     } catch (err) {
       console.warn('[checkETag] 실패', url, err);
       return null;
     }
   }
 
-  // 확실한 비동기 충돌 해결 로직
+  // URL에서 제품코드 추출
+  extractProductCode(url) {
+    try {
+      const fileName = this.extractFileName(url);
+      const match = fileName.match(/^(.+)_\d+\.\w+$/);
+      return match ? match[1] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // 🔥 기존 handleImage에 groupKey 자동 추출 추가
   async handleImage(imgElement) {
     const originalUrl = imgElement.src;
     if (!originalUrl || originalUrl.startsWith('blob:')) return;
 
-    // 현재 시점의 src를 기록 (나중에 검증용)
     const currentSrc = originalUrl;
     
-    // 이전 요청들 모두 취소
     if (this.pendingRequests.has(imgElement)) {
       this.pendingRequests.get(imgElement).forEach(req => req.cancelled = true);
     }
     
-    // 새 요청 배열 생성
     if (!this.pendingRequests.has(imgElement)) {
       this.pendingRequests.set(imgElement, []);
     }
 
-    // 고유 요청 ID 생성
     const requestId = Date.now() + Math.random();
     const requestInfo = { cancelled: false, id: requestId, url: currentSrc };
     
-    // 요청 배열에 추가
     this.pendingRequests.get(imgElement).push(requestInfo);
 
     try {
-      // 1. 먼저 캐시 확인
       const cached = await this.getFromCache(originalUrl);
       
-      // src가 바뀌었는지 확인
       if (this.isRequestInvalid(imgElement, requestInfo, currentSrc)) {
         return;
       }
       
       if (cached) {
-        // 2. 캐시가 있으면 ETag 확인
         const currentETag = await this.checkETag(originalUrl);
         
-        // 다시 확인
         if (this.isRequestInvalid(imgElement, requestInfo, currentSrc)) {
           return;
         }
         
         if (cached.etag === currentETag) {
-          // 3. ETag 같으면 즉시 캐시 이미지 사용
           if (this.setImageSafely(imgElement, originalUrl, cached.blob, requestInfo, currentSrc)) {
             console.log('캐시 사용:', originalUrl);
           }
@@ -130,10 +124,8 @@ class SimpleImageCache {
         }
       }
 
-      // 4. 캐시 없거나 ETag 다르면 새로 다운로드
       const response = await fetch(originalUrl);
       
-      // 다시 확인
       if (this.isRequestInvalid(imgElement, requestInfo, currentSrc)) {
         return;
       }
@@ -142,53 +134,45 @@ class SimpleImageCache {
         const blob = await response.blob();
         const etag = response.headers.get('etag');
         
-        // 마지막 확인
         if (this.isRequestInvalid(imgElement, requestInfo, currentSrc)) {
           return;
         }
         
-        // 5. 캐시 저장
-        await this.saveToCache(originalUrl, blob, etag);
+        // 🔥 groupKey 자동 추출 후 저장
+        const groupKey = this.extractProductCode(originalUrl);
+        await this.saveToCache(originalUrl, blob, etag, groupKey);
         
-        // 6. 이미지 교체 (최종 확인 후)
         if (this.setImageSafely(imgElement, originalUrl, blob, requestInfo, currentSrc)) {
-          console.log('새 이미지 캐시됨:', originalUrl);
+          console.log('새 이미지 캐시됨:', originalUrl, 'groupKey:', groupKey);
         }
       }
       
     } catch (error) {
       console.log('캐싱 실패:', originalUrl, error);
     } finally {
-      // 요청 완료 후 정리
       this.cleanupRequest(imgElement, requestInfo);
     }
   }
 
-  // 요청이 여전히 유효한지 확인
   isRequestInvalid(imgElement, requestInfo, originalSrc) {
     return requestInfo.cancelled || 
            imgElement.src !== originalSrc || 
            !document.contains(imgElement);
   }
 
-  // 안전한 이미지 설정
   setImageSafely(imgElement, originalUrl, blob, requestInfo, originalSrc) {
-    // 최종 검증
     if (this.isRequestInvalid(imgElement, requestInfo, originalSrc)) {
       console.log('이미지 설정 취소됨:', originalUrl);
       return false;
     }
     
-    // 이전 blob URL 정리
     if (this.blobUrls.has(originalUrl)) {
       URL.revokeObjectURL(this.blobUrls.get(originalUrl));
     }
     
-    // 새 blob URL 생성 및 저장
     const blobUrl = URL.createObjectURL(blob);
     this.blobUrls.set(originalUrl, blobUrl);
     
-    // DOM 요소의 src와 한 번 더 확인
     if (imgElement.src === originalSrc) {
       imgElement.src = blobUrl;
       return true;
@@ -197,7 +181,6 @@ class SimpleImageCache {
     return false;
   }
 
-  // 요청 정리
   cleanupRequest(imgElement, requestInfo) {
     if (this.pendingRequests.has(imgElement)) {
       const requests = this.pendingRequests.get(imgElement);
@@ -206,23 +189,141 @@ class SimpleImageCache {
         requests.splice(index, 1);
       }
       
-      // 배열이 비면 맵에서 제거
       if (requests.length === 0) {
         this.pendingRequests.delete(imgElement);
       }
     }
   }
 
+  // ============= 🔥 DOM 독립적 이미지 캐싱 (새로 추가) =============
+  
+  // 핵심 함수: 제품코드로 모든 이미지 조회/캐싱
+  async getOrCacheImages(productCode, imagGub1 = 'PROD', imagGub2 = 'IMG') {
+    if (!productCode) return [];
+    
+    console.log(`🔍 이미지 조회/캐싱: ${productCode}`);
+    
+    try {
+      // 1. 캐시에서 먼저 확인
+      const cachedImages = await this.getImagesByGroup(productCode);
+      
+      if (cachedImages.length > 0) {
+        console.log(`✅ 캐시에서 발견: ${cachedImages.length}개`);
+        return cachedImages;
+      }
+      
+      // 2. 캐시에 없으면 서버에서 가져와서 캐싱
+      console.log(`📡 서버에서 이미지 조회: ${productCode}`);
+      const serverImages = await this.fetchImagesFromServer(productCode, imagGub1, imagGub2);
+      
+      if (serverImages.length > 0) {
+        // 3. 각 이미지 다운로드해서 캐시에 저장
+        await this.cacheImageList(serverImages, productCode);
+        
+        // 4. 캐시에서 다시 조회해서 반환
+        return await this.getImagesByGroup(productCode);
+      }
+      
+      return [];
+      
+    } catch (error) {
+      console.error(`❌ 이미지 조회/캐싱 실패: ${productCode}`, error);
+      return [];
+    }
+  }
+
+  // 서버에서 이미지 리스트 조회
+  async fetchImagesFromServer(productCode, imagGub1, imagGub2) {
+    try {
+      const response = await fetch('/api/images/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imagGub1: imagGub1,
+          imagGub2: imagGub2,
+          imagCode: productCode
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.images) {
+        return data.images.filter(img => img.exists !== false);
+      }
+      
+      return [];
+      
+    } catch (error) {
+      console.error('서버 이미지 조회 실패:', error);
+      return [];
+    }
+  }
+
+  // 이미지 리스트를 캐시에 저장
+  async cacheImageList(imageList, productCode) {
+    if (!imageList || imageList.length === 0) return;
+    
+    console.log(`💾 이미지 캐싱 시작: ${productCode} (${imageList.length}개)`);
+    
+    const cachePromises = imageList.map(async (img, index) => {
+      try {
+        const imageUrl = `/proxy-images/${img.name}`;
+        
+        const response = await fetch(imageUrl, { cache: 'no-store' });
+        
+        if (response.ok) {
+          const blob = await response.blob();
+          const etag = response.headers.get('ETag') || `${Date.now()}-${index}`;
+          
+          // groupKey와 함께 캐시에 저장
+          await this.saveToCache(imageUrl, blob, etag, productCode);
+          console.log(`✅ 캐시 완료: ${img.name}`);
+        }
+        
+      } catch (err) {
+        console.error(`❌ 개별 캐싱 실패: ${img.name}`, err);
+      }
+    });
+    
+    await Promise.allSettled(cachePromises);
+    console.log(`🎉 캐싱 완료: ${productCode}`);
+  }
+
+  // 빠른 캐시 확인
+  async hasImagesInCache(productCode) {
+    try {
+      const cachedImages = await this.getImagesByGroup(productCode);
+      return cachedImages.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  // 강제 새로고침
+  async refreshImages(productCode, imagGub1 = 'PROD', imagGub2 = 'IMG') {
+    try {
+      await this.invalidateProductCache(productCode);
+      return await this.getOrCacheImages(productCode, imagGub1, imagGub2);
+    } catch (error) {
+      console.error('이미지 새로고침 실패:', error);
+      return [];
+    }
+  }
+
+  // ============= 기존 함수들 =============
+
   async clearCache() {
     await this.init();
     
-    // 진행 중인 모든 요청 취소
     this.pendingRequests.forEach(request => {
       request.cancelled = true;
     });
     this.pendingRequests.clear();
     
-    // blob URL들 정리
     this.blobUrls.forEach(blobUrl => URL.revokeObjectURL(blobUrl));
     this.blobUrls.clear();
     
@@ -253,48 +354,39 @@ class SimpleImageCache {
     });
   }
 
-  // 제품 캐시 무효화 (기존 기능 유지)
   async invalidateProductCache(productCode) {
     console.log('제품 캐시 무효화:', productCode);
     
     try {
       await this.init();
       
-      // 1. 해당 제품의 이미지 URL들만 삭제
-      const patterns = [
-        `/proxy-images/${productCode}_1.jpg`,
-        `/proxy-images/${productCode}_2.jpg`,
-        `/proxy-images/${productCode}_3.jpg`,
-        `/proxy-images/${productCode}_4.jpg`,
-        `/proxy-images/${productCode}_5.jpg`,
-        `/proxy-images/${productCode}_6.jpg`,
-        `/proxy-images/${productCode}_7.jpg`,
-        `/proxy-images/${productCode}_8.jpg`,
-        `/proxy-images/${productCode}_9.jpg`,
-        `/proxy-images/${productCode}_10.jpg`
-      ];
-      
+      // groupKey로 해당 제품의 모든 이미지 삭제
       const transaction = this.db.transaction([this.storeName], 'readwrite');
       const store = transaction.objectStore(this.storeName);
+      const index = store.index('groupKey');
+      const request = index.getAll(productCode);
       
-      for (const url of patterns) {
-        store.delete(url);
-        store.delete(`${window.location.origin}${url}`);
+      return new Promise((resolve) => {
+        request.onsuccess = () => {
+          const items = request.result || [];
+          
+          // 각 이미지 삭제
+          items.forEach(item => {
+            store.delete(item.url);
+            
+            // blob URL 정리
+            if (this.blobUrls.has(item.url)) {
+              URL.revokeObjectURL(this.blobUrls.get(item.url));
+              this.blobUrls.delete(item.url);
+            }
+          });
+          
+          console.log(`캐시 무효화 완료: ${productCode} (${items.length}개)`);
+          resolve(true);
+        };
         
-        // blob URL 정리
-        if (this.blobUrls.has(url)) {
-          URL.revokeObjectURL(this.blobUrls.get(url));
-          this.blobUrls.delete(url);
-        }
-      }
-      
-      // 2. 페이지의 해당 이미지들을 새로 로드
-      const images = document.querySelectorAll(`img[src*="${productCode}"]`);
-      for (const img of images) {
-        await this.handleImage(img); // 새로 캐싱
-      }
-      
-      return true;
+        request.onerror = () => resolve(false);
+      });
       
     } catch (error) {
       console.error('제품 캐시 무효화 실패:', error);
@@ -302,9 +394,8 @@ class SimpleImageCache {
     }
   }
 
-  // ============= ImageUploader 연동 전용 함수들 =============
+  // ============= ImageUploader 연동 함수들 =============
 
-  // 그룹별 이미지 가져오기 (ImageUploader용)
   async getImagesByGroup(groupKey) {
     await this.init();
     return new Promise((resolve) => {
@@ -316,7 +407,6 @@ class SimpleImageCache {
       request.onsuccess = () => {
         const results = request.result || [];
         const processedResults = results.map(item => {
-          // Blob URL 생성 (한번만)
           if (item.blob && !this.blobUrls.has(item.url)) {
             const blobUrl = URL.createObjectURL(item.blob);
             this.blobUrls.set(item.url, blobUrl);
@@ -332,7 +422,6 @@ class SimpleImageCache {
           };
         });
         
-        // cnt 순으로 정렬
         processedResults.sort((a, b) => a.cnt - b.cnt);
         resolve(processedResults);
       };
@@ -341,7 +430,6 @@ class SimpleImageCache {
     });
   }
 
-  // 서버 저장 후 캐시 업데이트 (ImageUploader용)
   async updateGroupCache(groupKey, savedFiles) {
     if (!savedFiles || savedFiles.length === 0) return;
     
@@ -350,14 +438,12 @@ class SimpleImageCache {
     try {
       await this.init();
       
-      // 각 파일을 개별적으로 캐시 업데이트
       for (const file of savedFiles) {
         try {
           const imageUrl = file.path.startsWith('/') ? 
             `${file.path}?nocache=${Date.now()}` : 
             `/proxy-images/${file.fileName}?nocache=${Date.now()}`;
             
-          // 서버에서 이미지 데이터 가져와서 캐시 저장
           const response = await fetch(imageUrl, { 
             cache: 'no-store',
             headers: {
@@ -369,7 +455,6 @@ class SimpleImageCache {
             const blob = await response.blob();
             const etag = response.headers.get('etag') || `${Date.now()}-${file.cnt}`;
             
-            // groupKey와 함께 저장
             await this.saveToCache(imageUrl, blob, etag, groupKey);
             console.log('캐시 업데이트 완료:', file.fileName);
           }
@@ -385,24 +470,22 @@ class SimpleImageCache {
     }
   }
 
-  // 그룹 캐시에서 특정 이미지만 업데이트 (변경 감지)
   async updateImageIfChanged(url, groupKey) {
     try {
       const cached = await this.getFromCache(url);
       const currentETag = await this.checkETag(url);
       
-      // 캐시가 있고 ETag가 같으면 업데이트 불필요
-      if (cached && cached.etag === currentETag) {
-        return false; // 변경 없음
+      // 🔥 null 체크 수정 (기존 버그 해결)
+      if (cached && cached.etag && cached.etag === currentETag) {
+        return false;
       }
       
-      // 파일이 변경되었거나 캐시가 없으면 새로 저장
       const response = await fetch(url, { cache: 'no-store' });
       if (response.ok) {
         const blob = await response.blob();
         await this.saveToCache(url, blob, currentETag, groupKey);
         console.log('이미지 변경 감지, 캐시 업데이트:', url);
-        return true; // 업데이트됨
+        return true;
       }
       
       return false;
@@ -412,7 +495,6 @@ class SimpleImageCache {
     }
   }
 
-  // URL에서 파일명 추출
   extractFileName(url) {
     try {
       const match = url.match(/\/proxy-images\/([^?]+)/);
@@ -422,7 +504,6 @@ class SimpleImageCache {
     }
   }
 
-  // URL에서 cnt 번호 추출
   extractCnt(url) {
     try {
       const fileName = this.extractFileName(url);
