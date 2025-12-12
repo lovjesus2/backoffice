@@ -37,7 +37,10 @@
   let adjustingStock = new Set();
   let selectedProduct = null;
   let directPrint;
+  let stockAdjustQuantity = '';
+  let stockInputElement;  // ✅ 추가
 
+  
   // 가격 모달 관련 변수들 (기존 변수들 아래에 추가)
   let showPriceModal = false;
 
@@ -96,6 +99,12 @@
       if (result.success) {
         productData = result.data;
         console.log('✅ 제품 정보 조회 성공:', productData);
+        // ✅ 추가: 제품 정보 로드 후 수량 input에 포커스
+        await tick();
+        if (stockInputElement) {
+          stockInputElement.focus();
+        }
+
       } else {
         console.error('❌ 제품 정보 조회 실패:', result.message);
         productDataError = true;
@@ -265,7 +274,8 @@
           newStock: result.new_stock,
           stockManaged: true  // 재고관리 상태도 함께 전달
         });
-        
+        window.dispatchEvent(new CustomEvent('stockUpdated', { detail: { productCode, newStock: result.new_stock, stockManaged: true } }));
+       
       } else {
         showToast(result.message || '재고 조정 실패', 'error');
       }
@@ -275,6 +285,7 @@
     } finally {
       adjustingStock.delete(productCode);
       adjustingStock = adjustingStock;
+      stockAdjustQuantity = '';
     }
   }
 
@@ -320,6 +331,7 @@
           productCode,
           cash_status: isCashAllowed
         });
+        window.dispatchEvent(new CustomEvent('cashStatusUpdated', { detail: { productCode, cash_status: isCashAllowed } }));
         
       } else {
         showToast(result.message || '처리 실패', 'error');
@@ -373,6 +385,7 @@
           productCode,
           discontinued: isDiscontinued
         });
+        window.dispatchEvent(new CustomEvent('discontinuedUpdated', { detail: { productCode, discontinued: isDiscontinued } }));
         
       } else {
         showToast(result.message || '처리 실패', 'error');
@@ -426,7 +439,8 @@
           productCode,
           stockManaged: isStockUsage
         });
-        
+        window.dispatchEvent(new CustomEvent('stockUsageUpdated', { detail: { productCode, stockManaged: isStockUsage } }));
+
       } else {
         showToast(result.message || '처리 실패', 'error');
       }
@@ -488,7 +502,7 @@
     
     // 해당 제품의 재고 조정 입력 필드에서 수량 가져오기
     const input = document.querySelector(`input[data-code="${product.code}"]`);
-    let quantity = input ? parseInt(input.value) : 0;
+    let quantity = parseInt(stockAdjustQuantity) || 1;
     
     // 0보다 작거나 같으면 기본 1장으로 설정
     if (!quantity || quantity <= 0) {
@@ -515,6 +529,8 @@
     if (directPrint) {
       directPrint.directPrint(quantity);
     }
+    // ✅ 출력 후 입력 필드 초기화
+    stockAdjustQuantity = '';
   }
 
   // QR코드 출력
@@ -525,9 +541,12 @@
     // QR 데이터 생성 (제품의 qrCode 필드 사용하거나 기본 URL)
     const qrData = product.qrCode || `https://brand.akojeju.com`;
     
-    // 수량 (기본 1장)
-    const quantity = 1;
-    
+    // ✅ 수량을 입력 필드에서 가져오기 (바코드와 동일)
+    let quantity = parseInt(stockAdjustQuantity) || 1;
+  
+    if (!quantity || quantity <= 0) {
+      quantity = 1;
+    }
     showToast(`🖨️ QR 코드 ${quantity}장 출력 중...`, 'info');
     
     // selectedProduct 업데이트
@@ -543,6 +562,9 @@
     if (directPrint) {
       directPrint.directPrint('qr', qrData, quantity); // ✅ 이렇게 수정
     }
+
+    // ✅ 출력 후 입력 필드 초기화
+    stockAdjustQuantity = '';
   }
 
   // 바코드 출력 성공 처리
@@ -745,6 +767,14 @@ function handlePriceClick() {
               ON
             </span>
           {/if}
+
+          <!-- salesinfo 배지 (하단 전체) -->
+          {#if productData && productData.salesInfo}
+            <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-center text-sm px-1 py-0.5" 
+                style="line-height: 1.2;">
+              {productData.salesInfo}
+            </div>
+          {/if}
           
           <!-- 이미지 로딩 오버레이 -->
           {#if loading}
@@ -802,21 +832,37 @@ function handlePriceClick() {
               <!-- 1줄: 재고 + 수량 입력 -->
               <div class="flex items-center justify-between mb-3">
                 <span class="text-gray-600" style="font-size: 0.8rem;">재고: {productData.stock || 0}개</span>
-                <input 
-                  type="number" 
-                  class="border border-gray-300 rounded text-center w-24 p-1"
-                  style="font-size: 0.75rem;"
-                  placeholder="±수량"
-                  data-code={productData.code}
-                  on:keydown={(e) => handleStockInput(e, productData.code)}
-                >
+                
+                <div class="flex items-center border border-gray-300 rounded w-24">
+                  <button 
+                    type="button"
+                    class="px-2 py-1 text-gray-600 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-sm rounded-l"
+                    on:click={() => stockAdjustQuantity = (Number(stockAdjustQuantity) || 0) - 1}
+                  >−</button>
+                  
+                  <input 
+                    type="number" 
+                    class="w-full text-center border-0 p-1 focus:outline-none text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    placeholder="±"
+                    bind:value={stockAdjustQuantity}
+                    bind:this={stockInputElement}
+                    data-code={productData.code}
+                    on:keydown={(e) => handleStockInput(e, productData.code)}
+                  >
+                  
+                  <button 
+                    type="button"
+                    class="px-2 py-1 text-gray-600 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-sm rounded-r"
+                    on:click={() => stockAdjustQuantity = (Number(stockAdjustQuantity) || 0) + 1}
+                  >+</button>
+                </div>
               </div>
               
               <!-- 2줄: 저장 버튼 -->
               <div class="mb-3">
                 <button 
                   type="button"
-                  class="bg-blue-500 text-white border-0 rounded px-3 py-2 text-sm hover:bg-green-600 disabled:bg-gray-500 w-full"
+                  class="bg-blue-500 text-white border-0 rounded px-2 py-2 text-xs hover:bg-green-600 disabled:bg-gray-500 w-full"
                   disabled={adjustingStock.has(productData.code)}
                   on:click={(e) => {
                     const input = e.target.parentElement.parentElement.querySelector('input');
@@ -831,7 +877,7 @@ function handlePriceClick() {
               <div class="flex gap-2">
                 <button 
                   type="button"
-                  class="bg-purple-500 text-white border-0 rounded px-3 py-2 text-sm hover:bg-purple-600 flex-1"
+                  class="bg-purple-500 text-white border-0 rounded px-2 py-2 text-xs hover:bg-purple-600 flex-1"
                   on:click={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -843,7 +889,7 @@ function handlePriceClick() {
                 
                 <button 
                   type="button"
-                  class="border-0 rounded px-3 py-2 text-sm flex-1 {
+                  class="border-0 rounded px-2 py-2 text-xs flex-1 {
                     (productData?.qrCode || productData?.PROH_QRCD) 
                       ? 'bg-purple-500 text-white hover:bg-purple-600' 
                       : 'bg-gray-300 text-gray-500 cursor-not-allowed'
@@ -872,7 +918,7 @@ function handlePriceClick() {
               <!-- 정상/단종 토글 버튼 -->
               <button 
                 type="button"
-                class="border-0 rounded px-4 py-2 text-xs transition-all duration-200 {productData.discontinued ? 
+                class="border-0 rounded px-2 py-2 text-xs transition-all duration-200 {productData.discontinued ? 
                   'bg-gray-500 text-white hover:bg-red-600' : 
                   'bg-green-500 text-white hover:bg-green-600'}"
                 on:click={() => toggleDiscontinued(productData.code)}
@@ -883,7 +929,7 @@ function handlePriceClick() {
               <!-- 사용/미사용 토글 버튼 -->
               <button 
                 type="button"
-                class="border-0 rounded px-4 py-2 text-xs transition-all duration-200 {productData.stockManaged ? 
+                class="border-0 rounded px-2 py-2 text-xs transition-all duration-200 {productData.stockManaged ? 
                   'bg-green-500 text-white hover:bg-blue-600' : 
                   'bg-gray-500 text-white hover:bg-gray-500'}"
                 on:click={() => toggleStockUsage(productData.code)}
@@ -894,7 +940,7 @@ function handlePriceClick() {
               <!-- L3 현금세팅 토글 버튼 추가 -->
               <button 
                 type="button"
-                class="border-0 rounded px-4 py-2 text-xs transition-all duration-200 {productData.cash_status ? 
+                class="border-0 rounded px-2 py-2 text-xs transition-all duration-200 {productData.cash_status ? 
                   'bg-green-500 text-white hover:bg-blue-600' : 
                   'bg-gray-500 text-white hover:bg-gray-500'}"
                 on:click={() => toggleCash(productData.code)}
@@ -905,7 +951,7 @@ function handlePriceClick() {
               <!-- ON/OFF 토글 버튼 -->
               <button 
                 type="button"
-                class="border-0 rounded px-4 py-2 text-xs transition-all duration-200 {productData.isOnline ? 
+                class="border-0 rounded px-2 py-2 text-xs transition-all duration-200 {productData.isOnline ? 
                   'bg-green-500 text-white hover:bg-emerald-600' : 
                   'bg-gray-500 text-white hover:bg-gray-600'}"
                 on:click={() => toggleOnline(productData.code)}

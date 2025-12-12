@@ -2,9 +2,12 @@
 <script>
   import { createEventDispatcher, onMount, tick } from 'svelte';
   import { getLayoutConstants } from '$lib/utils/deviceUtils.js';
-  import { simpleCache } from '$lib/utils/simpleImageCache.js';
-  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils.js';
+  import ImageModalStock from '$lib/components/ImageModalStock.svelte';
+  import { openImageModal } from '$lib/utils/imageModalUtils';
+  import { simpleCache, getProxyImageUrl} from '$lib/utils/simpleImageCache';
   import { browser } from '$app/environment';
+  import DirectPrint from '$lib/components/DirectPrint.svelte';
+  
 
   export let visible = false;
   export let currentCompanyCode = '';
@@ -33,6 +36,10 @@
   let searchLoading = false;
   let searchError = '';
   let discontinuedFilter = 'normal'; // 단종 초기값을 정상으로 설정 
+
+  // 바코드 관련
+  let directPrint;
+  let selectedProduct = null;
 
   // 레이아웃
   let layoutConstants = {};
@@ -67,6 +74,12 @@ onMount(() => {
     loadCompanyList();
   }
   
+  window.addEventListener('stockUsageUpdated', (e) => handleStockUsageUpdated({ detail: e.detail }));
+  window.addEventListener('stockUpdated', (e) => handleStockUpdated({ detail: e.detail }));
+  window.addEventListener('discontinuedUpdated', (e) => handleDiscontinuedUpdated({ detail: e.detail }));
+  window.addEventListener('onlineUpdated', (e) => handleOnlineUpdated({ detail: e.detail }));
+  window.addEventListener('cashStatusUpdated', (e) => handleCashStatusUpdated({ detail: e.detail }));
+
   // cleanup 함수 반환
   return () => {
     window.removeEventListener('resize', handleResize);
@@ -87,8 +100,8 @@ onMount(() => {
   }
 
   // 이미지 클릭 핸들러 (모달 열기)
-  function handleImageClick(productCode, productName) {
-    const imageSrc = getProxyImageUrl(productCode);
+  function handleImageClick(productCode, productName, productImage) {
+    const imageSrc = getProxyImageUrl(productImage);
     if (imageSrc) {
       openImageModal(imageSrc, productName, productCode);
     }
@@ -223,6 +236,7 @@ onMount(() => {
 
   // 검색 실행 (제품등록과 동일한 로직)
   // ✅ 수정된 코드 (올바른 방법)
+  // ✅ 수정된 handleSearch 함수
   async function handleSearch() {
     if (!selectedCompany || !selectedRegistration) {
       searchError = '회사구분과 등록구분을 선택해주세요.';
@@ -251,12 +265,30 @@ onMount(() => {
       const result = await response.json();
 
       if (result.success) {
-        // ✅ API가 이미 변환된 형태로 데이터를 반환하므로 직접 사용
-        products = result.data;
+        // ✅ API 응답 데이터를 통일된 구조로 변환
+        products = result.data.map(item => ({
+          // 코드/이름 (양쪽 필드명 모두 제공)
+          code: item.code,
+          name: item.name,
+          
+          // 재고 정보
+          stock: item.stock ?? 0,
+          stockManaged: item.stockManaged ?? false,
+          
+          // 가격 정보
+          cost: item.cost ?? 0,
+          price: item.price ?? 0,
+          
+          // 상태 정보
+          discontinued: item.discontinued ?? false,
+          isOnline: item.isOnline ?? false,
+          cash_status: item.cash_status ?? false,
+          
+          // 기타 원본 데이터 유지
+          ...item
+        }));
         
-        // 디버깅용 로그
-        console.log('API 응답:', result);
-        console.log('제품 데이터:', products);
+        console.log('✅ 검색 완료:', products.length, '개');
         if (products.length > 0) {
           console.log('첫 번째 제품:', products[0]);
         }
@@ -277,6 +309,66 @@ onMount(() => {
     }
   }
 
+   // ✅ 재고 업데이트 이벤트 처리
+  function handleStockUpdated(event) {
+    const { productCode, newStock, stockManaged } = event.detail;
+    console.log('🔵 팝업: 재고 업데이트됨', { productCode, newStock, stockManaged });
+    
+    products = products.map(item => 
+      item.code === productCode 
+        ? { ...item, stock: newStock, stockManaged }
+        : item
+    );
+  }
+
+  // ✅ 단종 상태 업데이트 이벤트 처리
+  function handleDiscontinuedUpdated(event) {
+    const { productCode, discontinued } = event.detail;
+    console.log('🟠 팝업: 단종 상태 업데이트됨', { productCode, discontinued });
+    
+    products = products.map(item => 
+      item.code === productCode 
+        ? { ...item, discontinued }
+        : item
+    );
+  }
+
+  // ✅ 재고관리 토글 이벤트 처리
+  function handleStockUsageUpdated(event) {
+    const { productCode, stockManaged } = event.detail;
+    console.log('🟢 팝업: 재고관리 토글됨', { productCode, stockManaged });
+    
+    products = products.map(item => 
+      item.code === productCode 
+        ? { ...item, stockManaged }
+        : item
+    );
+  }
+
+  // ✅ 온라인 상태 업데이트 이벤트 처리
+  function handleOnlineUpdated(event) {
+    const { productCode, isOnline } = event.detail;
+    console.log('🟣 팝업: 온라인 상태 업데이트됨', { productCode, isOnline });
+    
+    products = products.map(item => 
+      item.code === productCode 
+        ? { ...item, isOnline }
+        : item
+    );
+  }
+
+  // ✅ 현금세팅 상태 업데이트
+  function handleCashStatusUpdated(event) {
+    const { productCode, cash_status } = event.detail;
+    console.log('🟡 팝업: 현금세팅 업데이트됨', { productCode, cash_status });
+    
+    products = products.map(item => 
+      item.code === productCode 
+        ? { ...item, cash_status }
+        : item
+    );
+  }
+
   // 키보드 이벤트 처리
   function handleSearchKeydown(event) {
     if (event.key === 'Enter') {
@@ -294,6 +386,58 @@ onMount(() => {
       registrationName: selectedRegistrationItem?.MINR_NAME || ''
     });
     closePopup();
+  }
+
+
+  function handlePrintSuccess(event) {
+    console.log('✅ 출력 성공:', event.detail);
+    showToast('✅ 내역서 출력 완료!', 'success');
+  }
+
+  function handlePrintError(event) {
+    console.error('❌ 출력 실패:', event.detail);
+    showToast(`❌ 출력 실패: ${event.detail.error}`, 'error');
+  }
+
+  // 바코드 출력
+  async function printBarcode(item) {
+    console.log('출력 요청된 제품:', item);
+    
+    // 해당 아이템의 수량 가져오기
+    //const quantity = item.quantity || 1;
+    const quantity = 1;
+    
+
+    // 출력 시작 토스트 메시지
+    showToast(`🖨️ 바코드 ${quantity}장 출력 중...`, 'info');
+    
+    // 바코드 출력용 데이터 구성
+    const barcodeData = {
+      code: item.code,
+      name: item.name,
+      price: item.price || 0
+    };
+    
+    // Svelte DOM 업데이트 대기
+    await tick();
+    
+    console.log('바코드 데이터:', barcodeData);
+    console.log('출력 수량:', quantity);
+    
+    // 바코드 출력 실행
+    if (directPrint) {
+      directPrint.directPrint('barcode', barcodeData, quantity);
+    } else {
+      console.error('DirectPrint 컴포넌트 참조 없음');
+      showToast('❌ 프린터 초기화 오류', 'error');
+    }
+    
+    // 포커스 복귀
+    setTimeout(() => {
+      if (barcodeInput) {
+        barcodeInput.focus();
+      }
+    }, 500);
   }
 
   // 팝업 닫기
@@ -332,8 +476,8 @@ onMount(() => {
   >
     <!-- 팝업 컨텐츠 -->
     <div 
-      class="bg-white rounded-lg mx-4 my-4 flex flex-col"
-      style="width: 90vw; max-width: 600px; height: 87vh; max-height: 950px;"
+      class="bg-white rounded-lg mx-4 my-4 flex flex-col md:!max-w-[800px]"
+      style="width: 90vw; max-width: 600px; height: 88vh; max-height: 950px;"
       on:click|stopPropagation
     >
       <!-- 팝업 헤더 -->
@@ -484,18 +628,27 @@ onMount(() => {
                   <!-- 이미지 및 기본 정보 -->
                   <div class="flex" style="gap: 12px;">
                     <!-- 상품 이미지 -->
-                    <div class="flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden relative" style="width: 80px; height: 80px;">
+                    <div class="flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden relative" style="width: 80px; height: 80px; min-width: 80px;" class:md:!w-[110px]={!isMobile} class:md:!h-[110px]={!isMobile} class:md:!min-w-[110px]={!isMobile}>
                       <img 
-                        src={getProxyImageUrl(product.code)} 
+                        src={getProxyImageUrl(product.imagePath)} 
                         alt={product.name}
                         class="w-full h-full object-cover cursor-pointer"
-                        on:click|stopPropagation={() => handleImageClick(product.code, product.name)}
+                        on:click|stopPropagation={() => handleImageClick(product.code, product.name, product.imagePath)}
                         on:load={cacheImage}
                         on:error={(e) => {
-                          e.target.src = '/placeholder.png';
+                          e.target.onerror = null;
+                          e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iODAiIGhlaWdodD0iODAiIGZpbGw9IiNGM0Y0RjYiLz4KICA8cGF0aCBkPSJNNDAgMjBWNjBNMjAgNDBINjAiIHN0cm9rZT0iIzlDQTNBRiIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KPC9zdmc+';
                           e.target.style.background = '#f0f0f0';
                         }}
                       />
+                      
+                      <!-- 온라인 배지 (왼쪽 위) -->
+                      {#if product.isOnline}
+                        <span class="absolute top-0.5 left-0.5 bg-blue-100 text-blue-800 border border-blue-200 text-xs rounded-full px-1.5 py-0.5 font-medium shadow-sm" 
+                        style="font-size: 0.6rem; line-height: 1;">
+                          On
+                        </span>
+                      {/if}
                       
                       <!-- 재고 배지 -->
                       {#if isProductInfo && product.stockManaged}
@@ -503,20 +656,40 @@ onMount(() => {
                           {product.stock || 0}
                         </span>
                       {/if}
+
+                      <!-- salesinfo 배지 (하단 전체) -->
+                      {#if product.salesInfo}
+                        <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-center px-1 py-0.5" 
+                            style="font-size: 0.6rem; line-height: 1.2;">
+                          {product.salesInfo}
+                        </div>
+                      {/if}
                     </div>
 
                     <!-- 제품 정보 -->
-                    <div class="flex-1 min-w-0">
-                      <div class="text-xs text-gray-600 mb-1">{product.code}</div>
-                      <div class="text-xs font-medium mb-1">{product.name}</div>
+                    <div class="flex-1 min-w-0" style="overflow: hidden;">
+                      <div class="flex items-center gap-1 mb-1">
+                        <div class="text-xs md:text-[0.65rem] text-gray-600 mb-1 truncate">{product.code}</div>
+                        <button 
+                          class="text-xm"
+                          on:click={(e) => {
+                            e.stopPropagation();
+                            printBarcode(product);
+                          }}
+                        >
+                          🖨️
+                        </button>
+                      </div>
+                    
+                      <div class="text-xs md:text-[0.75rem] font-medium mb-1" style="overflow-wrap: break-word; word-break: break-word;">{product.name}</div>
                       
                       <!-- 가격 정보 (제품정보일 때만) -->
                       {#if isProductInfo}
                         <!-- 원가는 admin 권한에서만 표시 -->
                         {#if canViewCost()}
-                          <div class="text-gray-700" style="font-size: 0.7rem;">원가: {product.cost ? product.cost.toLocaleString('ko-KR') : '0'}원</div>
+                          <div class="text-gray-700 text-[0.7rem] md:text-[0.65rem]">원가: {product.cost ? product.cost.toLocaleString('ko-KR') : '0'}원</div>
                         {/if}
-                        <div class="text-gray-700" style="font-size: 0.7rem;">금액: {product.price ? product.price.toLocaleString('ko-KR') : '0'}원</div>
+                        <div class="text-gray-700 text-[0.7rem] md:text-[0.65rem]">금액: {product.price ? product.price.toLocaleString('ko-KR') : '0'}원</div>
                       {/if}
                     </div>
                   </div>
@@ -533,6 +706,24 @@ onMount(() => {
     </div>
   </div>
 {/if}
+
+<!-- 이미지 모달 -->
+<ImageModalStock 
+  {user}
+  on:stockUpdated={handleStockUpdated}
+  on:discontinuedUpdated={handleDiscontinuedUpdated}
+  on:stockUsageUpdated={handleStockUsageUpdated}
+  on:onlineUpdated={handleOnlineUpdated}
+  on:cashStatusUpdated={handleCashStatusUpdated}
+/>
+
+<!-- 바코드 출력 컴포넌트 (숨겨져 있지만 직접 출력용) -->
+<DirectPrint 
+  bind:this={directPrint}
+  bind:productData={selectedProduct}
+  on:printSuccess={handlePrintSuccess}
+  on:printError={handlePrintError}
+/>
 
 <style>
   /* 검색 결과 스크롤 제어 */

@@ -110,17 +110,15 @@ class SimpleImageCache {
       }
       
       if (cached) {
+        console.log('🔍 캐시 발견:', originalUrl, 'cached.etag:', cached.etag);
         const currentETag = await this.checkETag(originalUrl);
-        
-        if (this.isRequestInvalid(imgElement, requestInfo, currentSrc)) {
-          return;
-        }
+        console.log('📡 서버 ETag:', currentETag);
         
         if (cached.etag === currentETag) {
-          if (this.setImageSafely(imgElement, originalUrl, cached.blob, requestInfo, currentSrc)) {
-            console.log('캐시 사용:', originalUrl);
-          }
-          return;
+          console.log('✅ ETag 일치, 캐시 사용');
+          // ...
+        } else {
+          console.log('❌ ETag 불일치, 새로 다운로드');
         }
       }
 
@@ -441,8 +439,8 @@ class SimpleImageCache {
       for (const file of savedFiles) {
         try {
           const imageUrl = file.path.startsWith('/') ? 
-            `${file.path}?nocache=${Date.now()}` : 
-            `/proxy-images/${file.fileName}?nocache=${Date.now()}`;
+            file.path : 
+            `/proxy-images/${file.fileName}`;
             
           const response = await fetch(imageUrl, { 
             cache: 'no-store',
@@ -453,20 +451,20 @@ class SimpleImageCache {
           
           if (response.ok) {
             const blob = await response.blob();
-            const etag = response.headers.get('etag') || `${Date.now()}-${file.cnt}`;
+            const etag = response.headers.get('etag') || '';  // ✅ 빈 문자열
             
             await this.saveToCache(imageUrl, blob, etag, groupKey);
-            console.log('캐시 업데이트 완료:', file.fileName);
+            console.log('✅ 캐시 업데이트 완료:', file.fileName);
           }
         } catch (fileError) {
-          console.warn('개별 파일 캐시 실패:', file.fileName, fileError);
+          console.warn('❌ 개별 파일 캐시 실패:', file.fileName, fileError);
         }
       }
       
-      console.log('그룹 캐시 업데이트 완료:', groupKey);
+      console.log('🎉 그룹 캐시 업데이트 완료:', groupKey);
       
     } catch (error) {
-      console.error('그룹 캐시 업데이트 실패:', error);
+      console.error('💥 그룹 캐시 업데이트 실패:', error);
     }
   }
 
@@ -507,12 +505,27 @@ class SimpleImageCache {
   extractCnt(url) {
     try {
       const fileName = this.extractFileName(url);
-      const match = fileName.match(/_(\d+)\.jpg$/);
+      // ✅ 모든 확장자 지원
+      const match = fileName.match(/_(\d+)\.(jpg|jpeg|png|gif|webp)$/i);
       return match ? parseInt(match[1], 10) : 0;
     } catch {
       return 0;
     }
   }
+}
+
+// 이미지 URL 생성 함수
+export function getProxyImageUrl(imagePath) {
+  //console.log('🖼️ getProxyImageUrl 호출:', imagePath);
+  
+  if (!imagePath || imagePath.trim() === '') {
+   //console.log('❌ imagePath 없음, placeholder 반환');
+    return '/images/no-image.png';
+  }
+  
+  const url = `/proxy-images/${imagePath}`;
+  //console.log('✅ 생성된 URL:', url);
+  return url;
 }
 
 export const simpleCache = new SimpleImageCache();

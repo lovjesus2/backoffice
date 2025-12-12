@@ -2,7 +2,6 @@
 <script>
   import { onMount, createEventDispatcher } from 'svelte';
   import { browser } from '$app/environment';
-  import { simpleCache } from '$lib/utils/simpleImageCache.js';
   
   // Props
   export let imagGub1 = '';
@@ -156,16 +155,17 @@
       itemInsertLocation: 'after',
       
       // 리사이즈 설정
-      imageResizeTargetWidth: enableResize ? selectedWidth : null,
-      imageResizeTargetHeight: enableResize ? selectedHeight : null,
+      // ⬇️ 리사이즈 완전 비활성화
+      imageResizeTargetWidth: null,
+      imageResizeTargetHeight: null,
       imageResizeMode: resizeMode,
       imageResizeUpscale: false,
-      imageResizeBackgroundColor: '#ffffff',
+     // imageResizeBackgroundColor: '#ffffff',
       
       imageTransformOutputMimeType: 'image/jpeg',
       imageTransformOutputQuality: quality,
       imageTransformOutputStrip: true,
-      imageTransformClientTransforms: enableResize ? ['resize', 'transform'] : ['transform'],
+      imageTransformClientTransforms: [], // ← 변환 비활성화
       
       instantUpload: false,
       credits: false,
@@ -219,6 +219,36 @@
       await loadExistingImages();
     }
   }
+
+  // ✅ 추가: 동기식 리사이즈 함수
+  async function resizeImageSync(file) {
+    if (!enableResize) {
+      return file; // 리사이즈 비활성화면 원본 반환
+    }
+    
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        canvas.width = selectedWidth;
+        canvas.height = selectedHeight;
+        ctx.drawImage(img, 0, 0, selectedWidth, selectedHeight);
+        
+        canvas.toBlob((blob) => {
+          // 원본 파일명 유지
+          const resizedFile = new File([blob], file.name, {
+            type: 'image/jpeg',
+            lastModified: Date.now()
+          });
+          resolve(resizedFile);
+        }, 'image/jpeg', quality);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  }
   
   // 리사이즈 설정 업데이트
   function updateResizeSettings() {
@@ -226,18 +256,15 @@
     
     try {
       pond.setOptions({
-        imageResizeTargetWidth: selectedWidth,
-        imageResizeTargetHeight: selectedHeight,
+        imageResizeTargetWidth: null,  // ← 비활성화
+        imageResizeTargetHeight: null, // ← 비활성화
         imageResizeMode: resizeMode,
-        imageTransformClientTransforms: ['resize', 'transform']
+        imageTransformClientTransforms: [] // ← 변환 완전 비활성화
       });
       
-      console.log('리사이즈 설정 업데이트:', {
-        size: `${selectedWidth}x${selectedHeight}`,
-        mode: resizeMode
-      });
+      console.log('FilePond 리사이즈 비활성화 - 수동 리사이즈만 사용');
     } catch (error) {
-      console.warn('리사이즈 설정 업데이트 실패:', error);
+      console.warn('설정 업데이트 실패:', error);
     }
   }
   
@@ -286,13 +313,13 @@
             imageResizeTargetWidth: selectedWidth,
             imageResizeTargetHeight: selectedHeight,
             imageResizeMode: resizeMode,
-            imageTransformClientTransforms: ['resize', 'transform']
+            imageTransformClientTransforms: []
           });
         } else {
           pond.setOptions({
             imageResizeTargetWidth: null,
             imageResizeTargetHeight: null,
-            imageTransformClientTransforms: ['transform']
+            imageTransformClientTransforms: []
           });
         }
       } catch (error) {
@@ -568,7 +595,18 @@
       lastLoadedKey = '';
       return;
     }
+
+    // ✅ 추가: 캐시 무효화
+    if (typeof window !== 'undefined' && window.simpleCache && imagCode) {
+      try {
+        await window.simpleCache.invalidateProductCache(imagCode);
+        console.log('🗑️ ImageUploader 캐시 무효화:', imagCode);
+      } catch (err) {
+        console.warn('캐시 무효화 실패:', err);
+      }
+    }
     
+    //중복 로딩 방지 및 상태 초기화
     if (isLoadingImages) {
       console.warn('이미 로딩 중', '강제 초기화');
       isLoadingImages = false;
@@ -610,8 +648,8 @@
         const loadedImages = validImages.map((img, index) => ({
           ...img,
           url: img.name.startsWith('/') ? 
-            `${img.name}?nocache=${Date.now()}` : 
-            `/proxy-images/${img.name}?nocache=${Date.now()}`,
+          `${img.name}?t=${Date.now()}` :  // ✅ 타임스탬프 추가
+          `/proxy-images/${img.name}?t=${Date.now()}`,
           isExisting: true,
           originalIndex: index,
           loadTime: Date.now(),
@@ -722,7 +760,50 @@
       console.error('동기화 오류:', error);
     }
   }
-  
+
+  function updateImageResolution(filename, width, height) {
+    allImages = allImages.map(img => {
+      if (img.name === filename) {
+        return {
+          ...img,
+          width: width,
+          height: height
+        };
+      }
+      return img;
+    });
+  }
+
+  // resetMemoryState 함수 추가
+  function resetMemoryState() {
+    console.log('🧹 메모리 상태 초기화 시작');
+    
+    // 모든 상태 변수 초기화
+    newImages = [];
+    existingImages = [];
+    allImages = [];
+    processedFiles.clear();
+    
+    // UI 상태 초기화
+    errorMessage = '';
+    successMessage = '';
+    uploadProgress = 0;
+    uploading = false;
+    selectedImageIndex = null;
+    
+    // FilePond 초기화
+    if (pond && typeof pond.removeFiles === 'function') {
+      try {
+        pond.removeFiles();
+      } catch (error) {
+        console.warn('FilePond 정리 실패:', error);
+      }
+    }
+    
+    console.log('✅ 메모리 상태 초기화 완료');
+  }
+
+
   
   // 2. 간단한 handleImageAddClick 함수 (스크롤 문제 해결)
   function handleImageAddClick() {
@@ -748,7 +829,8 @@
     `;
     
     // 파일 선택 처리
-    const handleFileChange = (event) => {
+    // 파일 선택 처리
+      const handleFileChange = async (event) => {
       const files = Array.from(event.target.files || []);
       
       if (files.length === 0) {
@@ -756,7 +838,6 @@
         return;
       }
       
-      // 이미지 파일만 필터링
       const imageFiles = files.filter(file => file.type.startsWith('image/'));
       
       if (imageFiles.length === 0) {
@@ -766,42 +847,48 @@
         return;
       }
       
-      // 파일 개수 체크
-      if (allImages.length + imageFiles.length > maxFiles) {
-        errorMessage = `최대 ${maxFiles}개의 파일만 업로드 가능합니다.`;
-        setTimeout(() => errorMessage = '', 3000);
-        cleanup();
-        return;
+      // ⬇️ 디버깅: 원본 파일 크기 확인
+      console.log('=== 파일 크기 디버깅 ===');
+      imageFiles.forEach((file, index) => {
+        console.log(`파일 ${index + 1}: ${file.name} = ${formatFileSize(file.size)}`);
+      });
+      
+      // 리사이즈 처리
+      const resizedFiles = [];
+      for (const file of imageFiles) {
+        const resizedFile = await resizeImageSync(file);
+        resizedFiles.push(resizedFile);
+        
+        // ⬇️ 디버깅: 리사이즈 후 크기
+        console.log(`리사이즈: ${file.name}`, {
+          원본: formatFileSize(file.size),
+          리사이즈후: formatFileSize(resizedFile.size),
+          압축률: Math.round((1 - resizedFile.size/file.size) * 100) + '%'
+        });
       }
       
-      // 파일 크기 체크
-      const maxFileSize = 10 * 1024 * 1024; // 10MB
-      const oversizedFiles = imageFiles.filter(file => file.size > maxFileSize);
-      
-      if (oversizedFiles.length > 0) {
-        errorMessage = `다음 파일이 10MB를 초과합니다: ${oversizedFiles.map(f => f.name).join(', ')}`;
-        setTimeout(() => errorMessage = '', 5000);
-        cleanup();
-        return;
-      }
-      
-      // 전체 용량 체크 - 리사이즈 예상 크기로 계산
+      // 기존 파일들 크기 계산
       const currentNewFilesSize = newImages.reduce((total, img) => {
         const processedFile = processedFiles.get(img.name);
-        const fileSize = processedFile ? processedFile.size : (img.size || 0);
+        const fileSize = processedFile ? processedFile.size : (img.file?.size || 0);
+        console.log(`기존 파일: ${img.name} = ${formatFileSize(fileSize)}`);
         return total + fileSize;
       }, 0);
-
-      // 새로 추가될 파일들의 예상 리사이즈 크기 계산 (대략 30% 감소 추정)
-      const estimatedNewFilesSize = imageFiles.reduce((total, file) => {
-        // 리사이즈 활성화 시 대략적인 크기 추정
-        const estimatedSize = enableResize ? file.size * 0.3 : file.size;
-        return total + estimatedSize;
-      }, 0);
-
-      const totalNewSize = currentNewFilesSize + estimatedNewFilesSize;
-      const maxTotalNewSize = 50 * 1024 * 1024; // 50MB (전체 새 파일들 제한)
-
+      
+      // 새 파일들 크기
+      const newFilesSize = resizedFiles.reduce((total, file) => total + file.size, 0);
+      
+      const totalNewSize = currentNewFilesSize + newFilesSize;
+      const maxTotalNewSize = 50 * 1024 * 1024;
+      
+      // ⬇️ 디버깅: 최종 계산
+      console.log('=== 용량 계산 결과 ===');
+      console.log('기존 새 파일들:', formatFileSize(currentNewFilesSize));
+      console.log('추가할 파일들:', formatFileSize(newFilesSize));
+      console.log('총 크기:', formatFileSize(totalNewSize));
+      console.log('제한:', formatFileSize(maxTotalNewSize));
+      console.log('초과 여부:', totalNewSize > maxTotalNewSize ? '❌ 초과' : '✅ 통과');
+      
       if (totalNewSize > maxTotalNewSize) {
         errorMessage = `새 파일들의 총 크기가 ${formatFileSize(maxTotalNewSize)}를 초과합니다. 현재: ${formatFileSize(totalNewSize)}`;
         setTimeout(() => errorMessage = '', 5000);
@@ -810,9 +897,11 @@
       }
       
       // FilePond에 파일 추가
+      // FilePond에 파일 추가
       try {
-        imageFiles.forEach(file => {
+        resizedFiles.forEach(file => {  // ← imageFiles 대신 resizedFiles 사용
           if (pond) {
+            processedFiles.set(file.name, file);
             pond.addFile(file);
           }
         });
@@ -1145,6 +1234,7 @@
     allImages = newAllImages;
   }
   
+  //업로드 함수
   async function uploadToServer() {
     if (!isLibraryLoaded || !imagGub1 || !imagGub2 || !imagCode) {
       dispatch('error', { message: '필수 파라미터가 누락되었습니다.' });
@@ -1220,20 +1310,41 @@
       if (result.success) {
         successMessage = `이미지가 성공적으로 저장되었습니다!`;
         setTimeout(() => successMessage = '', 3000);
+
+        // ✅ 부모 컴포넌트에 이벤트 전달 추가
+        dispatch('imageSaved', { 
+          imagCode: imagCode,
+          files: result.files 
+        });
         
         setTimeout(async () => {
           try {
+            // ✅ 먼저 캐시 무효화
+            if (typeof window !== 'undefined' && window.simpleCache) {
+              await window.simpleCache.invalidateProductCache(imagCode);
+              console.log('🗑️ 캐시 무효화 완료:', imagCode);
+            }
+            
+            // FilePond 정리
             if (pond && pond.removeFiles) {
               pond.removeFiles();
             }
-            // processedFiles Map도 초기화
             processedFiles.clear();
+            
+            // 이미지 재조회
             await loadExistingImages();
           } catch (refreshError) {
             console.warn('새로고침 실패:', refreshError);
           }
         }, 100);
+      
         
+        // 모든 업로드 성공 후 불필요한 이미지 삭제
+        //const savedImageCount = allImages.length;
+        
+        //if (savedImageCount > 0 && savedImageCount < 10) {
+        //  await deleteUnnecessaryImages(savedImageCount);
+       // }
       } else {
         throw new Error(result.error || '저장 실패');
       }
@@ -1256,6 +1367,69 @@
       uploadProgress = 0;
     }
   }
+
+  // 불필요한 이미지 삭제 함수
+  async function deleteUnnecessaryImages(keepCount) {
+    if (!imagCode || keepCount >= 10) return;
+    
+    try {
+      const response = await fetch('/api/images/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          product_code: imagCode,
+          keep_count: keepCount
+        })
+      });
+      
+      const result = await response.json();
+      console.log('불필요한 이미지 삭제 결과:', result);
+      //clearImageCache(keepCount);
+    } catch (error) {
+      console.error('불필요한 이미지 삭제 오류:', error);
+    }
+  }
+
+  // 모든 이미지 삭제 함수 (외부에서 호출 가능)
+  export async function deleteAllImages() {
+    if (!imagCode) {
+      console.log('제품코드가 없어서 이미지 삭제를 건너뜀');
+      return { success: true, message: '삭제할 제품코드가 없습니다.' };
+    }
+    
+    try {
+      console.log(`${imagCode} 제품의 모든 이미지 삭제 시작`);
+      
+      // 1-10번 모든 이미지 삭제 API 호출
+      const response = await fetch('/api/images/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          product_code: imagCode,
+          keep_count: 0  // 0개 유지 = 모든 이미지 삭제
+        })
+      });
+      
+      const result = await response.json();
+      console.log('모든 이미지 삭제 결과:', result);
+      
+      // 모든 캐시도 클리어
+      //clearAllImageCache();
+      
+      // UI도 초기화
+      allImages = [];
+      
+      return result;
+      
+    } catch (error) {
+      console.error('모든 이미지 삭제 오류:', error);
+      return { 
+        success: false, 
+        message: '이미지 삭제 중 오류가 발생했습니다: ' + error.message 
+      };
+    }
+  }
+
   
   function clearAll() {
     if (pond && pond.removeFiles) {
@@ -1288,7 +1462,7 @@
     isLibraryLoaded = false;
   }
   
-  export { clearAll, destroy, toggleResize, uploadToServer, loadExistingImages };
+  export { clearAll, destroy, toggleResize, uploadToServer, loadExistingImages, resetMemoryState };
   
   export function forceReload(newImagGub1, newImagGub2, newImagCode) {
     console.log('강제 리로드 시작');

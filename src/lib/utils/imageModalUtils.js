@@ -44,10 +44,6 @@ export function closeImageModal() {
   });
 }
 
-// 프록시 이미지 URL 생성
-export function getProxyImageUrl(productCode, imageNumber = 1) {
-  return `/proxy-images/${productCode}_${imageNumber}.jpg`;
-}
 
 // initAutoImageModal 함수 추가 (admin layout에서 사용)
 export function initAutoImageModal(useProxy = false) {

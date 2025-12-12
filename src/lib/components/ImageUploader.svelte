@@ -15,6 +15,7 @@
   export let images = [];
   export let disabled = false;
   export let placeholder = "이미지를 업로드하세요";
+  export let imageFormat = 'jpg'; // ← 이거 추가 (기본값 jpg)
   
   // 컴포넌트 참조
   let pondElement;
@@ -595,6 +596,16 @@
       lastLoadedKey = '';
       return;
     }
+
+    // ✅ 추가: 캐시 무효화
+    if (typeof window !== 'undefined' && window.simpleCache && imagCode) {
+      try {
+        await window.simpleCache.invalidateProductCache(imagCode);
+        console.log('🗑️ ImageUploader 캐시 무효화:', imagCode);
+      } catch (err) {
+        console.warn('캐시 무효화 실패:', err);
+      }
+    }
     
     //중복 로딩 방지 및 상태 초기화
     if (isLoadingImages) {
@@ -638,8 +649,8 @@
         const loadedImages = validImages.map((img, index) => ({
           ...img,
           url: img.name.startsWith('/') ? 
-            `${img.name}?nocache=${Date.now()}` : 
-            `/proxy-images/${img.name}?nocache=${Date.now()}`,
+          `${img.name}?t=${Date.now()}` :  // ✅ 타임스탬프 추가
+          `/proxy-images/${img.name}?t=${Date.now()}`,
           isExisting: true,
           originalIndex: index,
           loadTime: Date.now(),
@@ -1263,6 +1274,7 @@
       formData.append('IMAG_GUB1', imagGub1);
       formData.append('IMAG_GUB2', imagGub2);
       formData.append('IMAG_CODE', imagCode);
+      formData.append('format', imageFormat); // ← 여기에 추가
       
       const finalOrder = allImages.map((img, index) => ({
         name: img.name,
@@ -1300,19 +1312,34 @@
       if (result.success) {
         successMessage = `이미지가 성공적으로 저장되었습니다!`;
         setTimeout(() => successMessage = '', 3000);
+
+        // ✅ 부모 컴포넌트에 이벤트 전달 추가
+        dispatch('imageSaved', { 
+          imagCode: imagCode,
+          files: result.files 
+        });
         
         setTimeout(async () => {
           try {
+            // ✅ 먼저 캐시 무효화
+            if (typeof window !== 'undefined' && window.simpleCache) {
+              await window.simpleCache.invalidateProductCache(imagCode);
+              console.log('🗑️ 캐시 무효화 완료:', imagCode);
+            }
+            
+            // FilePond 정리
             if (pond && pond.removeFiles) {
               pond.removeFiles();
             }
-            // processedFiles Map도 초기화
             processedFiles.clear();
+            
+            // 이미지 재조회
             await loadExistingImages();
           } catch (refreshError) {
             console.warn('새로고침 실패:', refreshError);
           }
         }, 100);
+      
         
         // 모든 업로드 성공 후 불필요한 이미지 삭제
         //const savedImageCount = allImages.length;
@@ -1682,6 +1709,20 @@
   {#if enableResize && isLibraryLoaded && showResizeOptions}
     <div class="px-4 py-3 bg-blue-50 border-b border-blue-200">
       <div class="space-y-3">
+        <!-- 파일 확장자 선택.) -->
+        <div class="pb-3 border-b border-gray-200">
+          <span class="text-sm font-medium text-gray-700 block mb-2">저장 포맷</span>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" bind:group={imageFormat} value="jpg" class="w-4 h-4" />
+              <span class="text-sm">JPG (호환성 좋음)</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" bind:group={imageFormat} value="webp" class="w-4 h-4" />
+              <span class="text-sm">WEBP (용량 작음)</span>
+            </label>
+          </div>
+        </div>
         <!-- 리사이즈 모드 선택 -->
         <div class="flex items-center gap-4">
           <span class="text-sm font-medium text-gray-700">모드:</span>

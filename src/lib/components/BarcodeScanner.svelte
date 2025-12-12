@@ -19,10 +19,12 @@
   let lastScannedCode = null;
   let lastScannedTime = 0;
   let videoElement;
-  let currentStream = null; // ✅ 스트림 참조 추가
+  let currentStream = null;
   let videoTrack = null;
   let Quagga = null;
   let flashEnabled = false;
+  let zoomLevel = 1; // ✅ 줌 레벨 추가
+  let maxZoom = 1; // ✅ 최대 줌 레벨
   
   // QuaggaJS 라이브러리 로드
   async function loadQuaggaJS() {
@@ -78,13 +80,13 @@
           patchSize: "small", 
           halfSample: false
         },
-        numOfWorkers: 0,        //동시에 실행되는 웹 워커(Web Worker)의 수를 지정합니다. PC 환경에서는 코어 수에 맞게 설정하는 것이 좋지만, 모바일에서는 CPU 부하를 줄이기 위해 0으로 설정하는 것이 더 안정적일 수 있습니다.
+        numOfWorkers: 0,
         multiple: false,
-        frequency:5,            //이미지를 처리하는 사용빈도(이 값을 낮추면 초당 처리하는 프레임 수가 줄어들어 성능이 향상되지만, 반응 속도는 느려질 수 있습니다.)
+        frequency:5,
         decoder: {
           readers: barcodeFormats
         },
-        locate: false            //locate를 끄면 성능은 향상되지만, 바코드가 항상 화면 중앙에 있어야 잘 인식됩니다. 
+        locate: false
       }, (err) => {
         if (err) {
           console.error('❌ QuaggaJS 초기화 오류:', err);
@@ -99,7 +101,6 @@
         isScanning = true;
         scannerStatus = '스캔 중...';
         
-        // ✅ 스트림 참조 가져오기
         getCurrentStream();
         
         dispatch('started');
@@ -114,7 +115,7 @@
     }
   }
   
-  // ✅ 스트림 가져오기 함수 추가
+  // 스트림 가져오기 함수
   function getCurrentStream() {
     try {
       const video = videoElement?.querySelector('video');
@@ -122,8 +123,15 @@
         currentStream = video.srcObject;
         videoTrack = currentStream.getVideoTracks()[0];
         
+        // ✅ 최대 줌 레벨 가져오기
+        const capabilities = videoTrack.getCapabilities();
+        if (capabilities.zoom) {
+          maxZoom = capabilities.zoom.max || 4;
+          console.log('📹 최대 줌 레벨:', maxZoom);
+        }
+        
         console.log('✅ 비디오 스트림 참조 저장 완료');
-        console.log('📹 Track capabilities:', videoTrack.getCapabilities());
+        console.log('📹 Track capabilities:', capabilities);
       } else {
         console.warn('⚠️ 비디오 요소나 스트림을 찾을 수 없음');
       }
@@ -161,7 +169,7 @@
       if (isScanning) {
         scannerStatus = '스캔 중...';
       }
-    }, 1500);
+    }, 2000);
   }
   
   // 비프음 재생
@@ -196,12 +204,12 @@
       isScanning = false;
       scannerStatus = '스캔 중지됨';
       
-      // ✅ 스트림 정리
       if (videoTrack) {
         videoTrack.stop();
         videoTrack = null;
       }
       currentStream = null;
+      zoomLevel = 1; // ✅ 줌 레벨 초기화
       
       dispatch('stopped');
       console.log('✅ 스캔 중지');
@@ -210,7 +218,7 @@
     }
   }
 
-  // ✅ 개선된 플래시 토글
+  // 플래시 토글
   async function toggleFlash() {
     if (!videoTrack) {
       console.error('❌ videoTrack 없음');
@@ -222,21 +230,18 @@
       const capabilities = videoTrack.getCapabilities();
       console.log('📹 카메라 capabilities:', capabilities);
       
-      // 플래시 지원 여부 확인
       if (!capabilities.torch && !capabilities.fillLightMode) {
         console.warn('⚠️ 플래시 미지원');
         alert('이 디바이스는 플래시를 지원하지 않습니다.');
         return;
       }
       
-      // ✅ 현재 상태 확인 후 반전
       const settings = videoTrack.getSettings();
       const newTorchState = !settings.torch;
       
       console.log('🔦 현재 플래시 상태:', settings.torch);
       console.log('🔦 새로운 플래시 상태:', newTorchState);
       
-      // 플래시 적용
       if (capabilities.torch) {
         await videoTrack.applyConstraints({
           advanced: [{ torch: newTorchState }]
@@ -247,13 +252,50 @@
         });
       }
       
-      // ✅ 상태 업데이트
       flashEnabled = newTorchState;
       console.log('✅ 플래시 상태 변경 성공:', flashEnabled);
       
     } catch (error) {
       console.error('❌ 플래시 토글 실패:', error);
       alert('플래시 제어 실패: ' + error.message);
+    }
+  }
+
+  // ✅ 줌 토글 함수 (1x ↔ 2x)
+  async function toggleZoom() {
+    if (!videoTrack) {
+      console.error('❌ videoTrack 없음');
+      alert('카메라가 준비되지 않았습니다.');
+      return;
+    }
+    
+    try {
+      const capabilities = videoTrack.getCapabilities();
+      
+      if (!capabilities.zoom) {
+        console.warn('⚠️ 줌 미지원');
+        alert('이 디바이스는 줌을 지원하지 않습니다.');
+        return;
+      }
+      
+      // 1x ↔ 2x 토글
+      const newZoomLevel = zoomLevel === 1 ? 2 : 1;
+      
+      // 최대 줌보다 크지 않게 제한
+      const targetZoom = Math.min(newZoomLevel, maxZoom);
+      
+      console.log('🔍 현재 줌:', zoomLevel, '→ 새 줌:', targetZoom);
+      
+      await videoTrack.applyConstraints({
+        advanced: [{ zoom: targetZoom }]
+      });
+      
+      zoomLevel = targetZoom;
+      console.log('✅ 줌 변경 성공:', zoomLevel + 'x');
+      
+    } catch (error) {
+      console.error('❌ 줌 토글 실패:', error);
+      alert('줌 제어 실패: ' + error.message);
     }
   }
   
@@ -281,7 +323,7 @@
     }
   });
   
-  export { startScanning, stopScanning, toggleFlash, flashEnabled };
+  export { startScanning, stopScanning, toggleFlash, toggleZoom, flashEnabled, zoomLevel };
 </script>
 
 <div class="w-full h-full">
@@ -309,6 +351,15 @@
       >
         <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-green-400 to-transparent animate-scan"></div>
       </div>
+
+      <!-- ✅ 줌 레벨 표시 -->
+      {#if zoomLevel > 1}
+        <div 
+          class="absolute top-4 right-4 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-xs font-semibold z-30"
+        >
+          {zoomLevel}x
+        </div>
+      {/if}
     {/if}
     
     <div 

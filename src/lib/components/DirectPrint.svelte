@@ -156,7 +156,7 @@
       const printerCommands = generatePrinterCommands({
         productCode: productData.code,
         productName: productData.name,
-        proudctPrice: '(' + (productData.price * 0.001) + ')',
+        proudctPrice: '(' + parseFloat((productData.price / 1000).toFixed(1)) + ')',
         quantity: printQuantity
       });
       
@@ -396,7 +396,7 @@
         qrX: receiptData.qrX || 0,
         qrY: receiptData.qrY || 0,
         qrSize: 120,
-        qrText: '▲디지털 영서',
+        qrText: '▲디지털 엽서',
         qrTextSize: 20
       };
     }
