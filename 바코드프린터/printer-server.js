@@ -203,9 +203,12 @@ async function generateReceiptFromLayout(receiptData) {
               
               // 먼저 리사이즈
               const resizedLogo = await sharp(logoBuffer)
-                .resize(item.width || 300, null, { fit: 'inside' })
+                .resize(item.width || 300, null, { 
+                  fit: 'inside',
+                  //withoutEnlargement: true  // 원본보다 크게 안 함
+                })
                 .toBuffer();
-              
+                
               const logoMeta = await sharp(resizedLogo).metadata();
               console.log(`리사이즈된 로고 크기: ${logoMeta.width}x${logoMeta.height}`);
               
