@@ -41,8 +41,8 @@ messaging.onBackgroundMessage((payload) => {
 console.log('✅ [통합SW] Firebase 초기화 완료');
 
 // =================== 캐싱 기능 ===================
-const CACHE_NAME = 'stock-pwa-v3';
-const IMAGE_CACHE_NAME = 'images-v1';
+const CACHE_NAME = 'stock-pwa-v4';
+const IMAGE_CACHE_NAME = 'images-v2';
 
 const STATIC_FILES = [
   '/',
@@ -119,7 +119,13 @@ self.addEventListener('fetch', (event) => {
   }
   
   // 이미지 캐싱
+  // 이미지 캐싱
   if (request.destination === 'image') {
+    // ✅ 추가: /proxy-images/는 ServiceWorker 개입 안 함
+    if (request.url.includes('/proxy-images/')) {
+      return;
+    }
+    
     event.respondWith(
       caches.open(IMAGE_CACHE_NAME).then(cache => {
         return cache.match(request).then(response => {
@@ -159,14 +165,39 @@ self.addEventListener('fetch', (event) => {
   // }
 });
 
-// 알림 클릭 이벤트 처리
+// 알림 클릭 이벤트 처리 - PWA로 열기
 self.addEventListener('notificationclick', (event) => {
   console.log('🔔 [통합SW] 알림 클릭됨:', event.notification.title);
   
   event.notification.close();
   
+  // 알림 데이터에서 URL 가져오기
+  const targetUrl = event.notification.data?.url || '/';
+  const fullUrl = self.location.origin + targetUrl;
+  
+  console.log('🔔 이동할 URL:', fullUrl);
+  
   event.waitUntil(
-    clients.openWindow('/')
+    clients.matchAll({ 
+      type: 'window',
+      includeUncontrolled: true 
+    }).then((clientList) => {
+      // 이미 열려있는 PWA 창 찾기
+      for (let i = 0; i < clientList.length; i++) {
+        const client = clientList[i];
+        // 같은 origin의 창이 있으면 해당 URL로 이동 후 포커스
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          console.log('🔔 기존 PWA 창으로 이동:', fullUrl);
+          return client.navigate(fullUrl).then(client => client.focus());
+        }
+      }
+      
+      // 열려있는 창이 없으면 해당 URL로 새로 열기
+      console.log('🔔 새 PWA 창 열기:', fullUrl);
+      if (clients.openWindow) {
+        return clients.openWindow(fullUrl);
+      }
+    })
   );
 });
 
