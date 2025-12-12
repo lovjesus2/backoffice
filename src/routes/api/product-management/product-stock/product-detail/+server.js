@@ -36,7 +36,9 @@ export async function GET({ url, locals }) {
             MAX(CASE WHEN prod.PROD_COD2 = 'L3' THEN prod.PROD_TXT1 END) as cash_status,
             MAX(CASE WHEN prod.PROD_COD2 = 'L5' THEN prod.PROD_TXT1 END) as discontinued_status,
             MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed,
-            MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status
+            MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status,
+            COALESCE(sale.SALE_QTY_SUMMARY, '0/0/0') as SALES_INFO,
+            IFNULL(img.IMAG_PCPH, '') as imagePath
       FROM ASSE_PROH p
       LEFT JOIN ASSE_PROD prod
         ON p.PROH_GUB1 = prod.PROD_GUB1
@@ -47,16 +49,34 @@ export async function GET({ url, locals }) {
         ON p.PROH_CODE = d.DPRC_CODE
       LEFT JOIN STOK_HYUN h
         ON p.PROH_CODE = h.HYUN_ITEM
+      LEFT JOIN ASSE_IMAG img
+        ON p.PROH_CODE = img.IMAG_CODE
+      AND img.IMAG_GUB1 = 'A1'
+      AND img.IMAG_GUB2 = 'AK'
+      AND img.IMAG_GUB3 = '0'
+      AND img.IMAG_CNT1 = 1
+      LEFT JOIN (
+        SELECT 
+          DNDT_ITEM,
+          CONCAT(
+            CAST(SUM(DNDT_QTY1) AS CHAR), '/',
+            CAST(SUM(CASE WHEN SUBSTRING(DNDT_SLIP, 3, 4) = YEAR(CURDATE()) THEN DNDT_QTY1 ELSE 0 END) AS CHAR), '/',
+            CAST(SUM(CASE WHEN SUBSTRING(DNDT_SLIP, 3, 6) = DATE_FORMAT(CURDATE(), '%Y%m') THEN DNDT_QTY1 ELSE 0 END) AS CHAR)
+          ) as SALE_QTY_SUMMARY
+        FROM SALE_DNDT
+        WHERE DNDT_ITEM = ?
+        GROUP BY DNDT_ITEM
+      ) sale ON p.PROH_CODE = sale.DNDT_ITEM       
       WHERE p.PROH_GUB1 = 'A1'
         AND p.PROH_GUB2 = 'AK'
         AND p.PROH_CODE = ?
-      GROUP BY p.PROH_CODE, p.PROH_NAME, p.PROH_QRCD, d.DPRC_SOPR, d.DPRC_BAPR, h.HYUN_QTY1
+      GROUP BY p.PROH_CODE, p.PROH_NAME, p.PROH_QRCD, d.DPRC_SOPR, d.DPRC_BAPR, h.HYUN_QTY1, img.IMAG_PCPH
     `;
     
     console.log('실행할 SQL:', sql);
     console.log('파라미터:', [productCode]);
     
-    const [rows] = await db.execute(sql, [productCode]);
+    const [rows] = await db.execute(sql, [productCode,productCode]);
     console.log('DB 조회 결과:', rows.length, '개 행');
     
     if (rows.length === 0) {
@@ -74,9 +94,11 @@ export async function GET({ url, locals }) {
       cost: user.role === 'admin' ? (parseInt(rows[0].DPRC_BAPR) || 0) : 0, // admin만 원가 조회 가능
       price: parseInt(rows[0].DPRC_SOPR) || 0,
       stock: parseInt(rows[0].CURRENT_STOCK) || 0,
+      salesInfo: rows[0].SALES_INFO || '',
       cash_status: rows[0].cash_status === '1',        // 현금세팅!
       discontinued: rows[0].discontinued_status === '1',
       stockManaged: rows[0].stock_managed === '1',        // 통일!
+      imagePath: rows[0].imagePath || '',
       isOnline: rows[0].online_status === '1'
     };
 

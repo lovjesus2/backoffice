@@ -1,14 +1,15 @@
 <!-- src/routes/admin/product-management/product-registration/+page.svelte -->
 <script>
   import { onMount, tick } from 'svelte';
-  import { simpleCache } from '$lib/utils/simpleImageCache';
-  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
+  import { simpleCache, getProxyImageUrl} from '$lib/utils/simpleImageCache';
+  import { openImageModal } from '$lib/utils/imageModalUtils';
   import ImageModalStock from '$lib/components/ImageModalStock.svelte';
   import ImageUploader from '$lib/components/ImageUploader.svelte';
   import { getLayoutConstants } from '$lib/utils/deviceUtils';  // 이 줄 추가
   
   
   export let data;
+  $: user = data?.user;  // ← 이렇게 변경
   
   // ImageUploader 컴포넌트 참조 변수 선언
   let imageUploader;
@@ -75,8 +76,8 @@
   }
 
   // 이미지 클릭 핸들러
-  function handleImageClick(productCode, productName) {
-    const imageSrc = getProxyImageUrl(productCode);
+  function handleImageClick(productCode, productName, productImage) {
+    const imageSrc = getProxyImageUrl(productImage);
     if (imageSrc) {
       openImageModal(imageSrc, productName, productCode);
     }
@@ -805,21 +806,18 @@
           }
           
           saveSuccess = updateResult.message || '제품이 성공적으로 수정되었습니다.';
-          // 제품 목록에서 해당 제품 정보 업데이트
-          setTimeout(() => {
-            products = products.map(product => 
-              product.code === basicInfo.code.trim() 
-                ? {
-                    ...product,
-                    name: basicInfo.name.trim(),
-                    cost: priceData.basePrice || 0,
-                    price: priceData.cardPrice || 0,
-                    // stock은 그대로 유지
-                    discontinued: product.discontinued
-                  }
-                : product
-            );
-          }, 500);
+          // 제품 목록에서 해당 제품 정보 업데이트 (setTimeout 제거)
+          products = products.map(product => 
+            product.code === basicInfo.code.trim() 
+              ? {
+                  ...product,
+                  name: basicInfo.name.trim(),
+                  cost: priceData.basePrice || 0,
+                  price: priceData.cardPrice || 0,
+                  discontinued: product.discontinued
+                }
+              : product
+          );
 
         } else {
           return; // 사용자가 취소함
@@ -827,33 +825,47 @@
       } else {
         saveSuccess = result.message || '제품이 성공적으로 등록되었습니다.';
 
-        // 신규 제품을 목록 맨 앞에 추가
-        setTimeout(() => {
-          const newProduct = {
-            code: basicInfo.code.trim(),
-            name: basicInfo.name.trim(),
-            cost: priceData.basePrice || 0,
-            price: priceData.cardPrice || 0,
-            stock: 0,
-            discontinued: false,
-            isProductInfo: isProductInfo
-          };
-          products = [newProduct, ...products];
-        }, 500);  
+        // 신규 제품을 목록에 추가 (setTimeout 제거)
+        const newProduct = {
+          code: basicInfo.code.trim(),
+          name: basicInfo.name.trim(),
+          cost: priceData.basePrice || 0,
+          price: priceData.cardPrice || 0,
+          stock: 0,
+          discontinued: false,
+          isProductInfo: isProductInfo
+        };
+        products = [...products, newProduct];
       }
       
       // ✅ 핵심 수정: DB 저장 완료 후 이미지 저장 로직 개선
       if (imageUploader) {
         imageCode = basicInfo.code.trim();
         await tick(); // Svelte 업데이트 대기
-        
         try {
-          await imageUploader.uploadToServer();
-          console.log('이미지 저장 성공');
+          const uploadResult = await imageUploader.uploadToServer();
+          console.log('이미지 저장 성공', uploadResult);
+          
+          // ✅ uploadResult가 있고, files 배열이 있을 때만 처리
+          if (uploadResult?.success && uploadResult?.files?.length > 0) {
+            const productCode = basicInfo.code.trim();
+            const firstImagePath = uploadResult.files[0].fileName;
+            
+            products = products.map(product => 
+              product.code === productCode 
+                ? {
+                    ...product,
+                    imagePath: `${firstImagePath}?t=${Date.now()}`
+                  }
+                : product
+            );
+          }
+          
         } catch (error) {
           console.log('이미지 저장 실패:', error.message);
         }
       }
+      
       
       // 변경 상태 초기화
       basicInfoChanged = false;
@@ -959,6 +971,21 @@
     } finally {
       isSaving = false;
     }
+  }
+
+  //이미지 저장시 이미지 조회 패널에 바로적용
+  function handleImageSaved(event) {
+    const { imagCode, files } = event.detail;
+    const firstImagePath = files?.[0]?.fileName || `${imagCode}_1.webp`;
+    
+    products = products.map(product => 
+      product.code === imagCode 
+        ? {
+            ...product,
+            imagePath: `${firstImagePath}?t=${Date.now()}`
+          }
+        : product
+    );
   }
 
   //-----------------------------------------------------------------
@@ -1314,18 +1341,18 @@
       {/if}
 
       <!-- 제품 조회 패널 (왼쪽) -->
-      <div class="transition-all duration-300 {leftPanelVisible ? 'opacity-100' : 'opacity-0'} lg:relative lg:ml-2.5 {leftPanelVisible ? '' : 'hidden'}" 
-           style="flex: 0 0 {leftPanelVisible ? '350px' : '0px'}; background: transparent; z-index: 25;"
-           class:fixed={typeof window !== 'undefined' && window.innerWidth <= 740}
-           class:left-0={typeof window !== 'undefined' && window.innerWidth <= 740}
-           class:bg-white={typeof window !== 'undefined' && window.innerWidth <= 740}
-           style:top={typeof window !== 'undefined' && window.innerWidth <= 740 ? layoutConstants.sideMenuTop : 'auto'}
-           style:height={typeof window !== 'undefined' && window.innerWidth <= 740 ? layoutConstants.sideMenuHeight : 'auto'}
-           style:box-shadow={typeof window !== 'undefined' && window.innerWidth <= 740 ? '2px 0 8px rgba(0,0,0,0.1)' : 'none'}
-           style:transform={typeof window !== 'undefined' && window.innerWidth <= 740 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
-           on:click={handlePanelClick}>
+      <div class="transition-all duration-300 {leftPanelVisible ? 'opacity-100' : 'opacity-0'} lg:sticky lg:ml-2.5 {leftPanelVisible ? '' : 'hidden'}" 
+          style="flex: 0 0 {leftPanelVisible ? '350px' : '0px'}; background: transparent; z-index: 25;"
+          class:fixed={typeof window !== 'undefined' && window.innerWidth <= 740}
+          class:left-0={typeof window !== 'undefined' && window.innerWidth <= 740}
+          class:bg-white={typeof window !== 'undefined' && window.innerWidth <= 740}
+          style:top={layoutConstants.sideMenuTop}
+          style:height={layoutConstants.sideMenuHeight}
+          style:box-shadow={typeof window !== 'undefined' && window.innerWidth <= 740 ? '2px 0 8px rgba(0,0,0,0.1)' : 'none'}
+          style:transform={typeof window !== 'undefined' && window.innerWidth <= 740 && !leftPanelVisible ? 'translateX(-100%)' : 'translateX(0)'}
+          on:click={handlePanelClick}>
         
-        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? '1px' : '8px'}; height: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? 'calc(100vh + 20px)' : layoutConstants.sideMenuHeight};"
+        <div class="bg-white rounded-lg m-2 overflow-hidden mb-5" style="box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? '1px' : '8px'}; height: {typeof window !== 'undefined' && window.innerWidth >= 1024 ? 'calc(80vh)' : layoutConstants.sideMenuHeight};"
               on:click={handlePanelClick}
               on:wheel={handlePanelWheel}
               on:touchmove|nonpassive={handlePanelTouchMove}>
@@ -1434,7 +1461,7 @@
           <!-- 목록 -->
           <div 
             class="overflow-y-auto" 
-            style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 ? layoutConstants.listMaxHeight : 'calc(100vh - 200px)'}; overscroll-behavior: contain;"
+            style="max-height: {typeof window !== 'undefined' && window.innerWidth <= 1024 ? layoutConstants.listMaxHeight : 'calc(100vh - 380px)'}; overscroll-behavior: contain;"
             on:wheel={handlePanelWheel}
             on:touchmove={handlePanelTouchMove}
           >
@@ -1461,13 +1488,14 @@
                       <!-- 상품 이미지 -->
                       <div class="flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden relative" style="width: 80px; height: 80px;">
                         <img 
-                          src={getProxyImageUrl(product.code)} 
+                          src={getProxyImageUrl(product.imagePath)} 
                           alt={product.name}
                           class="w-full h-full object-cover cursor-pointer"
-                          on:click|stopPropagation={() => handleImageClick(product.code, product.name)}
+                          on:click|stopPropagation={() => handleImageClick(product.code, product.name, product.imagePath)}
                           on:load={cacheImage}
                           on:error={(e) => {
-                            e.target.src = '/placeholder.png';
+                            e.target.onerror = null;
+                            e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iODAiIGhlaWdodD0iODAiIGZpbGw9IiNGM0Y0RjYiLz4KICA8cGF0aCBkPSJNNDAgMjBWNjBNMjAgNDBINjAiIHN0cm9rZT0iIzlDQTNBRiIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KPC9zdmc+';
                             e.target.style.background = '#f0f0f0';
                           }}
                         />
@@ -1486,6 +1514,16 @@
                             On
                           </span>
                         {/if}
+
+                        <!-- salesinfo 배지 (하단 전체) -->
+                        {#if product.salesInfo}
+                          <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-center px-1 py-0.5" 
+                              style="font-size: 0.6rem; line-height: 1.2;">
+                            {product.salesInfo}
+                          </div>
+                        {/if}
+
+                        
                       </div>
 
                       <!-- 상품 정보 (제품검색&재고관리와 완전 동일) -->
@@ -2027,6 +2065,7 @@
                   imagGub1={currentCompanyCode}
                   imagGub2={currentRegistrationCode}
                   imagCode={imageCode}
+                  on:imageSaved={handleImageSaved}
                 />
             </div>
           </div>
@@ -2039,6 +2078,7 @@
 
 <!-- 이미지 모달 -->
 <ImageModalStock 
+  {user}
   on:stockUpdated={handleStockUpdated}
   on:discontinuedUpdated={handleDiscontinuedUpdated}  
   on:stockUsageUpdated={handleStockUsageUpdated}

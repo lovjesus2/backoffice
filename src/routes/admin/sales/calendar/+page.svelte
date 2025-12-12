@@ -2,9 +2,12 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
-  import { simpleCache } from '$lib/utils/simpleImageCache';
-  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';  // 🔄 변경
+  import { simpleCache, getProxyImageUrl} from '$lib/utils/simpleImageCache';
+  import { openImageModal } from '$lib/utils/imageModalUtils';
   import ImageModalStock from '$lib/components/ImageModalStock.svelte';  // 🔄 추가
+
+  export let data;
+  $: user = data?.user;  // ← 이렇게 변경
 
   // 상태 변수들
   let currentYear = new Date().getFullYear();
@@ -50,8 +53,8 @@
   }
 
   // 🔄 이미지 클릭 핸들러 수정 - productCode만 전달
-  function handleImageClick(productCode, productName) {
-    const imageSrc = getProxyImageUrl(productCode);
+  function handleImageClick(productCode, productName, productImage) {
+    const imageSrc = getProxyImageUrl(productImage);
     if (imageSrc) {
       // productCode를 세 번째 파라미터로 전달
       openImageModal(imageSrc, productName, productCode);
@@ -488,7 +491,7 @@ function handleStockUsageUpdated(event) {
 {#if showDailyDetail}
   <div 
     class="fixed bg-black bg-opacity-50 z-50 flex items-center justify-center"
-    style="top: 180px; left: 350; right: 0; bottom: 0;"
+    style="top: 60px; left: 350; right: 0; bottom: 0;"
     on:click={handleModalClick}
     role="dialog"
     aria-modal="true"
@@ -502,7 +505,7 @@ function handleStockUsageUpdated(event) {
           aria-label="닫기"
         >×</button>
       </div>
-      <div class="p-2.5 overflow-y-auto flex-1" style="overscroll-behavior: contain; max-height: calc(100vh - 280px);">
+      <div class="p-2.5 overflow-y-auto flex-1" style="overscroll-behavior: contain; max-height: calc(100vh - 140px);">
         <div class="bg-gray-50 p-4 rounded-md mb-4">
           <h4 class="m-0 mb-2 text-lg text-gray-800 font-semibold">{currentMonth}월 {selectedDate.split('일')[0].split('월 ')[1]}일 합계</h4>
           <div class="grid grid-cols-2 gap-2 text-sm">
@@ -581,12 +584,12 @@ function handleStockUsageUpdated(event) {
                       <div class="w-20 h-20 bg-gray-100 rounded flex items-center justify-center flex-shrink-0 relative overflow-hidden border border-gray-200">
                         {#if item.pcode}
                           <img 
-                            src="/proxy-images/{item.pcode}_1.jpg" 
+                            src={getProxyImageUrl(item.imagePath)}
                             alt={item.pname}
                             class="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
                             on:load={cacheImage}
                             on:error={(e) => { e.target.style.display = 'none'; }}
-                            on:click={() => handleImageClick(item.pcode, item.pname)}
+                            on:click={() => handleImageClick(item.pcode, item.pname, item.imagePath)}
                           />
                         {:else}
                           <span class="text-xs text-gray-500 text-center leading-3">이미지<br/>없음</span>
@@ -605,6 +608,14 @@ function handleStockUsageUpdated(event) {
                             style="font-size: 0.6rem; line-height: 1;">
                             ON
                           </span>
+                        {/if}
+
+                        <!-- salesinfo 배지 (하단 전체) -->
+                        {#if item.salesInfo}
+                          <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-center px-1 py-0.5" 
+                              style="font-size: 0.6rem; line-height: 1.2;">
+                            {item.salesInfo}
+                          </div>
                         {/if}
                       </div>
                       <div class="flex-1 min-w-0">
@@ -645,6 +656,7 @@ function handleStockUsageUpdated(event) {
 
 <!-- 🔄 ImageModalStock 컴포넌트 추가 -->
 <ImageModalStock 
+  {user}
   on:stockUpdated={handleStockUpdated}
   on:discontinuedUpdated={handleDiscontinuedUpdated}  
   on:stockUsageUpdated={handleStockUsageUpdated}

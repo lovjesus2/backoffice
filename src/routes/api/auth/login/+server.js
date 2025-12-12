@@ -22,7 +22,7 @@ async function getSessionTimeout() {
 
 export async function POST({ request, cookies }) {
     try {
-        const { username, password } = await request.json();
+        const { username, password, deviceType } = await request.json(); // ← deviceType 추가
         
         console.log('로그인 시도:', username);
         
@@ -38,10 +38,18 @@ export async function POST({ request, cookies }) {
         
         console.log('로그인 성공:', user.username, user.role);
         
-        // DB에서 세션 타임아웃 가져오기 (720시간)
-        const sessionTimeoutHours = await getSessionTimeout();
-        const sessionTimeoutSeconds = sessionTimeoutHours * 60 * 60;
         
+        // 디바이스 타입에 따라 세션 타임아웃 설정
+        let sessionTimeoutHours;
+        if (deviceType === 'mobile') {
+            sessionTimeoutHours = 720; // 모바일: 30일
+            console.log('모바일 로그인 - 세션 타임아웃: 720시간 (30일)');
+        } else {
+            sessionTimeoutHours = await getSessionTimeout(); // 웹: DB 설정값
+            console.log(`웹 로그인 - 세션 타임아웃: ${sessionTimeoutHours}시간 (${sessionTimeoutHours/24}일)`);
+        }
+        const sessionTimeoutSeconds = sessionTimeoutHours * 60 * 60;
+
         console.log(`세션 타임아웃: ${sessionTimeoutHours}시간 (${sessionTimeoutHours/24}일)`);
         
         // JWT 토큰 생성 (720시간 사용)
@@ -49,7 +57,8 @@ export async function POST({ request, cookies }) {
             { 
                 id: user.id, 
                 username: user.username, 
-                role: user.role 
+                role: user.role,
+                deviceType: deviceType // ← deviceType도 토큰에 포함 (선택사항) 
             },
             JWT_SECRET,
             { expiresIn: sessionTimeoutSeconds } // 720시간 = 30일

@@ -13,23 +13,32 @@ export async function GET({ url, locals }) {
     
     const gub1 = url.searchParams.get('gub1') || 'A1';
     const gub2 = url.searchParams.get('gub2') || 'LG';
-    
+
     const db = await getDb();
-    
+
     const [rows] = await db.query(`
       SELECT PROH_CODE as code
         , MAX(CASE WHEN PROD_COD2 = 'L1' THEN PROD_TXT1 ELSE '' END) AS qrx
         , MAX(CASE WHEN PROD_COD2 = 'L2' THEN PROD_TXT1 ELSE '' END) AS qry
+        , MAX(CASE WHEN PROD_COD2 = 'L5' THEN PROD_TXT1 ELSE '' END) AS l5_value
+        , IFNULL(img.IMAG_PCPH, '') as imagePath
       FROM ASSE_PROH
       INNER JOIN ASSE_PROD
         ON PROH_GUB1 = PROD_GUB1
-       AND PROH_GUB2 = PROD_GUB2
-       AND PROH_CODE = PROD_CODE
+      AND PROH_GUB2 = PROD_GUB2
+      AND PROH_CODE = PROD_CODE
+      LEFT JOIN ASSE_IMAG img
+        ON PROH_CODE = img.IMAG_CODE
+      AND img.IMAG_GUB1 = ?
+      AND img.IMAG_GUB2 = ?
+      AND img.IMAG_GUB3 = '0'
+      AND img.IMAG_CNT1 = 1
       WHERE PROH_GUB1 = ?
         AND PROH_GUB2 = ?
-      GROUP BY PROH_CODE
+      GROUP BY PROH_CODE, img.IMAG_PCPH
+      HAVING MAX(CASE WHEN PROD_COD2 = 'L5' THEN PROD_TXT1 ELSE '' END) = '1'
       ORDER BY PROH_CODE
-    `, [gub1, gub2]);
+    `, [gub1, gub2, gub1, gub2]);
     
     return json({
       success: true,

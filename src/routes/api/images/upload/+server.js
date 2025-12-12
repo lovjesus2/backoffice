@@ -1,11 +1,34 @@
-// src/routes/api/images/upload/+server.js (운영 안전 버전 - 트랜잭션 분리)
+// src/routes/api/images/upload/+server.js (운영 안전 버전 - 트랜잭션 분리 + WebP 변환)
 import { json } from '@sveltejs/kit';
-import { writeFile, mkdir, access, stat, copyFile, rename, unlink, readdir } from 'fs/promises';
+import { writeFile, mkdir, access, stat, copyFile, rename, unlink, readdir, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { getDb } from '$lib/database.js';
+import sharp from 'sharp';  // ✅ 추가: Sharp 라이브러리
 
 const IMAGE_BASE_DIR = '/volume1/image'; // NAS 이미지 저장소
+
+// ✅ 추가: WebP 변환 함수
+async function convertImage(buffer, filename, format) {
+  try {
+    console.log(`🔄 ${format.toUpperCase()} 변환: ${filename}`);
+    
+    let outputBuffer;
+    if (format === 'webp') {
+      outputBuffer = await sharp(buffer).webp({ quality: 85, effort: 4 }).toBuffer();
+    } else {
+      outputBuffer = await sharp(buffer).jpeg({ quality: 85 }).toBuffer();
+    }
+    
+    const reduction = ((1 - outputBuffer.length / buffer.length) * 100).toFixed(1);
+    console.log(`✅ ${filename}: ${(buffer.length/1024).toFixed(1)}KB → ${(outputBuffer.length/1024).toFixed(1)}KB (${reduction}% 감소)`);
+    
+    return outputBuffer;
+  } catch (error) {
+    console.error(`❌ 변환 실패: ${filename}`, error.message);
+    throw error;
+  }
+}
 
 // 🔍 GET: 기존 이미지 목록 조회 (기존 코드 유지)
 export async function GET({ url, locals }) {
@@ -94,14 +117,15 @@ export async function GET({ url, locals }) {
   }
 }
 
-// POST: 트랜잭션 분리된 안전한 업로드 로직
+// POST: 트랜잭션 분리된 안전한 업로드 로직 + WebP 변환
 export async function POST({ request, locals }) {
   const timestamp = Date.now();
   const processedFiles = []; // 처리 완료된 파일 정보
   const tempFiles = []; // 정리할 임시 파일 목록
+  console.log('🔥🔥🔥 업로드 API 진입!'); // ← 추가
   
   try {
-    console.log('📤 이미지 업로드 API 호출됨 (트랜잭션 분리 안전 버전)');
+    console.log('📤 이미지 업로드 API 호출됨 (WebP 변환 버전)');
     
     // 1. 인증 확인
     const user = locals.user;
@@ -125,6 +149,10 @@ export async function POST({ request, locals }) {
     
     const finalOrder = JSON.parse(finalOrderData);
     const newFiles = formData.getAll('files');
+
+    const imageFormat = formData.get('format') || 'jpg';
+    const fileExtension = imageFormat === 'webp' ? '.webp' : '.jpg';
+
     
     console.log('📋 처리 정보:', {
       finalOrderCount: finalOrder.length,
@@ -144,7 +172,7 @@ export async function POST({ request, locals }) {
     // ========================================
     // 🔧 1단계: 파일 처리 (트랜잭션 외부)
     // ========================================
-    console.log('📁 1단계: 파일 처리 시작 (트랜잭션 외부)');
+    console.log('📁 1단계: 파일 처리 시작 (WebP 변환 포함)');
     
     // 1-1. 기존 파일을 안전한 임시명으로 백업
     const tempFileMap = new Map();
@@ -169,7 +197,7 @@ export async function POST({ request, locals }) {
             tempFileName: tempFileName,
             originalFileName: oldFileName,
             tempPath: tempPath,
-            finalPath: path.join(IMAGE_BASE_DIR, `${imagCode}_${i + 1}.jpg`)
+            finalPath: path.join(IMAGE_BASE_DIR, `${imagCode}_${i + 1}${fileExtension}`)
           });
           
           tempFiles.push(tempFileName);
@@ -182,25 +210,29 @@ export async function POST({ request, locals }) {
       }
     }
 
-    // 1-2. 최종 파일명으로 순서대로 저장
+    // 1-2. 최종 파일명으로 순서대로 저장 (WebP 변환 포함)
     let newFileIndex = 0;
     
     for (let i = 0; i < finalOrder.length; i++) {
       const item = finalOrder[i];
       const imagCnt1 = i + 1;
-      const imagPcph = `${imagCode}_${imagCnt1}.jpg`;
+      const imagPcph = `${imagCode}_${imagCnt1}${fileExtension}`;
       const finalPath = path.join(IMAGE_BASE_DIR, imagPcph);
       
       if (item.isExisting) {
-        // 기존 이미지: 백업에서 최종 위치로 복사
+        // 기존 이미지: 백업에서 최종 위치로 복사 (WebP 변환)
         const tempInfo = tempFileMap.get(i);
         if (!tempInfo) {
           throw new Error(`백업 파일 정보를 찾을 수 없습니다: 순서 ${i + 1}`);
         }
         
         try {
-          await copyFile(tempInfo.tempPath, finalPath);
-          console.log(`📋 기존 파일 배치: ${tempInfo.tempFileName} → ${imagPcph}`);
+          // ✅ 추가: 기존 이미지도 WebP로 변환
+          const originalBuffer = await readFile(tempInfo.tempPath);
+          const outputBuffer = await convertImage(originalBuffer, tempInfo.originalFileName, imageFormat);
+          await writeFile(finalPath, outputBuffer);
+          
+          console.log(`📋 기존 파일 WebP 변환 배치: ${tempInfo.tempFileName} → ${imagPcph}`);
           
         } catch (moveError) {
           console.error(`❌ 파일 배치 실패: ${tempInfo.tempFileName}`, moveError.message);
@@ -208,7 +240,7 @@ export async function POST({ request, locals }) {
         }
         
       } else {
-        // 새 이미지: 업로드된 파일 저장
+        // 새 이미지: 업로드된 파일 저장 (WebP 변환)
         if (newFileIndex >= newFiles.length) {
           throw new Error(`새 파일 부족: 필요 ${newFileIndex + 1}개, 실제 ${newFiles.length}개`);
         }
@@ -218,15 +250,18 @@ export async function POST({ request, locals }) {
         try {
           const arrayBuffer = await file.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
-          await writeFile(finalPath, buffer);
+          
+          // ✅ 추가: WebP 변환
+          const outputBuffer = await convertImage(buffer, file.name, imageFormat);
+          await writeFile(finalPath, outputBuffer);
           
           // 파일 무결성 검증
           const savedStats = await stat(finalPath);
-          if (savedStats.size !== buffer.length) {
-            throw new Error(`파일 크기 불일치: 예상 ${buffer.length}, 실제 ${savedStats.size}`);
+          if (savedStats.size !== outputBuffer.length) {
+            throw new Error(`파일 크기 불일치: 예상 ${outputBuffer.length}, 실제 ${savedStats.size}`);
           }
           
-          console.log(`💾 새 파일 저장: ${imagPcph} (${buffer.length} bytes)`);
+          console.log(`💾 새 파일 ${imageFormat.toUpperCase()} 저장: ${imagPcph} (${outputBuffer.length} bytes)`);
           newFileIndex++;
           
         } catch (saveError) {
@@ -249,7 +284,33 @@ export async function POST({ request, locals }) {
       });
     }
     
-    console.log(`✅ 파일 처리 완료: ${processedFiles.length}개 파일`);
+    // 🗑️ 1-3. 방금 저장한 파일 제외하고 옛날 확장자 파일 삭제
+    console.log('🗑️ 1-3단계: 옛날 확장자 파일 정리');
+
+    // 방금 저장한 파일명 목록 생성
+    const savedFileNames = new Set(processedFiles.map(f => f.fileName));
+
+    for (let i = 1; i <= 10; i++) {
+      const oldExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+      for (const ext of oldExtensions) {
+        const oldFile = path.join(IMAGE_BASE_DIR, `${imagCode}_${i}${ext}`);
+        const oldFileName = `${imagCode}_${i}${ext}`;
+        
+        // 방금 저장한 파일은 건너뛰기!
+        if (savedFileNames.has(oldFileName)) {
+          console.log(`⏭️ 건너뛰기 (방금 저장): ${oldFileName}`);
+          continue;
+        }
+        
+        try {
+          await access(oldFile);
+          await unlink(oldFile);
+          console.log(`🗑️ 옛날 파일 삭제: ${imagCode}_${i}${ext}`);
+        } catch (err) {
+          // 파일 없으면 무시 (정상)
+        }
+      }
+    }
 
     // ========================================
     // 🗄️ 2단계: DB 트랜잭션 (빠른 처리)
@@ -317,7 +378,7 @@ export async function POST({ request, locals }) {
     // 성공 응답
     return json({
       success: true,
-      message: `${finalOrder.length}개 이미지가 성공적으로 저장되었습니다.`,
+      message: `${finalOrder.length}개 이미지가 WebP 형식으로 저장되었습니다.`,
       files: processedFiles.map(f => ({
         fileName: f.fileName,
         path: f.path,

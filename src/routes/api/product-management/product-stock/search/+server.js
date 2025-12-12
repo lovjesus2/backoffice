@@ -18,7 +18,7 @@ export async function GET({ url, locals }) {
     const companyCode = url.searchParams.get('company_code') || 'A1';
     const registrationCode = url.searchParams.get('registration_code') || 'AK';
     const registrationName = url.searchParams.get('registration_name');
-    const productType = url.searchParams.get('product_type');
+    const productType = url.searchParams.get('product_type')|| '';
     
     console.log('검색 파라미터:', {
       searchTerm,
@@ -42,7 +42,7 @@ export async function GET({ url, locals }) {
     const db = getDb();
     
     // 기본 검색 조건 배열 (회사구분, 등록구분을 먼저 추가)
-    let searchParams = [companyCode, registrationCode];
+    let searchParams = []; 
     let searchSQL = '1=1'; // 기본 조건
     
     // 검색어가 있는 경우만 검색 조건 추가
@@ -92,7 +92,7 @@ export async function GET({ url, locals }) {
     
     // 제품구분 필터 추가
     let productTypeSQL = '';
-    if (registrationCode === 'AK' && productType && productType !== 'ALL') {
+    if (registrationCode === 'AK' && productType && productType !== 'ALL' && productType.trim() !== '') {
       console.log('✅ 제품구분 필터 적용:', productType);
       productTypeSQL = `AND EXISTS (
         SELECT 1 FROM ASSE_PROD p_type 
@@ -114,31 +114,50 @@ export async function GET({ url, locals }) {
       // 제품정보인 경우 - 상세 정보 포함
       sql = `
         SELECT p.PROH_CODE, 
-               p.PROH_NAME, 
-               d.DPRC_SOPR, 
-               d.DPRC_BAPR,
-               COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L1' THEN prod.PROD_TXT1 END) as product_type,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L3' THEN prod.PROD_TXT1 END) as cash_status,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L5' THEN prod.PROD_TXT1 END) as discontinued_status,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status
+              p.PROH_NAME, 
+              d.DPRC_SOPR, 
+              d.DPRC_BAPR,
+              COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
+              MAX(CASE WHEN prod.PROD_COD2 = 'L1' THEN prod.PROD_TXT1 END) as product_type,
+              MAX(CASE WHEN prod.PROD_COD2 = 'L3' THEN prod.PROD_TXT1 END) as cash_status,
+              MAX(CASE WHEN prod.PROD_COD2 = 'L5' THEN prod.PROD_TXT1 END) as discontinued_status,
+              MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed,
+              MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status,
+              COALESCE(sale.SALE_QTY_SUMMARY, '0/0/0') as SALES_INFO,
+              IFNULL(img.IMAG_PCPH, '') as imagePath
         FROM ASSE_PROH p
         INNER JOIN ASSE_PROD prod
-           ON p.PROH_GUB1 = prod.PROD_GUB1
+          ON p.PROH_GUB1 = prod.PROD_GUB1
           AND p.PROH_GUB2 = prod.PROD_GUB2
           AND p.PROH_CODE = prod.PROD_CODE
         LEFT JOIN BISH_DPRC d
-           ON p.PROH_CODE = d.DPRC_CODE
+          ON p.PROH_CODE = d.DPRC_CODE
         LEFT JOIN STOK_HYUN h
           ON p.PROH_CODE = h.HYUN_ITEM
+        LEFT JOIN ASSE_IMAG img
+          ON p.PROH_CODE = img.IMAG_CODE
+        AND img.IMAG_GUB1 = ?
+        AND img.IMAG_GUB2 = ?
+        AND img.IMAG_GUB3 = '0'
+        AND img.IMAG_CNT1 = 1
+        LEFT JOIN (
+          SELECT 
+            DNDT_ITEM,
+            CONCAT(
+              CAST(SUM(DNDT_QTY1) AS CHAR), '/',
+              CAST(SUM(CASE WHEN SUBSTRING(DNDT_SLIP, 3, 4) = YEAR(CURDATE()) THEN DNDT_QTY1 ELSE 0 END) AS CHAR), '/',
+              CAST(SUM(CASE WHEN SUBSTRING(DNDT_SLIP, 3, 6) = DATE_FORMAT(CURDATE(), '%Y%m') THEN DNDT_QTY1 ELSE 0 END) AS CHAR)
+            ) as SALE_QTY_SUMMARY
+          FROM SALE_DNDT
+          GROUP BY DNDT_ITEM
+        ) sale ON p.PROH_CODE = sale.DNDT_ITEM               
         WHERE p.PROH_GUB1 = ?
           AND p.PROH_GUB2 = ?
           AND prod.PROD_COD2 IN ('L1', 'L3', 'L5', 'L6', 'L7')
           AND (${searchSQL})
           ${discontinuedSQL}
           ${productTypeSQL}
-        GROUP BY p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, h.HYUN_QTY1
+        GROUP BY p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, h.HYUN_QTY1, img.IMAG_PCPH
         ORDER BY p.PROH_CODE ASC
       `;
     } else {
@@ -157,12 +176,26 @@ export async function GET({ url, locals }) {
     console.log('파라미터 배열:', searchParams);
     console.log('제품구분 SQL 조건:', productTypeSQL);
     
-    const [rows] = await db.execute(sql, searchParams);
+    let params;
+    if (registrationCode === 'AK') {
+      params = [
+        companyCode, registrationCode,  // img 조인
+        companyCode, registrationCode,  // WHERE
+        ...searchParams
+      ];
+    } else {
+      params = [
+        companyCode, registrationCode,  // WHERE만
+        ...searchParams
+      ];
+    }
+
+    const [rows] = await db.execute(sql, params);
     console.log('DB 조회 결과:', rows.length, '개 행');
     
     let products;
     
-    if (registrationName === '제품정보') {
+    if (registrationCode === 'AK') {
       products = rows.map(row => ({
         code: row.PROH_CODE,
         name: row.PROH_NAME,
@@ -174,6 +207,8 @@ export async function GET({ url, locals }) {
         discontinued: row.discontinued_status === '1',
         stockManaged: row.stock_managed === '1',
         isOnline: row.online_status === '1',
+        salesInfo: row.SALES_INFO,
+        imagePath: row.imagePath || '',
         isProductInfo: true
       }));
     } else {
@@ -188,6 +223,7 @@ export async function GET({ url, locals }) {
         discontinued: false,
         stockManaged: false,
         isOnline: false,
+        salesInfo: '',
         isProductInfo: false
       }));
     }

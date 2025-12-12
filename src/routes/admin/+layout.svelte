@@ -274,8 +274,8 @@
   {/if}
 
   <!-- 사이드바 -->
-  <nav class="fixed top-[var(--header-total-height)] -left-[280px] w-[280px] h-[calc(100vh-env(safe-area-inset-top,0px)-var(--header-height))] bg-white overflow-y-auto transition-all duration-300 z-[95] shadow-xl
-             md:fixed md:top-[var(--header-height)] {isPcSidebarOpen ? 'md:left-0' : 'md:-left-[280px]'} md:shadow-none md:border-r md:border-gray-200 md:h-[calc(100vh-70px)]
+  <nav class="fixed top-[var(--header-total-height)] -left-[240px] w-[240px] h-[calc(100vh-env(safe-area-inset-top,0px)-var(--header-height))] bg-white overflow-y-auto transition-all duration-300 z-[95] shadow-xl
+             md:fixed md:top-[var(--header-height)] {isPcSidebarOpen ? 'md:left-0' : 'md:-left-[240px]'} md:shadow-none md:border-r md:border-gray-200 md:h-[calc(100vh-70px)]
              {isMobileMenuOpen ? 'left-0' : ''}">
     
     <!-- 사이드바 헤더 (모바일만) -->
@@ -291,7 +291,7 @@
 
   <!-- 메인 콘텐츠 -->
   <main class="transition-all duration-300 min-h-screen pt-[var(--header-total-height)]
-              md:pt-[var(--header-height)] {isPcSidebarOpen ? 'md:ml-[280px]' : 'md:ml-0'}">
+              md:pt-[var(--header-height)] {isPcSidebarOpen ? 'md:ml-[240px]' : 'md:ml-0'}">
     
     <!-- 모든 열린 페이지 렌더링 (DOM 유지) -->
     <div class="relative">
@@ -301,7 +301,7 @@
           style="display: {$currentPage === href ? 'block' : 'none'}"
         >
           {#if loadedComponents[href]}
-            <div class="p-2 max-w-none mx-auto md:p-4 max-[768px]:p-4 max-[480px]:p-1">
+            <div class="p-2 max-w-none mx-auto md:px-0 md:py-4 max-[768px]:p-4 max-[480px]:p-1">
               <svelte:component this={loadedComponents[href]} {data} />
             </div>
           {:else}

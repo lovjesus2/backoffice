@@ -2,8 +2,8 @@
 <!-- src/routes/admin/sales/sales-registration/+page.svelte -->
 <script>
   import { onMount, tick } from 'svelte';
-  import { simpleCache } from '$lib/utils/simpleImageCache';
-  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
+  import { simpleCache, getProxyImageUrl} from '$lib/utils/simpleImageCache';
+  import { openImageModal } from '$lib/utils/imageModalUtils';
   import ImageModalStock from '$lib/components/ImageModalStock.svelte';
   import { getLayoutConstants } from '$lib/utils/deviceUtils';
   import ProductSearchPopup from '$lib/components/ProductSearchPopup.svelte'; // 품목검색 팝업
@@ -122,7 +122,7 @@
     isChecked: false
   };
 
-  let autoPrintAfterSave = false;  // 저장 후 자동 출력 여부
+  let autoPrintAfterSave = true;  // 저장 후 자동 출력 여부
   
   let discountTypeOptions = [];
 
@@ -175,8 +175,8 @@
   }
 
   // 이미지 클릭 핸들러
-  function handleImageClick(productCode, productName) {
-    const imageSrc = getProxyImageUrl(productCode);
+  function handleImageClick(productCode, productName, productImage) {
+    const imageSrc = getProxyImageUrl(productImage);
     if (imageSrc) {
       openImageModal(imageSrc, productName, productCode);
     }
@@ -644,7 +644,7 @@
         
         if (existingIndex >= 0) {
           detailItems[existingIndex].quantity++;
-          // 🆕 기존 제품도 할인 로직 적용
+          // 기존 제품도 할인 로직 적용
           applyDiscountLogic(detailItems[existingIndex]);
           console.log('기존 제품 수량 증가:', productInfo.code);
         } else {
@@ -660,17 +660,19 @@
             cashPrice: productInfo.cashPrice || 0,
             deliveryPrice: productInfo.deliveryPrice || 0,
             currentStock: productInfo.stock || 0,
+            salesInfo: productInfo.salesinfo || '',
             stockManaged: productInfo.stockManaged || false,
             isOnline: productInfo.isOnline || false,
             qrCode: '',
-            // 🆕 할인 정보 추가
+            imagePath: productInfo.imagePath || '',
+            // 할인 정보 추가
             discountQty: productInfo.discountQty || 0,
             discountAmount: productInfo.discountAmount || 0,
             discountType: productInfo.discountType || '0',
             isQuantityDiscountApplied: false
           };
           
-          // 🆕 할인 로직 적용
+          // 할인 로직 적용
           applyDiscountLogic(newItem);
           
           detailItems = [newItem, ...detailItems];
@@ -678,17 +680,68 @@
         }
         
         updateSummary();
+        // 🎵 성공 시 비프음 (선택사항)
+        playSuccessSound();
       } else {
         console.error('제품을 찾을 수 없습니다:', productCode);
         showToast(result.message || `제품 코드 '${productCode}'를 찾을 수 없습니다.`, 'error');
+        // 🔊 실패음 재생
+        playErrorSound();
       }
       
     } catch (error) {
       console.error('제품 검색 오류:', error);
       showToast('제품 검색 중 오류가 발생했습니다.', 'error');
+      // 🔊 에러음 재생
+      playErrorSound();
     } finally {
       isSearchingProduct = false;
     }
+  }
+
+  // 🔊 오디오 피드백 함수들 실패음
+  function playErrorSound() {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // 3번 반복
+    for (let i = 0; i < 2; i++) {
+      setTimeout(() => {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // 에러음: 낮은 주파수의 강한 비프음
+        oscillator.frequency.value = 300;
+        oscillator.type = 'square'; // sine → square (더 강한 소리)
+        
+        gainNode.gain.setValueAtTime(1.0, audioContext.currentTime); // 최대 볼륨
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3); // 더 긴 지속시간
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.3);
+      }, i * 400); // 400ms 간격으로 3번
+    }
+  }
+  // 🔊 오디오 피드백 함수들 성공음
+  function playSuccessSound() {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    // 성공음: 높은 주파수의 비프음
+    oscillator.frequency.value = 1000; // 800 → 1000 (더 밝은 소리)
+    oscillator.type = 'sine';
+    
+    gainNode.gain.setValueAtTime(0.8, audioContext.currentTime); // 0.5 → 0.8
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15); // 0.08 → 0.15 (더 길게)
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.15);
   }
 
   // 상세내역 항목 삭제
@@ -866,9 +919,11 @@
         cashPrice: productInfo.cashPrice || 0,
         deliveryPrice: productInfo.deliveryPrice || 0,
         currentStock: productInfo.stock || 0,
+        salesInfo: productInfo.salesinfo || '',
         stockManaged: productInfo.stockManaged || false,
         isOnline: productInfo.isOnline || false,
         qrCode: '',
+        imagePath: productInfo.imagePath || '',
         // 🆕 할인 정보 추가
         discountQty: productInfo.discountQty || 0,
         discountAmount: productInfo.discountAmount || 0,
@@ -1282,6 +1337,47 @@
     showToast(`❌ 출력 실패: ${event.detail.error}`, 'error');
   }
 
+    // 바코드 출력
+  async function printBarcode(item) {
+    console.log('출력 요청된 제품:', item);
+    
+    // 해당 아이템의 수량 가져오기
+    //const quantity = item.quantity || 1;
+    const quantity = 1;
+    
+
+    // 출력 시작 토스트 메시지
+    showToast(`🖨️ 바코드 ${quantity}장 출력 중...`, 'info');
+    
+    // 바코드 출력용 데이터 구성
+    const barcodeData = {
+      code: item.itemCode,
+      name: item.itemName,
+      price: item.cardPrice || 0
+    };
+    
+    // Svelte DOM 업데이트 대기
+    await tick();
+    
+    console.log('바코드 데이터:', barcodeData);
+    console.log('출력 수량:', quantity);
+    
+    // 바코드 출력 실행
+    if (directPrint) {
+      directPrint.directPrint('barcode', barcodeData, quantity);
+    } else {
+      console.error('DirectPrint 컴포넌트 참조 없음');
+      showToast('❌ 프린터 초기화 오류', 'error');
+    }
+    
+    // 포커스 복귀
+    setTimeout(() => {
+      if (barcodeInput) {
+        barcodeInput.focus();
+      }
+    }, 500);
+  }
+
   // 내역서 출력 함수
   async function printReceipt() {
   if (!selectedSaleSlip) {
@@ -1309,7 +1405,7 @@
       
       try {
         // 이미지 fetch (캐시에서 자동으로 가져옴)
-        const logoImageUrl = getProxyImageUrl(currentLogo.code);
+        const logoImageUrl = getProxyImageUrl(currentLogo.imagePath);
         const logoResponse = await fetch(logoImageUrl);
         const logoBlob = await logoResponse.blob();
         logoImage = await blobToBase64(logoBlob);
@@ -1690,7 +1786,7 @@
       {/if}
 
       <!-- 매출 조회 패널 (왼쪽) -->
-      <div class="transition-all duration-300 {leftPanelVisible ? 'opacity-100' : 'opacity-0'} lg:relative lg:ml-2.5 {leftPanelVisible ? '' : 'hidden'}" 
+      <div class="transition-all duration-300 {leftPanelVisible ? 'opacity-100' : 'opacity-0'} lg:relative lg:ml-1 {leftPanelVisible ? '' : 'hidden'}" 
           style="flex: 0 0 350px; background: transparent; z-index: 25; max-width: 350px; min-width: 350px;"
           class:fixed={typeof window !== 'undefined' && window.innerWidth <= 740}
           class:left-0={typeof window !== 'undefined' && window.innerWidth <= 740}
@@ -1827,10 +1923,10 @@
                 검색 중...
               </div>
             {:else if products.length > 0}
-              <div style="padding: 10px; max-height: {typeof window !== 'undefined' && window.innerWidth <= 768 ? 'calc(65vh)' : 'calc(53vh)'}; overflow-y: auto;">
+              <div style="padding: 10px;">
                 
                 <!-- 매출 합계 카드 (상단 한번만) -->
-                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg mb-3" style="padding: 4px;">
+                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg mb-3" style="padding: 4px; position: sticky; top: 0; z-index: 10;">
                   <div class="grid grid-cols-3 gap-1 text-xs">
                     <!-- 전체 합계 -->
                     <div class="bg-white rounded border border-blue-100" style="padding: 6px; text-align: center;">
@@ -1965,7 +2061,7 @@
       </div>
 
       <!-- 메인 콘텐츠 영역 (flex-1) -->
-      <div class="flex-1 min-w-0 px-2">
+      <div class="flex-1 min-w-0 px-1">
         <!-- 반응형 레이아웃: 모바일/PC 모두 세로배치 -->
         <div class="flex flex-col gap-1">
           
@@ -2110,7 +2206,7 @@
                             'bg-white border-pink-200'}"
                     style="padding: 5px; padding-top: 40px;">
                   <!-- 상단 배지 바 -->
-                  <div class="absolute top-0 left-0 right-0 bg-pink-300 text-white text-center py-1">
+                  <div class="absolute top-0 left-0 right-0 bg-pink-300 text-white text-center">
                     <span class="text-xs font-bold">전체</span>
                   </div>
                   <!-- 금액 + 수량 -->
@@ -2125,7 +2221,7 @@
                 <!-- 카드 합계 -->
                 <div class="bg-white rounded border border-gray-200 relative overflow-hidden" style="padding: 5px; padding-top: 40px;">
                   <!-- 상단 배지 바 -->
-                  <div class="absolute top-0 left-0 right-0 bg-gray-100 border-b border-gray-300 text-gray-800 text-center py-1">
+                  <div class="absolute top-0 left-0 right-0 bg-gray-100 border-b border-gray-300 text-gray-800 text-center">
                     <span class="text-xs font-bold">카드</span>
                   </div>
                   <!-- 금액 + 수량 -->
@@ -2140,7 +2236,7 @@
                 <!-- 현금 합계 -->
                 <div class="bg-white rounded border border-gray-200 relative overflow-hidden" style="padding: 5px; padding-top: 40px;">
                   <!-- 상단 배지 바 -->
-                  <div class="absolute top-0 left-0 right-0 bg-gray-100 border-b border-gray-300 text-gray-800 text-center py-1">
+                  <div class="absolute top-0 left-0 right-0 bg-gray-100 border-b border-gray-300 text-gray-800 text-center">
                     <span class="text-xs font-bold">현금</span>
                   </div>
                   <!-- 금액 + 수량 -->
@@ -2210,192 +2306,213 @@
                   </button>
                 </div>
               </div>
-              
-              <div style="padding: 10px; max-height: {typeof window !== 'undefined' && window.innerWidth <= 768 ? 'calc(65vh)' : 'calc(53vh)'}; overflow-y: auto;">
-                {#if detailItems.length > 0}
-                  <div class="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-2 gap-1.5">
-                    <!-- 상세내역 항목 부분 수정 (각 항목의 div 클래스를 조건부로 변경) -->
-                    <!-- 기존: <div class="border border-gray-200 rounded-lg p-4 relative"> -->
-                    <!-- 수정: 아래와 같이 조건부 클래스 적용 -->
+              <div class="@container">
+                <div style="padding: 10px; max-height: {typeof window !== 'undefined' && window.innerWidth <= 768 ? 'calc(65vh)' : 'calc(53vh)'}; overflow-y: auto;">
+                  {#if detailItems.length > 0}
+                    <div class="grid grid-cols-1 @[750px]:grid-cols-2 gap-1.5">
+                      <!-- 상세내역 항목 부분 수정 (각 항목의 div 클래스를 조건부로 변경) -->
+                      <!-- 기존: <div class="border border-gray-200 rounded-lg p-4 relative"> -->
+                      <!-- 수정: 아래와 같이 조건부 클래스 적용 -->
 
-                    {#each detailItems as item, index}
-                      <div class="rounded-lg p-1 relative transition-colors duration-200 {item.isCash ? 'border border-pink-200 bg-pink-50' : 'border border-gray-200 bg-white'} {item.quantity > 1 ? 'border-2 border-yellow-400' : ''}" 
-                          style="transition: all 0.2s ease;">
-                        <!-- 삭제 버튼 (오른쪽 상단) -->
-                        <button 
-                          type="button"
-                          class="absolute top-2 right-2 px-2 py-1 flex items-center justify-center bg-gray-500 hover:bg-gray-600 text-white rounded text-xs font-bold transition-colors z-10"
-                          on:click={() => removeDetailItem(index)}
-                          title="항목 삭제"
-                        >
-                          삭제
-                        </button>
-                        
-                        <!-- 상단: 이미지 + 제품정보 -->
-                        <div class="flex gap-3 mb-3">
-                          <div class="relative w-20 h-20 bg-gray-100 rounded overflow-hidden flex-shrink-0">
-                            <!-- 이미지 (다른 메뉴와 동일한 방식) -->
-                            <img 
-                              src={getProxyImageUrl(item.itemCode)} 
-                              alt={item.itemName}
-                              class="w-full h-full object-cover cursor-pointer"
-                              style="background: #f8f9fa;"
-                              on:click={() => handleImageClick(item.itemCode, item.itemName)}
-                              on:error={cacheImage}
-                              on:load={cacheImage}
-                            />
-                            
-                            <!-- 온라인 배지 (왼쪽 위) -->
-                            {#if item.isOnline}
-                              <span class="absolute top-0.5 left-0.5 bg-blue-100 text-blue-800 border border-blue-200 text-xs rounded-full px-1.5 py-0.5 font-medium shadow-sm" 
-                              style="font-size: 0.6rem; line-height: 1;">
-                                On
-                              </span>
-                            {/if}
-                            
-                            <!-- 재고 배지 (오른쪽 위) -->
-                            {#if item.stockManaged}
-                              <span class="absolute top-0.5 right-0.5 {item.currentStock === 0 ? 'bg-gray-500 text-white' : 'bg-yellow-400 text-gray-800'} px-1 py-0.5 rounded-lg text-xs font-bold min-w-6 text-center" style="font-size: 10px;">
-                                {item.currentStock || 0}
-                              </span>
-                            {/if}
-                          </div>
-                          <div class="flex-1 min-w-0">
-                            <div class="text-xs text-gray-600 mb-1">{item.itemCode}</div>
-                            <div class="text-xs font-medium mb-1">{item.itemName}</div>
-                            
-                            <!-- 비고내역 한줄로 -->
-                            <!-- 부드러운 애니메이션 포함 -->
-                            {#if item.itemDescription && item.itemDescription.trim()}
-                              <div class="text-xs text-gray-600 mb-1 bg-gray-50 px-2 py-1 rounded cursor-pointer hover:bg-gray-100 transition-all duration-200"
-                                  on:click={() => toggleItemDescription(index)}>
-                                
-                                <!-- 플렉스 컨테이너로 내용과 화살표 배치 -->
-                                <div class="flex items-start justify-between gap-2">
-                                  <!-- 왼쪽: 비고 내용 -->
-                                  <div class="overflow-hidden transition-all duration-300 {item.descriptionExpanded ? 'max-h-40' : 'max-h-5'} flex-1">
-                                    <div class="text-gray-600 {item.descriptionExpanded ? 'whitespace-pre-wrap break-words' : 'truncate'}">
-                                      {item.itemDescription}
-                                    </div>
-                                  </div>
-                                  
-                                  <!-- 오른쪽: 화살표 아이콘 -->
-                                  <svg 
-                                    class="w-3 h-3 text-gray-400 transform transition-transform duration-200 flex-shrink-0 mt-0.5 {item.descriptionExpanded ? 'rotate-180' : ''}"
-                                    fill="none" 
-                                    stroke="currentColor" 
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                                  </svg>
+                      {#each detailItems as item, index}
+                        <div class="rounded-lg p-1 relative transition-colors duration-200 flex flex-col {item.isCash ? 'border border-pink-300 bg-pink-200' : 'border border-gray-200 bg-white'} {item.quantity > 1 ? 'border-2 border-yellow-400' : ''} " 
+                              style="transition: all 0.2s ease;">
+                          <!-- 삭제 버튼 (오른쪽 상단) -->
+                          <button 
+                            type="button"
+                            class="absolute top-2 right-2 px-2 py-1 flex items-center justify-center bg-gray-500 hover:bg-gray-600 text-white rounded text-xs font-bold transition-colors z-10"
+                            on:click={() => removeDetailItem(index)}
+                            title="항목 삭제"
+                          >
+                            삭제
+                          </button>
+                          
+                          <!-- 상단: 이미지 + 제품정보 -->
+                          <div class="flex gap-3 mb-3">
+                            <div class="relative w-20 h-20 bg-gray-100 rounded overflow-hidden flex-shrink-0">
+                              <!-- 이미지 (다른 메뉴와 동일한 방식) -->
+                              <img 
+                                src={getProxyImageUrl(item.imagePath)} 
+                                alt={item.itemName}
+                                class="w-full h-full object-cover cursor-pointer {item.discontinued ? 'opacity-60' : ''}"
+                                style="background: #f8f9fa;"
+                                on:click={() => handleImageClick(item.itemCode, item.itemName, item.imagePath)}
+                                on:error={cacheImage}
+                                on:load={cacheImage}
+                              />
+                              
+                              <!-- 온라인 배지 (왼쪽 위) -->
+                              {#if item.isOnline}
+                                <span class="absolute top-0.5 left-0.5 bg-blue-100 text-blue-800 border border-blue-200 text-xs rounded-full px-1.5 py-0.5 font-medium shadow-sm" 
+                                style="font-size: 0.6rem; line-height: 1;">
+                                  On
+                                </span>
+                              {/if}
+                              
+                              <!-- 재고 배지 (오른쪽 위) -->
+                              {#if item.stockManaged}
+                                <span class="absolute top-0.5 right-0.5 {item.currentStock === 0 ? 'bg-gray-500 text-white' : 'bg-yellow-400 text-gray-800'} px-1 py-0.5 rounded-lg text-xs font-bold min-w-4 text-center" style="font-size: 0.5rem;">
+                                  {item.currentStock || 0}
+                                </span>
+                              {/if}
+
+                              <!-- salesinfo 배지 (하단 전체) -->
+                              {#if item.salesInfo}
+                                <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-center px-1 py-0.5" 
+                                    style="font-size: 0.6rem; line-height: 1.2;">
+                                  {item.salesInfo}
                                 </div>
-                              </div>
-                            {/if}
-
-                            <!-- 가격정보 각각 한줄로 -->
-                            <div class="flex gap-0.5 text-xs">
-                              <span class="text-gray-500 px-1 py-1 rounded">카드: {item.cardPrice.toLocaleString('ko-KR')}</span>
-                              
-                                <span class="px-1 py-1 rounded" 
-                                      style="color: {item.hasPresetCashPrice ? '#dc2626' : '#6b7280'}; {item.hasPresetCashPrice ? 'font-weight: 600;' : ''}">
-                                  현금: {item.cashPrice.toLocaleString('ko-KR')}
-                                </span>
-                              
-                              <span class="text-gray-500 px-1 py-1 rounded">납품: {item.deliveryPrice.toLocaleString('ko-KR')}</span>
+                              {/if}
                             </div>
-
-                            <!-- 수량할인 정보 표시 -->
-                            {#if item.discountQty && item.discountAmount}
-                              {@const currentDiscountAmount = getQuantityDiscountAmount(item)}
-                              <div class="text-xs mt-1">
-                                <span class="text-red-600 px-1 py-1 rounded">수량할인: </span>
-                                <span class="text-red-600 font-medium px-1 py-1">
-                                  {currentDiscountAmount > 0 ? '-' : ''}{currentDiscountAmount.toLocaleString('ko-KR')}({item.discountQty})
-                                </span>
+                            <div class="flex-1 min-w-0">
+                              <!-- 품목코드와 바코드 아이콘 -->
+                              <div class="flex items-center gap-1 mb-1">
+                                <div class="text-xs text-gray-600">{item.itemCode}</div>
+                                <button 
+                                  type="button"
+                                  class="text-blue-600 hover:text-blue-800 transition-colors"
+                                  on:click={() => printBarcode(item)}
+                                  title="바코드 출력"
+                                >
+                                  🖨️
+                                </button>
                               </div>
-                            {/if}
+                              
+                              <div class="text-xs font-medium mb-1">{item.itemName}</div>
+                              
+                              <!-- 비고내역 한줄로 -->
+                              <!-- 부드러운 애니메이션 포함 -->
+                              {#if item.itemDescription && item.itemDescription.trim()}
+                                <div class="text-xs text-gray-600 mb-1 bg-gray-50 px-2 py-1 rounded cursor-pointer hover:bg-gray-100 transition-all duration-200"
+                                    on:click={() => toggleItemDescription(index)}>
+                                  
+                                  <!-- 플렉스 컨테이너로 내용과 화살표 배치 -->
+                                  <div class="flex items-start justify-between gap-2">
+                                    <!-- 왼쪽: 비고 내용 -->
+                                    <div class="overflow-hidden transition-all duration-300 {item.descriptionExpanded ? 'max-h-40' : 'max-h-5'} flex-1">
+                                      <div class="text-gray-600 {item.descriptionExpanded ? 'whitespace-pre-wrap break-words' : 'truncate'}">
+                                        {item.itemDescription}
+                                      </div>
+                                    </div>
+                                    
+                                    <!-- 오른쪽: 화살표 아이콘 -->
+                                    <svg 
+                                      class="w-3 h-3 text-gray-400 transform transition-transform duration-200 flex-shrink-0 mt-0.5 {item.descriptionExpanded ? 'rotate-180' : ''}"
+                                      fill="none" 
+                                      stroke="currentColor" 
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                  </div>
+                                </div>
+                              {/if}
+
+                              <!-- 가격정보 각각 한줄로 -->
+                              <div class="flex gap-0.5 text-xs">
+                                <span class="text-gray-500 px-1 py-1 rounded">카드: {item.cardPrice.toLocaleString('ko-KR')}</span>
+                                
+                                  <span class="px-1 py-1 rounded" 
+                                        style="color: {item.hasPresetCashPrice ? '#dc2626' : '#6b7280'}; {item.hasPresetCashPrice ? 'font-weight: 600;' : ''}">
+                                    현금: {item.cashPrice.toLocaleString('ko-KR')}
+                                  </span>
+                                
+                                <span class="text-gray-500 px-1 py-1 rounded">납품: {item.deliveryPrice.toLocaleString('ko-KR')}</span>
+                              </div>
+
+                              <!-- 수량할인 정보 표시 -->
+                              {#if item.discountQty && item.discountAmount}
+                                {@const currentDiscountAmount = getQuantityDiscountAmount(item)}
+                                <div class="text-xs mt-1">
+                                  <span class="text-red-600 px-1 py-1 rounded">수량할인: </span>
+                                  <span class="text-red-600 font-medium px-1 py-1">
+                                    {currentDiscountAmount > 0 ? '-' : ''}{currentDiscountAmount.toLocaleString('ko-KR')}({item.discountQty})
+                                  </span>
+                                </div>
+                              {/if}
+                            </div>
                           </div>
-                        </div>
-                        
-                        <!-- 하단: 현금, 수량, 금액 한줄로 (크기 조정) -->
-                        <div class="border-t border-gray-100 pt-3">
-                          <div class="flex items-center gap-1 text-xs">
-                            <!-- 현금 체크박스 -->
-                            <label class="flex items-center gap-0.5 cursor-pointer flex-shrink-0">
-                              <input 
-                                type="checkbox" 
-                                bind:checked={item.isCash}
-                                on:change={() => handlePaymentTypeChange(index)}
-                                class="w-3 h-3"
-                              />
-                              <span>현금</span>
-                            </label>
-                            
-                            <!-- 수량 (+/- 버튼 포함) -->
-                            <div class="flex items-center gap-0.5 flex-shrink-0 mx-1">
-                              <span class="text-gray-600">수량</span>
-                              <div class="flex items-center border border-gray-300 rounded">
-                                <button 
-                                  type="button"
-                                  class="w-5 h-5 flex items-center justify-center text-gray-600 bg-gray-200 hover:bg-gray-300 text-xs"
-                                  on:click={() => {
-                                    if (item.quantity > 1) {
-                                      item.quantity--;
-                                      handleQuantityChange(index);
-                                    }
-                                  }}
-                                >-</button>
-                                <input 
-                                  type="number" 
-                                  bind:value={item.quantity}
-                                  on:input={() => handleQuantityChange(index)}
-                                  class="w-8 text-center border-0 text-xs {item.quantity > 1 ? 'bg-yellow-100' : 'bg-white'}"
-                                  style="padding: 1px;"
-                                  min="1"
-                                />
-                                <button 
-                                  type="button"
-                                  class="w-5 h-5 flex items-center justify-center text-gray-600 bg-gray-200 hover:bg-gray-300 text-xs"
-                                  on:click={() => {
-                                    item.quantity++;
-                                    handleQuantityChange(index);
-                                  }}
-                                >+</button>
-                              </div>
-                            </div>
-                            
-                            <!-- 금액 -->
-                            <div class="flex items-center gap-0.5 flex-1 min-w-0">
-                              <span class="text-gray-600 flex-shrink-0">금액</span>
-                              <input 
-                                type="text" 
-                                value={item.amount.toLocaleString('ko-KR')}
-                                on:input={(e) => {
-                                  const value = e.target.value.replace(/,/g, '');
-                                  if (!isNaN(value) && value !== '') {
-                                    item.amount = parseInt(value);
-                                    handleAmountChange(index);
-                                  }
-                                }}
-                                class="border border-gray-300 rounded text-xs text-right"
-                                style="padding: 1px 2px; width: 80px;"
-                              />
-                            </div>
-
-                            <!-- 순번 (맨 오른쪽) -->
-                            <div class="flex items-center justify-center bg-gray-500 text-white rounded-full w-6 h-6 text-xs font-bold flex-shrink-0 ml-2">
+                          
+                          <!-- 하단: 현금, 수량, 금액 한줄로 (크기 조정) -->
+                          <div class="border-t border-gray-100 pt-3 bg-gray-100 rounded p-1 mt-auto relative">
+                            <!-- 순번 (회색 영역 오른쪽 상단) -->
+                            <div class="absolute -top-1 -right-1 flex items-center justify-center bg-gray-500 text-white rounded-full w-4 h-4 text-xs font-bold">
                               {index + 1}
                             </div>
+                            
+                            <div class="flex items-center gap-1 text-xs">
+                              <!-- 현금 체크박스 -->
+                              <label class="flex items-center gap-0.5 cursor-pointer flex-shrink-0">
+                                <input 
+                                  type="checkbox" 
+                                  bind:checked={item.isCash}
+                                  on:change={() => handlePaymentTypeChange(index)}
+                                  class="w-3 h-3"
+                                />
+                                <span>현금</span>
+                              </label>
+                              
+                              <!-- 수량 (+/- 버튼 포함) -->
+                              <div class="flex items-center gap-0.5 flex-shrink-0 mx-1">
+                                <span class="text-gray-600">수량</span>
+                                <div class="flex items-center border border-gray-300 rounded">
+                                  <button 
+                                    type="button"
+                                    class="w-5 h-5 flex items-center justify-center text-gray-600 bg-gray-200 hover:bg-gray-300 text-xs"
+                                    on:click={() => {
+                                      if (item.quantity > 1) {
+                                        item.quantity--;
+                                        handleQuantityChange(index);
+                                      }
+                                    }}
+                                  >-</button>
+                                  <input 
+                                    type="number" 
+                                    bind:value={item.quantity}
+                                    on:input={() => handleQuantityChange(index)}
+                                    class="w-8 text-center border-0 text-xs text-red-600 font-bold {item.quantity > 1 ? 'bg-yellow-100' : 'bg-white'}"
+                                    style="padding: 1px;"
+                                    min="1"
+                                  />
+                                  <button 
+                                    type="button"
+                                    class="w-5 h-5 flex items-center justify-center text-gray-600 bg-gray-200 hover:bg-gray-300 text-xs"
+                                    on:click={() => {
+                                      item.quantity++;
+                                      handleQuantityChange(index);
+                                    }}
+                                  >+</button>
+                                </div>
+                              </div>
+                              
+                              <!-- 금액 -->
+                              <div class="flex items-center gap-0.5 flex-1 min-w-0">
+                                <span class="text-gray-600 flex-shrink-0">금액</span>
+                                <input 
+                                  type="text" 
+                                  value={item.amount.toLocaleString('ko-KR')}
+                                  on:input={(e) => {
+                                    const value = e.target.value.replace(/,/g, '');
+                                    if (!isNaN(value) && value !== '') {
+                                      item.amount = parseInt(value);
+                                      handleAmountChange(index);
+                                    }
+                                  }}
+                                  class="border border-gray-300 rounded text-xs text-right"
+                                  style="padding: 1px 2px; width: 80px;"
+                                />
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    {/each}
-                  </div>
-                {:else}
-                  <div class="text-center text-gray-500 py-8">
-                    매출을 선택하면 상세내역이 표시됩니다.
-                  </div>
-                {/if}
+                      {/each}
+                    </div>
+                  {:else}
+                    <div class="text-center text-gray-500 py-8">
+                      매출을 선택하면 상세내역이 표시됩니다.
+                    </div>
+                  {/if}
+                </div>
               </div>
             </div>
           </div>
@@ -2412,7 +2529,14 @@
   currentCompanyCode={selectedCompany}
   currentRegistrationCode={selectedRegistration}
   on:productSelected={handleProductSelected}
-  on:close={() => showProductPopup = false}
+  on:close={() => {
+    showProductPopup = false;
+    setTimeout(() => {
+      if (barcodeInput) {
+        barcodeInput.focus();
+      }
+    }, 100);
+  }}
 />
 
 <!-- 이미지 모달 -->

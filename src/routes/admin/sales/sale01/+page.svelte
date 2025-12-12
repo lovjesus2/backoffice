@@ -2,8 +2,8 @@
 <script>
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
-  import { simpleCache } from '$lib/utils/simpleImageCache';
-  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';  // 🔄 변경
+  import { simpleCache, getProxyImageUrl} from '$lib/utils/simpleImageCache';
+  import { openImageModal } from '$lib/utils/imageModalUtils';
   import ImageModalStock from '$lib/components/ImageModalStock.svelte';  // 🔄 추가
 
   // 부모 레이아웃에서 전달받은 사용자 정보
@@ -35,7 +35,7 @@
 
   // 🔄 이미지 클릭 핸들러 수정 - productCode만 전달
   function handleImageClick(item) {
-    const imageSrc = getProxyImageUrl(item.itemCode);
+    const imageSrc = getProxyImageUrl(item.imagePath);
     if (imageSrc) {
       // productCode만 전달하고 이미지 모달에서 API로 제품 정보 조회
       openImageModal(imageSrc, item.itemName, item.itemCode);
@@ -343,7 +343,7 @@
                   <div class="w-20 h-20 bg-gray-100 rounded flex items-center justify-center flex-shrink-0 relative overflow-hidden border border-gray-200">
                     {#if item.itemCode}
                       <img 
-                        src="/proxy-images/{item.itemCode}_1.jpg" 
+                        src={getProxyImageUrl(item.imagePath)} 
                         alt={item.itemName}
                         class="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
                         on:load={cacheImage}
@@ -367,6 +367,14 @@
                         style="font-size: 0.6rem; line-height: 1;">
                         ON
                       </span>
+                    {/if}
+
+                    <!-- salesinfo 배지 (하단 전체) -->
+                    {#if item.salesInfo}
+                      <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-center px-1 py-0.5" 
+                          style="font-size: 0.6rem; line-height: 1.2;">
+                        {item.salesInfo}
+                      </div>
                     {/if}
                   </div>
                   <div class="flex-1 min-w-0">
@@ -409,6 +417,7 @@
 
 <!-- 🔄 ImageModalStock 컴포넌트 추가 -->
 <ImageModalStock 
+  {user}
   on:stockUpdated={handleStockUpdated}
   on:discontinuedUpdated={handleDiscontinuedUpdated}  
   on:stockUsageUpdated={handleStockUsageUpdated}

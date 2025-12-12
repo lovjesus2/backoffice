@@ -93,8 +93,12 @@ export async function GET({ url, locals }) {
         -- 재고 정보
         COALESCE(stock.HYUN_QTY1, 0) as CURRENT_STOCK,
         COALESCE(stockProd.PROD_TXT1, '0') as STOCK_MANAGED,
-        -- 🆕 온라인 정보 추가
-        COALESCE(onlineProd.PROD_TXT1, '0') as ONLINE_STATUS
+        -- 온라인 정보
+        COALESCE(onlineProd.PROD_TXT1, '0') as ONLINE_STATUS,
+        -- 판매 수량 요약 (총/년/월)
+        COALESCE(sale.SALE_QTY_SUMMARY, '0/0/0') as SALES_INFO,
+        -- ✅ 이미지 추가
+        IFNULL(img.IMAG_PCPH, '') as imagePath
       FROM SALE_DNHD h
       INNER JOIN SALE_DNDT d ON h.DNHD_SLIP = d.DNDT_SLIP
       INNER JOIN ASSE_PROH p ON p.PROH_GUB1 = 'A1' 
@@ -104,9 +108,25 @@ export async function GET({ url, locals }) {
       LEFT JOIN STOK_HYUN stock ON d.DNDT_ITEM = stock.HYUN_ITEM
       LEFT JOIN ASSE_PROD stockProd ON d.DNDT_ITEM = stockProd.PROD_CODE
                                     AND stockProd.PROD_COD2 = 'L6'
-      -- 🆕 온라인 정보 조인 추가
       LEFT JOIN ASSE_PROD onlineProd ON d.DNDT_ITEM = onlineProd.PROD_CODE
                                     AND onlineProd.PROD_COD2 = 'L7'
+      -- ✅ 이미지 조인 추가
+      LEFT JOIN ASSE_IMAG img ON d.DNDT_ITEM = img.IMAG_CODE
+                              AND img.IMAG_GUB1 = 'A1'
+                              AND img.IMAG_GUB2 = 'AK'
+                              AND img.IMAG_GUB3 = '0'
+                              AND img.IMAG_CNT1 = 1
+      LEFT JOIN (
+        SELECT 
+          DNDT_ITEM,
+          CONCAT(
+            CAST(SUM(DNDT_QTY1) AS CHAR), '/',
+            CAST(SUM(CASE WHEN SUBSTRING(DNDT_SLIP, 3, 4) = YEAR(CURDATE()) THEN DNDT_QTY1 ELSE 0 END) AS CHAR), '/',
+            CAST(SUM(CASE WHEN SUBSTRING(DNDT_SLIP, 3, 6) = DATE_FORMAT(CURDATE(), '%Y%m') THEN DNDT_QTY1 ELSE 0 END) AS CHAR)
+          ) as SALE_QTY_SUMMARY
+        FROM SALE_DNDT
+        GROUP BY DNDT_ITEM
+      ) sale ON d.DNDT_ITEM = sale.DNDT_ITEM                              
       ${whereClause}
       ORDER BY h.DNHD_SLIP DESC, d.DNDT_SENO ASC
     `;
@@ -180,11 +200,14 @@ export async function GET({ url, locals }) {
         qty: qty,
         totalAmount: amount,
         hygb: row.DNDT_HYGB,
+        salesInfo: row.SALES_INFO,
+        imagePath: row.imagePath || '',
         // 재고 정보 추가
         currentStock: currentStock,
         stockManaged: isStockManaged,
         // 🆕 온라인 정보 추가
         isOnline: row.ONLINE_STATUS === '1'
+        
       });
     });
 

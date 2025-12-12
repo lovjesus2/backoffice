@@ -2,8 +2,8 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
-  import { simpleCache } from '$lib/utils/simpleImageCache';
-  import { openImageModal, getProxyImageUrl } from '$lib/utils/imageModalUtils';
+  import { simpleCache, getProxyImageUrl} from '$lib/utils/simpleImageCache';
+  import { openImageModal } from '$lib/utils/imageModalUtils';
   import DirectPrint from '$lib/components/DirectPrint.svelte';
   import PriceInfoModal from '$lib/components/PriceInfoModal.svelte';                         //가격수정 컴포넌트
 
@@ -55,8 +55,8 @@
   }
 
   // 이미지 클릭 핸들러 (누락된 함수)
-  function handleImageClick(productCode, productName) {
-    const imageSrc = getProxyImageUrl(productCode);
+  function handleImageClick(productCode, productName, productImage) {
+    const imageSrc = getProxyImageUrl(productImage);
     if (imageSrc) {
       openImageModal(imageSrc, productName, productCode);
     }
@@ -613,11 +613,11 @@
               <!-- 제품 이미지 (배지 포함) -->
               <div class="relative w-20 h-20 flex-shrink-0">
                 <img 
-                  src={getProxyImageUrl(product.code)} 
+                  src={getProxyImageUrl(product.imagePath)} 
                   alt={product.name}
                   class="w-full h-full object-cover rounded-lg border border-gray-200 cursor-pointer"
                   style="background: #f8f9fa;"
-                  on:click={() => handleImageClick(product.code, product.name)}
+                  on:click={() => handleImageClick(product.code, product.name, product.imagePath)}
                   on:error={cacheImage}
                   on:load={cacheImage}
                 >
@@ -635,8 +635,16 @@
                     ON
                   </span>
                 {/if}
-              </div>
 
+                <!-- salesinfo 배지 (하단 전체) -->
+                {#if product.salesInfo}
+                  <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-center px-1 py-0.5" 
+                      style="font-size: 0.6rem; line-height: 1.2;">
+                    {product.salesInfo}
+                  </div>
+                {/if}
+              </div>
+              
               <!-- 제품 정보 -->
               <div class="flex-1 min-w-0">
                 <h3 class="font-semibold text-gray-900 mb-1" style="font-size: 0.8rem; line-height: 1.3;">{product.name}</h3>

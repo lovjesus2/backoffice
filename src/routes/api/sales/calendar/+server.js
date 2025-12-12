@@ -89,29 +89,45 @@ async function getDailySalesDetail(db, date) {
 
     const [rows] = await db.execute(`
       SELECT 
-        DNHD_DATE, DNDT_SLIP, DNDT_ITEM, DNHD_BIGO,
-        PROH_NAME, DNDT_QTY1, DNDT_TAMT, 
-        DATE_FORMAT(DNHD_UDAT, '%Y-%m-%d %H:%i:%s') as DNHD_UDAT, 
-        DNDT_HYGB, DNDT_SENO, DNHD_RAND, PROH_QRCD,
-        COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
+        h.DNHD_DATE, d.DNDT_SLIP, d.DNDT_ITEM, h.DNHD_BIGO,
+        p.PROH_NAME, d.DNDT_QTY1, d.DNDT_TAMT, 
+        DATE_FORMAT(h.DNHD_UDAT, '%Y-%m-%d %H:%i:%s') as DNHD_UDAT, 
+        d.DNDT_HYGB, d.DNDT_SENO, h.DNHD_RAND, p.PROH_QRCD,
+        COALESCE(stock.HYUN_QTY1, 0) as CURRENT_STOCK,
         stockProd.PROD_TXT1 as STOCK_MANAGEMENT_FLAG,
-        -- 🆕 온라인 정보 추가
         onlineProd.PROD_TXT1 as ONLINE_FLAG,
-        sp.POST_SLIP
-      FROM SALE_DNHD 
-      INNER JOIN SALE_DNDT ON DNHD_SLIP = DNDT_SLIP
-      INNER JOIN ASSE_PROH ON PROH_GUB1 = 'A1' 
-                           AND PROH_GUB2 = 'AK' 
-                           AND DNDT_ITEM = PROH_CODE
-      LEFT JOIN STOK_HYUN h ON DNDT_ITEM = h.HYUN_ITEM
-      LEFT JOIN ASSE_PROD stockProd ON DNDT_ITEM = stockProd.PROD_CODE
+        sp.POST_SLIP,
+        COALESCE(sale.SALE_QTY_SUMMARY, '0/0/0') as SALES_INFO,
+        IFNULL(img.IMAG_PCPH, '') as imagePath
+      FROM SALE_DNHD h
+      INNER JOIN SALE_DNDT d ON h.DNHD_SLIP = d.DNDT_SLIP
+      INNER JOIN ASSE_PROH p ON p.PROH_GUB1 = 'A1' 
+                          AND p.PROH_GUB2 = 'AK' 
+                          AND d.DNDT_ITEM = p.PROH_CODE
+      LEFT JOIN STOK_HYUN stock ON d.DNDT_ITEM = stock.HYUN_ITEM
+      LEFT JOIN ASSE_PROD stockProd ON d.DNDT_ITEM = stockProd.PROD_CODE
                                     AND stockProd.PROD_COD2 = 'L6'
-      -- 🆕 온라인 정보 조인 추가
-      LEFT JOIN ASSE_PROD onlineProd ON DNDT_ITEM = onlineProd.PROD_CODE
-                                     AND onlineProd.PROD_COD2 = 'L7'
-      LEFT JOIN SALE_POST sp ON DNHD_SLIP = sp.POST_SLIP
-      WHERE DNHD_DATE = ?
-      ORDER BY DNDT_SLIP DESC, DNDT_SENO ASC
+      LEFT JOIN ASSE_PROD onlineProd ON d.DNDT_ITEM = onlineProd.PROD_CODE
+                                    AND onlineProd.PROD_COD2 = 'L7'
+      LEFT JOIN SALE_POST sp ON h.DNHD_SLIP = sp.POST_SLIP
+      LEFT JOIN ASSE_IMAG img ON d.DNDT_ITEM = img.IMAG_CODE
+                              AND img.IMAG_GUB1 = 'A1'
+                              AND img.IMAG_GUB2 = 'AK'
+                              AND img.IMAG_GUB3 = '0'
+                              AND img.IMAG_CNT1 = 1
+      LEFT JOIN (
+        SELECT 
+          DNDT_ITEM,
+          CONCAT(
+            CAST(SUM(DNDT_QTY1) AS CHAR), '/',
+            CAST(SUM(CASE WHEN SUBSTRING(DNDT_SLIP, 3, 4) = YEAR(CURDATE()) THEN DNDT_QTY1 ELSE 0 END) AS CHAR), '/',
+            CAST(SUM(CASE WHEN SUBSTRING(DNDT_SLIP, 3, 6) = DATE_FORMAT(CURDATE(), '%Y%m') THEN DNDT_QTY1 ELSE 0 END) AS CHAR)
+          ) as SALE_QTY_SUMMARY
+        FROM SALE_DNDT 
+        GROUP BY DNDT_ITEM
+      ) sale ON d.DNDT_ITEM = sale.DNDT_ITEM       
+      WHERE h.DNHD_DATE = ?
+      ORDER BY d.DNDT_SLIP DESC, d.DNDT_SENO ASC
     `, [date]);
 
     const salesList = [];
@@ -132,8 +148,10 @@ async function getDailySalesDetail(db, date) {
         currentStock: parseInt(row.CURRENT_STOCK) || 0,
         qrCode: row.PROH_QRCD,
         isStockManaged: (row.STOCK_MANAGEMENT_FLAG == '1'),
+        imagePath: row.imagePath || '',
         // 🆕 온라인 정보 추가
         isOnline: (row.ONLINE_FLAG == '1'),
+        salesInfo: row.SALES_INFO,
         postSlip: row.POST_SLIP,
         rand: row.DNHD_RAND,
         bigo: row.DNHD_BIGO || ''

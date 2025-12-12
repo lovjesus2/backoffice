@@ -41,7 +41,7 @@ export async function GET({ url, locals }) {
     
     const db = getDb();
     
-    // 기본 검색 조건 배열 (회사구분, 등록구분을 먼저 추가)
+    // ✅ 기본 검색 조건 배열 (회사구분, 등록구분을 먼저 추가)
     let searchParams = [companyCode, registrationCode];
     let searchSQL = '1=1'; // 기본 조건
     
@@ -64,10 +64,10 @@ export async function GET({ url, locals }) {
     }
    
     
-    // 단종 필터 적용 (제품정보일 때만) - EXISTS 서브쿼리 사용
+    // ✅ 단종 필터 적용 (제품정보 코드일 때만) - EXISTS 서브쿼리 사용
     let discontinuedSQL = '';
-    if (registrationName === '제품정보') {
-      console.log('✅ 제품정보 확인됨, 단종 필터 적용:', discontinuedFilter);
+    if (registrationCode === 'AK') {  // ✅ 코드로 비교
+      console.log('✅ 제품정보(AK) 확인됨, 단종 필터 적용:', discontinuedFilter);
       
       if (discontinuedFilter === 'discontinued') {
         // 단종품만
@@ -92,12 +92,12 @@ export async function GET({ url, locals }) {
       }
       // 'all'인 경우 discontinuedSQL = '' (빈 문자열)
     } else {
-      console.log('⚠️ 단종 필터 미적용 - registrationName:', registrationName);
+      console.log('⚠️ 단종 필터 미적용 - registrationCode:', registrationCode);
     }
     
-    // 제품구분 필터 적용 (제품정보이고 제품구분이 선택된 경우) - EXISTS 서브쿼리 사용
+    // ✅ 제품구분 필터 적용 (제품정보이고 제품구분이 선택된 경우) - EXISTS 서브쿼리 사용
     let productTypeSQL = '';
-    if (registrationName === '제품정보' && productType && productType !== 'ALL') {
+    if (registrationCode === 'AK' && productType && productType !== 'ALL') {  // ✅ 코드로 비교
       productTypeSQL = `AND EXISTS (
         SELECT 1 FROM ASSE_PROD p_type 
         WHERE p_type.PROD_GUB1 = p.PROH_GUB1 
@@ -112,57 +112,92 @@ export async function GET({ url, locals }) {
     // 쿼리 실행 (LIMIT 없음)
     let sql;
     
-    if (registrationName === '제품정보') {
-      // ✅ 최적화된 쿼리: ASSE_PROD를 1번만 JOIN + CASE문 사용
+    if (registrationCode === 'AK') {  // ✅ 코드로 비교
+      // ✅ 제품정보인 경우: 이미지 LEFT JOIN 추가
       sql = `
         SELECT p.PROH_CODE, 
-               p.PROH_NAME, 
-               d.DPRC_SOPR, 
-               d.DPRC_BAPR,
-               COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L1' THEN prod.PROD_TXT1 END) as product_type,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L5' THEN prod.PROD_TXT1 END) as discontinued_status,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed,
-               MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status
+              p.PROH_NAME, 
+              d.DPRC_SOPR, 
+              d.DPRC_BAPR,
+              COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
+              MAX(CASE WHEN prod.PROD_COD2 = 'L1' THEN prod.PROD_TXT1 END) as product_type,
+              MAX(CASE WHEN prod.PROD_COD2 = 'L5' THEN prod.PROD_TXT1 END) as discontinued_status,
+              MAX(CASE WHEN prod.PROD_COD2 = 'L6' THEN prod.PROD_TXT1 END) as stock_managed,
+              MAX(CASE WHEN prod.PROD_COD2 = 'L7' THEN prod.PROD_TXT1 END) as online_status,
+              COALESCE(sale.SALE_QTY_SUMMARY, '0/0/0') as SALES_INFO,
+              IFNULL(img.IMAG_PCPH, '') as imagePath
         FROM ASSE_PROH p
         INNER JOIN ASSE_PROD prod
-           ON p.PROH_GUB1 = prod.PROD_GUB1
+          ON p.PROH_GUB1 = prod.PROD_GUB1
           AND p.PROH_GUB2 = prod.PROD_GUB2
           AND p.PROH_CODE = prod.PROD_CODE
         LEFT JOIN BISH_DPRC d
-           ON p.PROH_CODE = d.DPRC_CODE
+          ON p.PROH_CODE = d.DPRC_CODE
         LEFT JOIN STOK_HYUN h
           ON p.PROH_CODE = h.HYUN_ITEM
+        LEFT JOIN ASSE_IMAG img
+          ON p.PROH_CODE = img.IMAG_CODE
+        AND img.IMAG_GUB1 = ?
+        AND img.IMAG_GUB2 = ?
+        AND img.IMAG_GUB3 = '0'
+        AND img.IMAG_CNT1 = 1
+        LEFT JOIN (
+          SELECT 
+            DNDT_ITEM,
+            CONCAT(
+              CAST(SUM(DNDT_QTY1) AS CHAR), '/',
+              CAST(SUM(CASE WHEN SUBSTRING(DNDT_SLIP, 3, 4) = YEAR(CURDATE()) THEN DNDT_QTY1 ELSE 0 END) AS CHAR), '/',
+              CAST(SUM(CASE WHEN SUBSTRING(DNDT_SLIP, 3, 6) = DATE_FORMAT(CURDATE(), '%Y%m') THEN DNDT_QTY1 ELSE 0 END) AS CHAR)
+            ) as SALE_QTY_SUMMARY
+          FROM SALE_DNDT
+          GROUP BY DNDT_ITEM
+        ) sale ON p.PROH_CODE = sale.DNDT_ITEM     
         WHERE p.PROH_GUB1 = ?
           AND p.PROH_GUB2 = ?
           AND prod.PROD_COD2 IN ('L1', 'L5', 'L6', 'L7')
           AND (${searchSQL})
           ${discontinuedSQL}
           ${productTypeSQL}
-        GROUP BY p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, h.HYUN_QTY1
+        GROUP BY p.PROH_CODE, p.PROH_NAME, d.DPRC_SOPR, d.DPRC_BAPR, h.HYUN_QTY1, img.IMAG_PCPH
         ORDER BY p.PROH_CODE ASC
       `;
+      
+      // ✅ 제품정보용 파라미터: img JOIN용 2개 + WHERE절용 2개 + searchParams
+      searchParams = [companyCode, registrationCode, companyCode, registrationCode, ...searchParams.slice(2)];
+      
     } else {
-      // 기타 등록구분인 경우 - 기본 제품 정보만
+      // ✅ 기타 등록구분인 경우 - 기본 제품 정보 + 이미지
       sql = `
-        SELECT p.PROH_CODE, p.PROH_NAME
+        SELECT p.PROH_CODE, 
+               p.PROH_NAME,
+               IFNULL(img.IMAG_PCPH, '') as imagePath
         FROM ASSE_PROH p
+        LEFT JOIN ASSE_IMAG img
+          ON p.PROH_CODE = img.IMAG_CODE
+          AND img.IMAG_GUB1 = ?
+          AND img.IMAG_GUB2 = ?
+          AND img.IMAG_GUB3 = '0'
+          AND img.IMAG_CNT1 = 1
         WHERE p.PROH_GUB1 = ?
           AND p.PROH_GUB2 = ?
           AND (${searchSQL})
         ORDER BY p.PROH_CODE ASC
       `;
+      
+      // ✅ 기타 등록구분용 파라미터: img JOIN용 2개 + WHERE절용 2개 + 나머지
+      searchParams = [companyCode, registrationCode, companyCode, registrationCode, ...searchParams.slice(2)];
     }
     
     console.log('실행할 SQL:', sql);
     console.log('파라미터 배열:', searchParams);
+    console.log('파라미터 개수:', searchParams.length);
     
     const [rows] = await db.execute(sql, searchParams);
     console.log('DB 조회 결과:', rows.length, '개 행');
     
     let products;
     
-    if (registrationName === '제품정보') {
+    if (registrationCode === 'AK') {  // ✅ 코드로 비교
       products = rows.map(row => ({
         code: row.PROH_CODE,
         name: row.PROH_NAME,
@@ -171,7 +206,9 @@ export async function GET({ url, locals }) {
         stock: parseInt(row.CURRENT_STOCK) || 0,
         discontinued: row.discontinued_status === '1',
         stockManaged: row.stock_managed === '1',
-        isOnline: row.online_status === '1', // 🟡 온라인 배지 조건 (PROD_COD2='L7', PROD_TXT1='1')
+        isOnline: row.online_status === '1',
+        imagePath: row.imagePath || '',
+        salesInfo: row.SALES_INFO,
         isProductInfo: true
       }));
     } else {
@@ -184,7 +221,9 @@ export async function GET({ url, locals }) {
         discontinued: false,
         stockManaged: false,
         isOnline: false,
-        isProductInfo: false
+        isProductInfo: false,
+        imagePath: row.imagePath || '',  // ✅ 이미지 경로 추가
+        salesInfo: ''
       }));
     }
 

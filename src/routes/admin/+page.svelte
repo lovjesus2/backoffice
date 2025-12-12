@@ -28,7 +28,7 @@
   let containerHeight = 0;
 
   const colors = [
-    { id: 'color-purple', colorHeader: '#FED0FD', colorBody: '#FEE5FD', colorText: '#18181A' },
+    { id: 'color-white', colorHeader: '#F5F5F5', colorBody: '#FFFFFF', colorText: '#18181A' },
     { id: 'color-green', colorHeader: '#9EFFA2', colorBody: '#D7FFD9', colorText: '#18181A' },
     { id: 'color-yellow', colorHeader: '#F9ED69', colorBody: '#F7FD04', colorText: '#080808' },
     { id: 'color-blue', colorHeader: '#00D4FE', colorBody: '#CCFFFE', colorText: '#18181A' }

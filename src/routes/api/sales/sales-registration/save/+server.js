@@ -265,14 +265,33 @@ export async function POST({ request, locals }) {
         const isMessageEnabled = await getSystemSetting('sales_message_enabled', false);
         
         if (isMessageEnabled) {
-          console.log('🔄 푸시 알림 시작 (설정 활성화):', { slipNo: sSlip, totalAmt });
+          // 품목명 조회
+          const itemNames = detailItems.map(item => item.itemName || item.itemCode).join(', ');
+          
+          // 카드/현금 금액 계산
+          const cashAmt = detailItems
+            .filter(item => item.isCash)
+            .reduce((sum, item) => sum + parseInt(item.amount || 0), 0);
+          const cardAmt = totalAmt - cashAmt;
+          
+          // 제목에 금액 정보만 포함
+          const title = `총 ${totalAmt.toLocaleString()}원 (카드 ${cardAmt.toLocaleString()}원 / 현금 ${cashAmt.toLocaleString()}원)`;
+          
+          console.log('🔄 푸시 알림 시작 (설정 활성화):', { 
+            items: itemNames, 
+            amounts: { total: totalAmt, card: cardAmt, cash: cashAmt } 
+          });
+          
           sendSaleNotification(
-            '매출 저장 완료',
-            `매출번호: ${sSlip}\n금액: ${totalAmt.toLocaleString()}원`,
+            title,
+            itemNames,
             { 
-              type: 'sale_saved', 
-              slipNo: sSlip,
-              amount: totalAmt.toString()
+              type: 'sale_saved',
+              amount: totalAmt.toString(),
+              cardAmount: cardAmt.toLocaleString(),
+              cashAmount: cashAmt.toLocaleString(),
+              items: itemNames,
+              url: '/admin/sales/sale01'  // 🔥 이동할 URL 추가 매출조회
             }
           ).catch(error => {
             console.error('푸시 알림 전송 실패:', error);
