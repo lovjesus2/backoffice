@@ -1,4 +1,4 @@
-// 🖨️ 프린터 서버 v2.2 - 기존 내역서 기능 + iOS 인증서 프로필
+// 🖨️ 프린터 서버 v2.4 - iOS/Android 인증서 지원 + 프린터 큐
 // 바코드프린터/printer-server.js
 
 const http = require('http');
@@ -10,6 +10,20 @@ const os = require('os');
 const { exec } = require('child_process');
 
 const sharp = require('sharp');
+
+// 🆕 로컬 IP 주소 가져오기 함수
+function getLocalIPAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      // IPv4, 내부 IP 아님, 루프백 아님
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return '127.0.0.1'; // 못 찾으면 기본값
+}
 const { PNG } = require('pngjs');
 const QRCode = require('qrcode');
 const iconv = require('iconv-lite');
@@ -17,7 +31,7 @@ const iconv = require('iconv-lite');
 process.stdout.setEncoding('utf8');
 process.stderr.setEncoding('utf8');
 
-console.log('🖨️ 프린터 서버 v2.2 시작 (iOS 인증서 지원)');
+console.log('🖨️ 프린터 서버 v2.4 시작 (iOS/Android 인증서 지원 + 프린터 큐)');
 
 const CONFIG = {
   httpPort: 8080,
@@ -35,6 +49,127 @@ const CONFIG = {
       type: 'receipt'
     }
   }
+};
+
+// 🔄 프린터 큐 관리 클래스
+class PrintQueue {
+  constructor(name) {
+    this.name = name;
+    this.queue = [];
+    this.isProcessing = false;
+    this.stats = {
+      total: 0,
+      success: 0,
+      failed: 0,
+      pending: 0
+    };
+  }
+
+  async add(jobData) {
+    const job = {
+      id: `${this.name}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      data: jobData,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      startedAt: null,
+      completedAt: null,
+      error: null
+    };
+
+    this.queue.push(job);
+    this.stats.pending = this.queue.length;
+    this.stats.total++;
+
+    console.log(`📋 [${this.name}] 작업 추가: ${job.id} (큐: ${this.queue.length}개)`);
+
+    if (!this.isProcessing) {
+      this.processNext();
+    }
+
+    return job.id;
+  }
+
+  async processNext() {
+    if (this.isProcessing) {
+      console.log(`⏳ [${this.name}] 이미 처리 중...`);
+      return;
+    }
+
+    const job = this.queue[0];
+    if (!job) {
+      console.log(`✅ [${this.name}] 큐 비어있음`);
+      return;
+    }
+
+    this.isProcessing = true;
+    job.status = 'processing';
+    job.startedAt = new Date().toISOString();
+
+    console.log(`▶️ [${this.name}] 작업 시작: ${job.id}`);
+
+    try {
+      const result = await job.data.executor();
+      
+      job.status = 'completed';
+      job.completedAt = new Date().toISOString();
+      job.result = result;
+
+      if (result.success) {
+        this.stats.success++;
+        console.log(`✅ [${this.name}] 작업 완료: ${job.id}`);
+      } else {
+        this.stats.failed++;
+        job.error = result.message;
+        console.log(`⚠️ [${this.name}] 작업 실패: ${job.id} - ${result.message}`);
+      }
+
+    } catch (error) {
+      job.status = 'failed';
+      job.completedAt = new Date().toISOString();
+      job.error = error.message;
+      this.stats.failed++;
+      console.error(`❌ [${this.name}] 작업 오류: ${job.id}`, error);
+    }
+
+    this.queue.shift();
+    this.stats.pending = this.queue.length;
+    this.isProcessing = false;
+
+    if (this.queue.length > 0) {
+      console.log(`🔄 [${this.name}] 다음 작업 처리 (남은 작업: ${this.queue.length}개)`);
+      setTimeout(() => this.processNext(), 100);
+    } else {
+      console.log(`🎉 [${this.name}] 모든 작업 완료!`);
+    }
+  }
+
+  getStatus() {
+    return {
+      name: this.name,
+      queue: this.queue.map(j => ({
+        id: j.id,
+        status: j.status,
+        createdAt: j.createdAt,
+        startedAt: j.startedAt
+      })),
+      stats: this.stats,
+      isProcessing: this.isProcessing
+    };
+  }
+
+  clear() {
+    const cleared = this.queue.length;
+    this.queue = [];
+    this.stats.pending = 0;
+    console.log(`🗑️ [${this.name}] 큐 초기화: ${cleared}개 작업 삭제`);
+    return cleared;
+  }
+}
+
+// 프린터별 큐 생성
+const printerQueues = {
+  barcode: new PrintQueue('바코드프린터'),
+  receipt: new PrintQueue('영수증프린터')
 };
 
 function loadSSLCert() {
@@ -114,15 +249,14 @@ async function generateQRCodeESCPOS(qrData, options = {}) {
       }
     });
     
-    // Sharp로 처리 (더 선명하게)
     const processed = await sharp(qrBuffer)
       .resize(size, size, { 
         fit: 'contain',
-        kernel: 'nearest' // 픽셀 보존
+        kernel: 'nearest'
       })
       .grayscale()
-      .normalise() // 명암 정규화
-      .threshold(128) // 흑백 변환
+      .normalise()
+      .threshold(128)
       .toFormat('png')
       .toBuffer();
     
@@ -132,9 +266,8 @@ async function generateQRCodeESCPOS(qrData, options = {}) {
     
     console.log(`QR코드 완료: ${width}x${height}px`);
     
-    // ESC/POS GS v 0 명령어
     const result = [];
-    result.push(0x1D, 0x76, 0x30, 0x00); // GS v 0 m
+    result.push(0x1D, 0x76, 0x30, 0x00);
     result.push((width / 8) & 0xFF, ((width / 8) >> 8) & 0xFF);
     result.push(height & 0xFF, (height >> 8) & 0xFF);
     
@@ -160,7 +293,6 @@ async function generateQRCodeESCPOS(qrData, options = {}) {
   }
 }
 
-// XML 이스케이프 함수
 function escapeXml(unsafe) {
   if (!unsafe) return '';
   return String(unsafe)
@@ -171,7 +303,7 @@ function escapeXml(unsafe) {
     .replace(/'/g, '&apos;');
 }
 
-// 🔄 기존 복잡한 영수증 레이아웃 처리 함수 (그대로 유지)
+// 영수증 레이아웃 처리 함수 (내용이 너무 길어서 중요 부분만 표시)
 async function generateReceiptFromLayout(receiptData) {
   console.log(`영수증 이미지 생성 (${receiptData.layout?.length || 0}개 요소)`);
   
@@ -189,7 +321,6 @@ async function generateReceiptFromLayout(receiptData) {
             if (item.path) {
               let logoBuffer;
               
-              // Base64 디코딩
               if (item.path.startsWith('data:image')) {
                 const base64Data = item.path.split(',')[1];
                 logoBuffer = Buffer.from(base64Data, 'base64');
@@ -201,11 +332,9 @@ async function generateReceiptFromLayout(receiptData) {
                 logoBuffer = fs.readFileSync(item.path);
               }
               
-              // 먼저 리사이즈
               const resizedLogo = await sharp(logoBuffer)
                 .resize(item.width || 300, null, { 
                   fit: 'inside',
-                  //withoutEnlargement: true  // 원본보다 크게 안 함
                 })
                 .toBuffer();
                 
@@ -214,7 +343,6 @@ async function generateReceiptFromLayout(receiptData) {
               
               let finalLogo = resizedLogo;
               
-              // QR 코드 + 텍스트 합성
               if (item.qrData && (item.qrX !== undefined || item.qrY !== undefined)) {
                 try {
                   const qrSize = item.qrSize || 100;
@@ -225,34 +353,29 @@ async function generateReceiptFromLayout(receiptData) {
                   
                   console.log(`QR 합성: 위치(${qrX}, ${qrY}), 크기(${qrSize})`);
                   
-                  // QR 코드 생성
                   const qrBuffer = await QRCode.toBuffer(item.qrData, {
                     errorCorrectionLevel: 'M',
                     type: 'png',
                     width: qrSize,
-                    margin: 2  // 👈 1 → 2로 변경
+                    margin: 2
                   });
 
-                  // Sharp로 QR 코드 선명하게 처리
                   const enhancedQR = await sharp(qrBuffer)
                     .sharpen()
                     .toBuffer();
 
                   const compositeItems = [
-                    // QR 코드
                     {
-                      input: enhancedQR,  // 👈 qrBuffer → enhancedQR로 변경
+                      input: enhancedQR,
                       top: qrY,
                       left: qrX
                     }
-                    
                   ];
                   
-                  // QR 텍스트가 있으면 추가
                   if (qrText) {
-                    const textY = qrY + qrSize + 5; // QR 아래 5px 간격
-                    const textWidth = qrSize * 2; // QR 코드 폭의 2배로 설정
-                    const textX = qrX - (qrSize / 2); // 좌우 중앙 정렬을 위해 왼쪽으로 이동
+                    const textY = qrY + qrSize + 5;
+                    const textWidth = qrSize * 2;
+                    const textX = qrX - (qrSize / 2);
                     
                     const textSvg = `
                       <svg width="${textWidth}" height="${qrTextSize + 10}">
@@ -273,7 +396,6 @@ async function generateReceiptFromLayout(receiptData) {
                     console.log(`QR 텍스트 추가: "${qrText}" (폭: ${textWidth}px)`);
                   }
                   
-                  // 리사이즈된 이미지에 QR + 텍스트 합성
                   finalLogo = await sharp(resizedLogo)
                     .composite(compositeItems)
                     .toBuffer();
@@ -324,7 +446,6 @@ async function generateReceiptFromLayout(receiptData) {
               const fontWeight = item.bold ? 'bold' : 'normal';
               const textHeight = fontSize + 10;
               
-              // ⭐ 함수 호출
               const safeContent = escapeXml(item.content);
 
               let textAnchor = 'start';
@@ -336,7 +457,6 @@ async function generateReceiptFromLayout(receiptData) {
                 textAnchor = 'end';
                 textX = width - 20;
               }
-              
 
               const textSvg = `
                 <svg width="${width}" height="${textHeight}">
@@ -363,24 +483,20 @@ async function generateReceiptFromLayout(receiptData) {
             if (item.name) {
               const fontSize = item.fontSize || 12;
               const lineHeight = fontSize + 8;
-              
 
-              // 글자 수 고정 (폰트 크기별)
               let maxCharsPerLine;
               if (fontSize <= 12) {
                 maxCharsPerLine = 18;
               } else if (fontSize <= 15) {
-                maxCharsPerLine = 16;  // 15pt는 16자
+                maxCharsPerLine = 16;
               } else {
                 maxCharsPerLine = 14;
               }
               
-              // 품목명을 두 줄로 분리
               let line1 = item.name.substring(0, maxCharsPerLine);
               let line2 = item.name.length > maxCharsPerLine ? 
                           item.name.substring(maxCharsPerLine, maxCharsPerLine * 2) : '';
 
-              // ⭐ 이스케이프
               line1 = escapeXml(line1);
               line2 = escapeXml(line2);
               
@@ -494,16 +610,15 @@ async function generateReceiptFromLayout(receiptData) {
   let buffers = [];
   
   try {
-    // 원본 크기 유지하고 8의 배수로만 조정
     const processed = await sharp(receiptImage)
       .resize(576, null, { 
         fit: 'inside',
-        kernel: 'nearest'  // 픽셀 보존, 번짐 방지
+        kernel: 'nearest'
       })
       .sharpen()
       .grayscale()
-      .linear(1.2, -(128 * 0.2))  // 명암 대비 증가
-      .threshold(120)  // 128 → 120 (더 진하게)
+      .linear(1.2, -(128 * 0.2))
+      .threshold(120)
       .toFormat('png')
       .toBuffer();
     
@@ -567,7 +682,6 @@ async function checkPrinterStatus() {
 }
 
 function handleRequest(req, res) {
-  // CORS 헤더 설정
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -581,33 +695,29 @@ function handleRequest(req, res) {
   const parsedUrl = url.parse(req.url, true);
   console.log(`📡 요청: ${req.method} ${parsedUrl.pathname}`);
 
-  // ✅ iOS 프로필 다운로드 라우트 (새로 추가)
+  // ✅ iOS 프로필 다운로드 라우트 (rootCA.pem 사용)
   if (parsedUrl.pathname === '/ios-profile' && req.method === 'GET') {
     try {
       console.log('📱 iOS 프로필 요청 받음');
       
-      // 인증서 파일 읽기
-      const certPath = path.join(__dirname, 'localhost+2.pem');
+      const certPath = path.join(__dirname, 'rootCA.pem');
       
       if (!fs.existsSync(certPath)) {
-        console.error('❌ 인증서 파일 없음:', certPath);
+        console.error('❌ 루트 CA 파일 없음:', certPath);
         res.writeHead(404, {'Content-Type': 'application/json; charset=utf-8'});
-        res.end(JSON.stringify({error: '인증서 파일이 없습니다'}, null, 2));
+        res.end(JSON.stringify({error: '루트 CA 파일이 없습니다. 인증서-갱신.bat를 실행하세요.'}, null, 2));
         return;
       }
       
       const certContent = fs.readFileSync(certPath, 'utf8');
       
-      // PEM 인증서를 Base64로 변환 (헤더/푸터 제거)
       const certBase64 = certContent
         .replace(/-----BEGIN CERTIFICATE-----/g, '')
         .replace(/-----END CERTIFICATE-----/g, '')
         .replace(/\n/g, '');
       
-      // 현재 컴퓨터명 가져오기
       const computerName = os.hostname();
       
-      // UUID 생성 함수
       function generateUUID() {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
           const r = Math.random() * 16 | 0;
@@ -616,7 +726,6 @@ function handleRequest(req, res) {
         });
       }
       
-      // iOS 구성 프로필 XML 생성
       const mobileConfig = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -625,15 +734,15 @@ function handleRequest(req, res) {
     <array>
         <dict>
             <key>PayloadCertificateFileName</key>
-            <string>printer-server-cert.crt</string>
+            <string>mkcert-root-ca.crt</string>
             <key>PayloadContent</key>
             <data>${certBase64}</data>
             <key>PayloadDescription</key>
-            <string>프린터 서버 인증서 - ${computerName}.local 접속용</string>
+            <string>mkcert 루트 인증 기관 - ${computerName}</string>
             <key>PayloadDisplayName</key>
-            <string>프린터 서버 인증서</string>
+            <string>mkcert 루트 CA</string>
             <key>PayloadIdentifier</key>
-            <string>com.printerserver.certificate.${computerName}</string>
+            <string>com.mkcert.rootca.${computerName}</string>
             <key>PayloadType</key>
             <string>com.apple.security.root</string>
             <key>PayloadUUID</key>
@@ -643,11 +752,11 @@ function handleRequest(req, res) {
         </dict>
     </array>
     <key>PayloadDescription</key>
-    <string>프린터 서버(${computerName}.local:8443)에 안전하게 연결하기 위한 인증서입니다. 이 프로필을 설치하면 PWA에서 프린터를 영구적으로 사용할 수 있습니다.</string>
+    <string>mkcert로 생성된 로컬 개발용 루트 인증서입니다. 이 프로필을 설치하면 ${computerName}.local의 HTTPS 서버를 신뢰할 수 있습니다.</string>
     <key>PayloadDisplayName</key>
-    <string>🖨️ 프린터 서버 - ${computerName}</string>
+    <string>🔐 mkcert 루트 CA - ${computerName}</string>
     <key>PayloadIdentifier</key>
-    <string>com.printerserver.profile.${computerName}</string>
+    <string>com.mkcert.profile.${computerName}</string>
     <key>PayloadRemovalDisallowed</key>
     <false/>
     <key>PayloadType</key>
@@ -657,15 +766,15 @@ function handleRequest(req, res) {
     <key>PayloadVersion</key>
     <integer>1</integer>
     <key>PayloadOrganization</key>
-    <string>프린터 서버</string>
+    <string>mkcert development CA</string>
 </dict>
 </plist>`;
       
-      console.log(`✅ iOS 프로필 생성 완료: ${computerName}`);
+      console.log(`✅ iOS 프로필 생성 완료 (루트 CA): ${computerName}`);
       
       res.writeHead(200, {
         'Content-Type': 'application/x-apple-aspen-config',
-        'Content-Disposition': `attachment; filename="printer-${computerName}.mobileconfig"`,
+        'Content-Disposition': `attachment; filename="mkcert-rootCA-${computerName}.mobileconfig"`,
         'Content-Length': Buffer.byteLength(mobileConfig, 'utf8')
       });
       res.end(mobileConfig);
@@ -680,8 +789,85 @@ function handleRequest(req, res) {
     return;
   }
 
-  // 🔄 기존 기능들 (그대로 유지)
-  
+  // 🆕 안드로이드용 루트 CA 다운로드 (.crt)
+  if (parsedUrl.pathname === '/android-cert' && req.method === 'GET') {
+    try {
+      console.log('🤖 안드로이드 인증서 요청 받음');
+      
+      const certPath = path.join(__dirname, 'rootCA.pem');
+      
+      if (!fs.existsSync(certPath)) {
+        console.error('❌ 루트 CA 파일 없음:', certPath);
+        res.writeHead(404, {'Content-Type': 'application/json; charset=utf-8'});
+        res.end(JSON.stringify({error: '루트 CA 파일이 없습니다. 인증서-갱신.bat를 실행하세요.'}, null, 2));
+        return;
+      }
+      
+      const certContent = fs.readFileSync(certPath, 'utf8');
+      const computerName = os.hostname();
+      
+      res.writeHead(200, {
+        'Content-Type': 'application/x-x509-ca-cert',
+        'Content-Disposition': `attachment; filename="mkcert-rootCA-${computerName}.crt"`,
+        'Content-Length': Buffer.byteLength(certContent, 'utf8')
+      });
+      res.end(certContent);
+      
+      console.log(`🤖 안드로이드 인증서 다운로드 완료: ${computerName}`);
+      
+    } catch (error) {
+      console.error('❌ 안드로이드 인증서 오류:', error);
+      res.writeHead(500, {'Content-Type': 'application/json; charset=utf-8'});
+      res.end(JSON.stringify({error: error.message}, null, 2));
+    }
+    return;
+  }
+
+  // 큐 상태 확인
+  if (parsedUrl.pathname === '/queue-status' && req.method === 'GET') {
+    res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
+    res.end(JSON.stringify({
+      success: true,
+      queues: {
+        barcode: printerQueues.barcode.getStatus(),
+        receipt: printerQueues.receipt.getStatus()
+      },
+      timestamp: new Date().toISOString()
+    }, null, 2));
+    return;
+  }
+
+  // 큐 초기화
+  if (parsedUrl.pathname === '/queue-clear' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const queueName = data.queue || 'all';
+        
+        let cleared = {};
+        if (queueName === 'all' || queueName === 'barcode') {
+          cleared.barcode = printerQueues.barcode.clear();
+        }
+        if (queueName === 'all' || queueName === 'receipt') {
+          cleared.receipt = printerQueues.receipt.clear();
+        }
+        
+        res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
+        res.end(JSON.stringify({
+          success: true,
+          cleared,
+          message: `큐 초기화 완료: ${queueName}`
+        }, null, 2));
+      } catch (error) {
+        res.writeHead(500, {'Content-Type': 'application/json; charset=utf-8'});
+        res.end(JSON.stringify({success: false, message: error.message}, null, 2));
+      }
+    });
+    return;
+  }
+
   // 상태 확인
   if (parsedUrl.pathname === '/status' && req.method === 'GET') {
     checkPrinterStatus().then(status => {
@@ -689,24 +875,36 @@ function handleRequest(req, res) {
       res.end(JSON.stringify({
         success: true,
         printers: status,
-        server: 'v2.2 (iOS 지원)',
+        server: 'v2.4 (iOS/Android 지원 + 큐)',
+        ip: getLocalIPAddress(),
+        hostname: os.hostname(),
         timestamp: new Date().toISOString()
       }, null, 2));
     });
     return;
   }
 
-  // 바코드 출력
+  // 바코드 출력 (큐 적용)
   if (parsedUrl.pathname === '/print' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
     req.on('end', async () => {
       try {
         const data = JSON.parse(body);
-        const result = await printToWindowsShare(data.commands, CONFIG.printers.barcode);
+        
+        const jobId = await printerQueues.barcode.add({
+          executor: async () => {
+            return await printToWindowsShare(data.commands, CONFIG.printers.barcode);
+          }
+        });
         
         res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
-        res.end(JSON.stringify(result, null, 2));
+        res.end(JSON.stringify({
+          success: true,
+          jobId,
+          message: '출력 작업이 큐에 추가되었습니다',
+          queueLength: printerQueues.barcode.queue.length
+        }, null, 2));
       } catch (error) {
         res.writeHead(500, {'Content-Type': 'application/json; charset=utf-8'});
         res.end(JSON.stringify({success: false, message: error.message}, null, 2));
@@ -715,22 +913,32 @@ function handleRequest(req, res) {
     return;
   }
 
-  // 🔄 영수증 출력 (기존 복잡한 기능 그대로 유지)
+  // 영수증 출력 (큐 적용)
   if (parsedUrl.pathname === '/print-receipt' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk.toString(); });
     req.on('end', async () => {
       try {
         const data = JSON.parse(body);
-        const commands = await generateReceiptFromLayout(data.receiptData);
-        const result = await printToWindowsShare(commands, {
-          name: data.printerName || CONFIG.printers.receipt.name,
-          pc: data.printerPC || CONFIG.printers.receipt.pc,
-          type: 'receipt'
+        
+        const jobId = await printerQueues.receipt.add({
+          executor: async () => {
+            const commands = await generateReceiptFromLayout(data.receiptData);
+            return await printToWindowsShare(commands, {
+              name: data.printerName || CONFIG.printers.receipt.name,
+              pc: data.printerPC || CONFIG.printers.receipt.pc,
+              type: 'receipt'
+            });
+          }
         });
         
         res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
-        res.end(JSON.stringify(result, null, 2));
+        res.end(JSON.stringify({
+          success: true,
+          jobId,
+          message: '출력 작업이 큐에 추가되었습니다',
+          queueLength: printerQueues.receipt.queue.length
+        }, null, 2));
       } catch (error) {
         res.writeHead(500, {'Content-Type': 'application/json; charset=utf-8'});
         res.end(JSON.stringify({success: false, message: error.message}, null, 2));
@@ -739,10 +947,10 @@ function handleRequest(req, res) {
     return;
   }
 
-  // 메인 웹 인터페이스 (iOS 프로필 다운로드 포함)
+  // 메인 웹 인터페이스 (HTML - 길어서 생략됨, 원본과 동일)
   if (parsedUrl.pathname === '/' && req.method === 'GET') {
     const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>프린터 서버</title>
+<html><head><meta charset="utf-8"><title>프린터 서버 v2.4</title>
 <style>
 body{font-family:system-ui;margin:40px;background:#f5f7fa}
 .container{max-width:900px;background:white;padding:30px;border-radius:10px;margin:0 auto}
@@ -751,7 +959,10 @@ button{background:#667eea;color:white;border:none;padding:12px 24px;margin:10px 
 button:hover{background:#5a6fd8}
 .ios-button{background:#007AFF;font-size:16px;padding:15px 30px;border-radius:8px}
 .ios-button:hover{background:#0056CC}
-.ios-section{background:#f8f9ff;border:2px solid #007AFF;border-radius:10px;padding:20px;margin:20px 0}
+.android-button{background:#3DDC84;font-size:16px;padding:15px 30px;border-radius:8px}
+.android-button:hover{background:#2DBE6E}
+.cert-section{background:#f8f9ff;border:2px solid #007AFF;border-radius:10px;padding:20px;margin:20px 0}
+.android-section{background:#f0fff4;border:2px solid #3DDC84;border-radius:10px;padding:20px;margin:20px 0}
 .guide-box{margin-top:15px;padding:15px;background:#fff3cd;border:1px solid #ffeaa7;border-radius:5px;font-size:14px}
 .step{margin:5px 0;padding:5px 0}
 #result{background:#f8f9fa;border:1px solid #ddd;padding:15px;margin-top:20px;white-space:pre-wrap;font-family:monospace;font-size:13px;display:none;max-height:500px;overflow-y:auto;border-radius:5px}
@@ -761,11 +972,11 @@ button:hover{background:#5a6fd8}
 </head><body>
 <div class="container">
 <div class="header">
-<h1>🖨️ 프린터 서버 v2.2</h1>
-<p>바코드 + 영수증 + QR + iOS 인증서 + 실제 내역서</p>
+<h1>🖨️ 프린터 서버 v2.4</h1>
+<p>바코드 + 영수증 + QR + iOS/Android 인증서 + 큐 시스템</p>
 </div>
 
-<div class="ios-section">
+<div class="cert-section">
 <h3>📱 iPhone/iPad 인증서 설치</h3>
 <p style="color:#333;margin-bottom:15px;">
 <strong>🚨 PWA에서 프린터 사용 시 필수!</strong><br>
@@ -773,14 +984,32 @@ button:hover{background:#5a6fd8}
 </p>
 <button class="ios-button" onclick="downloadIOSProfile()">📱 iOS 프로필 다운로드</button>
 <div class="guide-box">
-<strong>📋 설치 방법:</strong>
+<strong>📋 iOS 설치 방법:</strong>
 <div class="step"><strong>1단계:</strong> 위 버튼으로 프로필 다운로드</div>
 <div class="step"><strong>2단계:</strong> iPhone 설정 → 일반 → VPN 및 기기 관리</div>
-<div class="step"><strong>3단계:</strong> 다운로드된 프로필에서 "프린터 서버" 선택</div>
+<div class="step"><strong>3단계:</strong> 다운로드된 프로필에서 "mkcert 루트 CA" 선택</div>
 <div class="step"><strong>4단계:</strong> "설치" 버튼 클릭 (암호 입력 필요)</div>
-<div class="step"><strong>5단계:</strong> 일반 → 정보 → 인증서 신뢰 설정</div>
-<div class="step"><strong>6단계:</strong> "프린터 서버 인증서" 스위치 ON</div>
+<div class="step"><strong>5단계:</strong> 설정 → 일반 → 정보 → 인증서 신뢰 설정</div>
+<div class="step"><strong>6단계:</strong> "mkcert 루트 CA" 스위치 ON</div>
 <div style="margin-top:10px;color:#d63384;"><strong>⚠️ 중요:</strong> 6단계를 꼭 해야 작동합니다!</div>
+</div>
+</div>
+
+<div class="android-section">
+<h3>🤖 Android 인증서 설치</h3>
+<p style="color:#333;margin-bottom:15px;">
+<strong>🚨 안드로이드에서도 인증서 필수!</strong><br>
+안드로이드 PWA/브라우저에서 프린터를 사용할 수 있습니다.
+</p>
+<button class="android-button" onclick="downloadAndroidCert()">🤖 Android 인증서 다운로드 (.crt)</button>
+<div class="guide-box">
+<strong>📋 Android 설치 방법:</strong>
+<div class="step"><strong>1단계:</strong> 위 버튼으로 rootCA.crt 다운로드</div>
+<div class="step"><strong>2단계:</strong> 설정 → 보안 → 암호화 및 인증 정보</div>
+<div class="step"><strong>3단계:</strong> 인증서 설치 → CA 인증서</div>
+<div class="step"><strong>4단계:</strong> 다운로드한 파일 선택</div>
+<div class="step"><strong>5단계:</strong> 이름 입력 (예: "프린터 서버") 후 확인</div>
+<div style="margin-top:10px;color:#2d6a3e;"><strong>✅ 확인:</strong> 설정 → 보안 → 신뢰할 수 있는 인증서 → 사용자</div>
 </div>
 </div>
 
@@ -803,7 +1032,6 @@ function show(text) {
   result.textContent = text;
 }
 
-// iOS 프로필 다운로드
 function downloadIOSProfile() {
   show('📱 iOS 프로필 다운로드 중...');
   window.location.href = '/ios-profile';
@@ -812,7 +1040,14 @@ function downloadIOSProfile() {
   }, 1000);
 }
 
-// 상태 확인
+function downloadAndroidCert() {
+  show('🤖 Android 인증서 다운로드 중...');
+  window.location.href = '/android-cert';
+  setTimeout(() => {
+    show('✅ Android 인증서가 다운로드되었습니다!\\n\\n설정 → 보안 → 인증서 설치 → CA 인증서로 설치하세요.');
+  }, 1000);
+}
+
 async function checkStatus() {
   show('🔍 프린터 상태 확인 중...');
   try {
@@ -822,7 +1057,7 @@ async function checkStatus() {
     
     const statusDiv = document.getElementById('printer-status');
     if (data.success) {
-      statusDiv.innerHTML = '✅ 서버 온라인 (v2.2) - 바코드: ' + 
+      statusDiv.innerHTML = '✅ 서버 온라인 (v2.4) - 바코드: ' + 
         (data.printers.barcode.online ? '🟢 연결됨' : '🔴 연결 안됨') +
         ' | 영수증: ' + (data.printers.receipt.online ? '🟢 연결됨' : '🔴 연결 안됨');
       statusDiv.style.background = '#e8f5e8';
@@ -836,7 +1071,6 @@ async function checkStatus() {
   }
 }
 
-// 바코드 테스트
 async function testBarcode() {
   show('📊 바코드 출력 중...');
   try {
@@ -855,7 +1089,6 @@ async function testBarcode() {
   }
 }
 
-// 간단한 영수증 테스트
 async function testReceipt() {
   show('🧾 간단한 영수증 출력 중...');
   try {
@@ -881,7 +1114,6 @@ async function testReceipt() {
   }
 }
 
-// 실제 내역서 테스트 (복잡한 레이아웃)
 async function testRealReceipt() {
   show('📋 실제 내역서 출력 중...');
   try {
@@ -916,7 +1148,6 @@ async function testRealReceipt() {
   }
 }
 
-// 페이지 로드 시 상태 확인
 window.onload = function() {
   checkStatus();
 };
@@ -943,16 +1174,21 @@ httpServer.listen(CONFIG.httpPort, '0.0.0.0', () => {
 // HTTPS 서버 시작
 console.log('🔒 HTTPS 서버 시작...');
 const sslCert = loadSSLCert();
+const localIP = getLocalIPAddress();
+console.log(`📡 로컬 IP 주소: ${localIP}`);
+
 if (sslCert) {
   const httpsServer = https.createServer(sslCert, handleRequest);
   httpsServer.listen(CONFIG.httpsPort, '0.0.0.0', () => {
     console.log(`✅ HTTPS: https://localhost:${CONFIG.httpsPort}`);
     console.log(`📱 iOS 프로필: https://localhost:${CONFIG.httpsPort}/ios-profile`);
+    console.log(`🤖 Android 인증서: https://localhost:${CONFIG.httpsPort}/android-cert`);
+    console.log(`🌐 로컬 네트워크: https://${localIP}:${CONFIG.httpsPort}`);
   });
 } else {
   console.error('❌ HTTPS 서버 시작 실패 - 인증서 없음');
 }
 
-console.log('\n🎉 프린터 서버 v2.2 준비 완료!');
-console.log('📱 iOS 인증서 지원 + 실제 내역서 출력 기능');
-console.log('🌐 웹 인터페이스에서 iOS 프로필을 다운로드하세요\n');
+console.log('\n🎉 프린터 서버 v2.4 준비 완료!');
+console.log('📱 iOS/Android 인증서 지원 + 실제 내역서 출력 + 프린터 큐');
+console.log('🌐 웹 인터페이스에서 인증서를 다운로드하세요\n');
