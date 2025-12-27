@@ -5,7 +5,7 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     
     <!-- 기본 뷰포트 설정 (모바일 최적화) -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     
     <!-- 제목 및 설명 -->
     <title>관리자 시스템</title>
@@ -22,7 +22,7 @@
     
     <!-- iOS PWA 최적화 -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="관리자" />
     <meta name="apple-touch-fullscreen" content="yes" />
     
@@ -45,24 +45,38 @@
     <!-- Windows 타일 설정 -->
     <meta name="msapplication-TileColor" content="#1f2937" />
     <meta name="msapplication-TileImage" content="%sveltekit.assets%/icon-144x144.png" />
-    <meta name="msapplication-config" content="%sveltekit.assets%/browserconfig.xml" />
+
     
     <!-- 보안 헤더 -->
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    		<!-- CSP 정책 수정 - localhost:8443 허용 -->
-		<meta http-equiv="Content-Security-Policy" content="
-			default-src 'self';
-			script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdnjs.cloudflare.com;
-			style-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com;
-			img-src 'self' data: blob: https: http:;
-			font-src 'self' https://unpkg.com https://cdnjs.cloudflare.com;
-			connect-src 'self' https://localhost:8443 wss://localhost:8443 https://unpkg.com https://cdnjs.cloudflare.com;
-			frame-src 'self';
-			object-src 'none';
-			base-uri 'self';
-			form-action 'self';
-		">
-
+    <!-- CSP 정책 수정 - localhost:8443 허용 -->
+    <!--
+    <meta http-equiv="Content-Security-Policy" 
+          content="
+            default-src 'self';
+            script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdnjs.cloudflare.com https://www.gstatic.com blob:;
+            worker-src 'self' blob: data:;
+            style-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com;
+            img-src 'self' data: blob: https: http:;
+            font-src 'self' 'unsafe-inline' data: https://unpkg.com https://cdnjs.cloudflare.com;
+            connect-src 'self' 
+                      https://localhost:8443 
+                      wss://localhost:8443 
+                      https://*.local:8443
+                      https://*:8443
+                      wss://*:8443
+                      https://unpkg.com 
+                      https://cdnjs.cloudflare.com
+                      https://firebaseinstallations.googleapis.com
+                      https://fcmregistrations.googleapis.com
+                      https://fcm.googleapis.com
+                      https://firebase.googleapis.com;
+            frame-src 'self';
+            object-src 'none';
+            base-uri 'self';
+            form-action 'self';
+          ">
+    -->
     <!-- 캐시 제어 -->
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
     <meta http-equiv="Pragma" content="no-cache" />
@@ -77,10 +91,36 @@
     <!-- JsBarcode 라이브러리 로컬 로드 -->
 	  <script src="/jsbarcode.min.js"></script>
 
+    <!-- FilePond 프리로드 추가 -->
+    <link rel="stylesheet" href="/filepond.css">
+    <link rel="stylesheet" href="/filepond-plugin-image-preview.css">
+    <script src="/filepond.min.js"></script>
+    <script src="/filepond-plugin-file-validate-type.min.js"></script>
+    <script src="/filepond-plugin-file-validate-size.min.js"></script>
+    <script src="/filepond-plugin-image-preview.min.js"></script>
+    <script src="/filepond-plugin-image-resize.min.js"></script>
+    <script src="/filepond-plugin-image-transform.min.js"></script>
+
+    <script>
+      if (window.FilePond) {
+        const plugins = [];
+        if (window.FilePondPluginFileValidateType) plugins.push(window.FilePondPluginFileValidateType);
+        if (window.FilePondPluginFileValidateSize) plugins.push(window.FilePondPluginFileValidateSize);
+        if (window.FilePondPluginImagePreview) plugins.push(window.FilePondPluginImagePreview);
+        if (window.FilePondPluginImageResize) plugins.push(window.FilePondPluginImageResize);
+        if (window.FilePondPluginImageTransform) plugins.push(window.FilePondPluginImageTransform);
+        
+        if (plugins.length > 0) {
+          window.FilePond.registerPlugin(...plugins);
+        }
+        window.filePondReady = true;
+      }
+    </script>
+
     %sveltekit.head%
   </head>
   
-  <body data-sveltekit-preload-data="hover" class="loading">
+  <body data-sveltekit-preload-data="tap" data-sveltekit-preload-code="tap" class="loading">
     <!-- 로딩 화면 -->
     <div id="app-loading" style="
       position: fixed;
@@ -136,45 +176,6 @@
       📱 앱 설치
     </button>
     
-    <!-- 업데이트 알림 토스트 -->
-    <div id="update-toast" style="
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: #1f2937;
-      color: white;
-      padding: 16px 20px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      display: none;
-      z-index: 1001;
-      max-width: 320px;
-      font-size: 14px;
-    ">
-      <div style="font-weight: 500; margin-bottom: 8px;">새 버전 사용 가능</div>
-      <div style="font-size: 13px; opacity: 0.8; margin-bottom: 12px;">더 나은 경험을 위해 업데이트하세요.</div>
-      <div style="display: flex; gap: 8px;">
-        <button onclick="updateApp()" style="
-          background: #3b82f6;
-          color: white;
-          border: none;
-          padding: 6px 12px;
-          border-radius: 4px;
-          font-size: 12px;
-          cursor: pointer;
-        ">업데이트</button>
-        <button onclick="dismissUpdate()" style="
-          background: transparent;
-          color: #9ca3af;
-          border: 1px solid #374151;
-          padding: 6px 12px;
-          border-radius: 4px;
-          font-size: 12px;
-          cursor: pointer;
-        ">나중에</button>
-      </div>
-    </div>
-    
     <!-- 스타일 및 스크립트 -->
     <style>
       @keyframes spin {
@@ -201,10 +202,6 @@
         box-shadow: 0 6px 16px rgba(0,0,0,0.2);
       }
       
-      #update-toast {
-        animation: slideInUp 0.3s ease-out;
-      }
-      
       /* 모바일 Safe Area 지원 */
       @supports (padding: max(0px)) {
         body {
@@ -216,18 +213,12 @@
           bottom: max(20px, env(safe-area-inset-bottom) + 10px);
           right: max(20px, env(safe-area-inset-right) + 10px);
         }
-        
-        #update-toast {
-          top: max(20px, env(safe-area-inset-top) + 10px);
-          right: max(20px, env(safe-area-inset-right) + 10px);
-        }
       }
     </style>
     
     <script>
       // 전역 변수
       let deferredPrompt;
-      let updateServiceWorker = null;
       
       // 로딩 화면 제거
       function hideLoadingScreen() {
@@ -250,35 +241,6 @@
         hideLoadingScreen();
       }
       
-      // Service Worker 등록 (SvelteKit과 충돌 방지)
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then((registration) => {
-              console.log('✅ Service Worker 등록 성공:', registration.scope);
-              
-              // 업데이트 감지
-              registration.addEventListener('updatefound', () => {
-                const newWorker = registration.installing;
-                if (newWorker) {
-                  newWorker.addEventListener('statechange', () => {
-                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                      updateServiceWorker = newWorker;
-                      showUpdateToast();
-                    }
-                  });
-                }
-              });
-              
-              // 즉시 업데이트 확인
-              registration.update();
-            })
-            .catch((error) => {
-              console.log('❌ Service Worker 등록 실패:', error);
-            });
-        });
-      }
-      
       // PWA 설치 프롬프트 처리
       window.addEventListener('beforeinstallprompt', (e) => {
         console.log('📱 PWA 설치 프롬프트 준비됨');
@@ -293,7 +255,7 @@
         hideInstallButton();
         deferredPrompt = null;
         
-        // 설치 성공 토스트 (옵션)
+        // 설치 성공 토스트
         showToast('앱이 성공적으로 설치되었습니다!', 'success');
       });
       
@@ -336,41 +298,6 @@
           console.error('PWA 설치 오류:', error);
           showToast('설치 중 오류가 발생했습니다.', 'error');
         }
-      };
-      
-      // 업데이트 토스트 표시
-      function showUpdateToast() {
-        const toast = document.getElementById('update-toast');
-        if (toast) {
-          toast.style.display = 'block';
-        }
-      }
-      
-      // 업데이트 토스트 숨김
-      function hideUpdateToast() {
-        const toast = document.getElementById('update-toast');
-        if (toast) {
-          toast.style.display = 'none';
-        }
-      }
-      
-      // 앱 업데이트 함수
-      window.updateApp = () => {
-        if (updateServiceWorker) {
-          updateServiceWorker.postMessage({ action: 'skipWaiting' });
-          hideUpdateToast();
-          showToast('업데이트를 적용하고 있습니다...', 'info');
-          
-          // 페이지 새로고침
-          setTimeout(() => {
-            window.location.reload();
-          }, 1500);
-        }
-      };
-      
-      // 업데이트 알림 닫기
-      window.dismissUpdate = () => {
-        hideUpdateToast();
       };
       
       // 범용 토스트 메시지 함수

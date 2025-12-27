@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 레이아웃 변수 */
+:root {
+  --header-height: 50px; /* 기존 70px에서 변경 */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --header-total-height: calc(var(--safe-area-top) + var(--header-height));
+}
+
 /* 한글 폰트 */
 html, body {
   font-family: 'Malgun Gothic', -apple-system, BlinkMacSystemFont, sans-serif;
