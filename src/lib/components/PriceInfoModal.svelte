@@ -191,9 +191,9 @@
         });
         
         // 2초 후 모달 닫기
-        setTimeout(() => {
-          closeModal();
-        }, 2000);
+        //setTimeout(() => {
+        //  closeModal();
+        //}, 2000);
       } else {
         error = '저장 실패: ' + result.message;
       }

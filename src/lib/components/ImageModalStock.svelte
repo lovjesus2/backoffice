@@ -486,6 +486,8 @@
           productCode,
           isOnline: isOnline
         });
+
+        window.dispatchEvent(new CustomEvent('onlineUpdated', { detail: { productCode, isOnline: isOnline }}));
         
       } else {
         showToast(result.message || '처리 실패', 'error');
@@ -815,12 +817,14 @@ function handlePriceClick() {
                     on:click={handlePriceClick}
                     title="클릭하여 가격 수정"
                   >
-                    금액: {productData.price ? productData.price.toLocaleString() : '0'}원 🔗
+                    카드: {productData.cardPrice ? productData.cardPrice.toLocaleString() : '0'}원 / 
+                    현금: {productData.cashPrice ? productData.cashPrice.toLocaleString() : '0'}원 🔗
                   </button>
                 {:else}
                   <!-- user는 텍스트만 표시 -->
                   <span class="text-gray-700" style="font-size: 0.8rem;">
-                    금액: {productData.price ? productData.price.toLocaleString() : '0'}원
+                    카드: {productData.cardPrice ? productData.cardPrice.toLocaleString() : '0'}원 / 
+                    현금: {productData.cashPrice ? productData.cashPrice.toLocaleString() : '0'}원
                   </span>
                 {/if}
               </div>
@@ -1009,10 +1013,32 @@ function handlePriceClick() {
   on:save={(event) => {
     console.log('가격 저장 완료:', event.detail);
     showToast('가격 정보가 저장되었습니다.', 'success');
-    // 제품 정보 다시 로드
-    if (productData?.code) {
-      loadProductData(productData.code);
+    
+    const { productCode, priceData, discountData } = event.detail;  // ← 이 줄 추가
+    
+    // ✅ 1. 제품 정보 다시 로드
+    if (productCode) {  // ← productData?.code 를 productCode로 변경
+      loadProductData(productCode);  // ← productData.code 를 productCode로 변경
     }
+    
+    // ✅ 2. 부모에게 가격 변경 알림 (Svelte dispatch)
+    dispatch('priceUpdated', {
+      productCode: productCode,  // ← 변경
+      ...priceData  // ← cardPrice, cashPrice 등을 ...priceData로 변경
+    });
+    
+    // ✅ 3. 전역 이벤트 (검색 팝업용)
+    window.dispatchEvent(new CustomEvent('priceUpdated', {
+      detail: {
+        productCode: productCode,  // ← 변경
+        ...priceData  // ← cardPrice, cashPrice 등을 ...priceData로 변경
+      }
+    }));
+    
+    // ✅ 4. 2초 후 가격 모달 닫기 (이 부분 추가)
+    setTimeout(() => {
+      showPriceModal = false;
+    }, 2000);
   }}
 />
 

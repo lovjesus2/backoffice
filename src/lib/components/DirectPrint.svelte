@@ -79,9 +79,15 @@
         if (computerSetting && computerSetting.setting_value) {
           computerName = computerSetting.setting_value.trim();
           let serverHost = computerName;
-          if (!serverHost.endsWith('.local')) {
-            serverHost += '.local';
+          
+          // IP 주소인지 확인 (숫자.숫자.숫자.숫자 형식)
+          const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(serverHost);
+          
+          if (!isIP && !serverHost.endsWith('.local')) {
+            serverHost += '.local';  // 컴퓨터명이면 .local 추가
           }
+          // IP면 그대로 사용
+          
           serverUrl = `https://${serverHost}:8443`;
           console.log('🔡 프린터 서버 URL:', serverUrl);
         }
@@ -137,6 +143,7 @@
   async function printToBarcode() {
     if (!productData || isPrinting) return;
     
+    /*
     const now = Date.now();
     if (now - lastPrintTime < 500) {
       const message = '너무 빠른 연속 출력입니다. 0.5초 후 다시 시도해주세요.';
@@ -147,9 +154,10 @@
       }
       return;
     }
-    
     lastPrintTime = now;
-    isPrinting = true;
+    */
+
+    isPrinting = false;
     printStatus = `바코드 출력 중... (${printQuantity}장)`;
     
     try {
@@ -234,6 +242,7 @@
   async function printToReceipt() {
     if (!receiptData || isPrinting) return;
     
+    /*
     const now = Date.now();
     if (now - lastPrintTime < 500) {
       const message = '너무 빠른 연속 출력입니다. 0.5초 후 다시 시도해주세요.';
@@ -244,9 +253,9 @@
       }
       return;
     }
-    
     lastPrintTime = now;
-    isPrinting = true;
+    */
+    isPrinting = false;
     printStatus = '영수증 출력 중...';
     
     try {
@@ -327,7 +336,7 @@
     }
     
     lastPrintTime = now;
-    isPrinting = true;
+    isPrinting = false;
     printStatus = `QR 출력 중... (${printQuantity}장)`;
     
     try {

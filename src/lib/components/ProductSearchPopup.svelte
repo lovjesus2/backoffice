@@ -79,6 +79,7 @@ onMount(() => {
   window.addEventListener('discontinuedUpdated', (e) => handleDiscontinuedUpdated({ detail: e.detail }));
   window.addEventListener('onlineUpdated', (e) => handleOnlineUpdated({ detail: e.detail }));
   window.addEventListener('cashStatusUpdated', (e) => handleCashStatusUpdated({ detail: e.detail }));
+  window.addEventListener('priceUpdated', (e) => handlePriceUpdated({ detail: e.detail }));
 
   // cleanup 함수 반환
   return () => {
@@ -369,6 +370,27 @@ onMount(() => {
     );
   }
 
+  // 가격 업데이트 핸들러
+  function handlePriceUpdated(event) {
+    const { productCode, cardPrice, cashPrice, deliveryPrice, cost } = event.detail;
+    
+    console.log('🔍 검색 팝업: 가격 업데이트됨', event.detail);
+    
+    // ✅ products 배열 업데이트
+    products = products.map(product => 
+      product.code === productCode
+        ? { 
+            ...product,
+            cardPrice: cardPrice,      // 카드가 업데이트
+            cashPrice: cashPrice,      // 현금가 업데이트
+            price: cardPrice,          // 기본 price 필드도 업데이트
+            cost: cost                 // 원가도 업데이트
+          }
+        : product
+    );
+  }
+
+
   // 키보드 이벤트 처리
   function handleSearchKeydown(event) {
     if (event.key === 'Enter') {
@@ -442,12 +464,22 @@ onMount(() => {
 
   // 팝업 닫기
   function closePopup() {
+    // 초기화
+    searchKeyword = '';
+    products = [];
+    searchError = '';
+    discontinuedFilter = 'normal';
+    
+    // 제품구분이 있으면 초기화
+    if (showProductType) {
+      selectedProductType = 'ALL';
+    }
     dispatch('close');
   }
 
   // 오버레이 클릭 시 팝업 닫기
   function handleOverlayClick() {
-   // closePopup();
+    //closePopup();
   }
 
   // 제품구분 표시 여부
@@ -671,13 +703,15 @@ onMount(() => {
                       <div class="flex items-center gap-1 mb-1">
                         <div class="text-xs md:text-[0.65rem] text-gray-600 mb-1 truncate">{product.code}</div>
                         <button 
-                          class="text-xm"
+                          type="button"
+                          class="text-[9px] px-1 py-0.5 bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors"
                           on:click={(e) => {
                             e.stopPropagation();
                             printBarcode(product);
                           }}
+                          title="바코드 출력"
                         >
-                          🖨️
+                          바코드
                         </button>
                       </div>
                     
@@ -689,7 +723,12 @@ onMount(() => {
                         {#if canViewCost()}
                           <div class="text-gray-700 text-[0.7rem] md:text-[0.65rem]">원가: {product.cost ? product.cost.toLocaleString('ko-KR') : '0'}원</div>
                         {/if}
-                        <div class="text-gray-700 text-[0.7rem] md:text-[0.65rem]">금액: {product.price ? product.price.toLocaleString('ko-KR') : '0'}원</div>
+                        <div class="text-gray-700 text-[0.7rem] md:text-[0.65rem]">
+                          카드: {product.cardPrice ? product.cardPrice.toLocaleString('ko-KR') : (product.price ? product.price.toLocaleString('ko-KR') : '0')}원
+                        </div>
+                        <div class="text-gray-700 text-[0.7rem] md:text-[0.65rem]">
+                          현금: {product.cashPrice ? product.cashPrice.toLocaleString('ko-KR') : '0'}원
+                        </div>
                       {/if}
                     </div>
                   </div>
@@ -715,6 +754,7 @@ onMount(() => {
   on:stockUsageUpdated={handleStockUsageUpdated}
   on:onlineUpdated={handleOnlineUpdated}
   on:cashStatusUpdated={handleCashStatusUpdated}
+  on:priceUpdated={handlePriceUpdated} 
 />
 
 <!-- 바코드 출력 컴포넌트 (숨겨져 있지만 직접 출력용) -->
