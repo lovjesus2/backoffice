@@ -814,6 +814,8 @@
                   name: basicInfo.name.trim(),
                   cost: priceData.basePrice || 0,
                   price: priceData.cardPrice || 0,
+                  cardPrice: priceData.cardPrice || 0,  
+                  cashPrice: priceData.cashPrice || 0,  
                   discontinued: product.discontinued
                 }
               : product
@@ -831,6 +833,8 @@
           name: basicInfo.name.trim(),
           cost: priceData.basePrice || 0,
           price: priceData.cardPrice || 0,
+          cardPrice: priceData.cardPrice || 0,  
+          cashPrice: priceData.cashPrice || 0,  
           stock: 0,
           discontinued: false,
           isProductInfo: isProductInfo
@@ -1233,6 +1237,26 @@
     products = [...products];
   }
 
+  // 가격 업데이트 핸들러 (제품등록용)
+  function handlePriceUpdated(event) {
+    const { productCode, cardPrice, cashPrice, deliveryPrice, cost } = event.detail;
+    
+    console.log('📦 제품등록: 가격 업데이트됨', event.detail);
+    
+    products = products.map(product => 
+      product.code === productCode 
+        ? { 
+            ...product,
+            cardPrice: cardPrice,
+            cashPrice: cashPrice,
+            price: cardPrice,  // 기본 price 필드
+            cost: cost
+          }
+        : product
+    );
+    products = [...products];
+  }
+
 </script>
 
 <svelte:head>
@@ -1534,7 +1558,10 @@
                         <!-- 가격 정보 (제품정보일 때만) -->
                         {#if isProductInfo}
                           <div class="text-gray-600" style="font-size: 0.7rem;">원가: {product.cost ? product.cost.toLocaleString('ko-KR') : '0'}원</div>
-                          <div class="text-gray-700" style="font-size: 0.7rem;">금액: {product.price ? product.price.toLocaleString('ko-KR') : '0'}원</div>
+                          <div class="text-gray-700" style="font-size: 0.7rem;">
+                            카드: {product.cardPrice ? product.cardPrice.toLocaleString('ko-KR') : (product.price ? product.price.toLocaleString('ko-KR') : '0')}원 / 
+                            현금: {product.cashPrice ? product.cashPrice.toLocaleString('ko-KR') : '0'}원
+                          </div>
                         {/if}
                       </div>
                     </div>
@@ -2050,7 +2077,7 @@
               <div class="border-b border-gray-200 flex justify-between items-center flex-wrap" style="padding: 15px 20px; gap: 15px;">
                 <div class="flex items-center gap-2.5">
                   <h3 class="text-gray-800 m-0" style="font-size: 0.8rem;">
-                    📷 이미지 관리 - {basicInfo.name}
+                    이미지 관리 - {basicInfo.name}
                   </h3>
                   <span class="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
                     {basicInfo.code}
@@ -2084,6 +2111,7 @@
   on:stockUsageUpdated={handleStockUsageUpdated}
   on:onlineUpdated={handleOnlineUpdated}
   on:cashStatusUpdated={handleCashStatusUpdated}
+  on:priceUpdated={handlePriceUpdated}  
 />
 <style>
   /* 사이드 메뉴 스크롤 제어 */

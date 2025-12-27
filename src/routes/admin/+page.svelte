@@ -557,7 +557,7 @@
 
   <!-- Page Header -->
   <div class="p-3 md:p-4 pointer-events-none">
-    <h2 class="text-base md:text-lg font-bold text-gray-800">📋 알림판</h2>
+    <h2 class="text-base md:text-lg font-bold text-gray-800">알림판</h2>
   </div>
 
   <!-- Notes Container -->

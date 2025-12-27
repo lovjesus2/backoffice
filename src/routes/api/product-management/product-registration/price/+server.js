@@ -79,13 +79,25 @@ export async function POST({ request, locals }) {
         console.log('📜 가격 히스토리 저장 시작');
         
         // 히스토리 연번 생성
+        // ✅ BISH_SLIP에서 연번 생성 (save/+server.js와 동일하게)
+        const gubn = 'DC';
         const [seqResult] = await db.execute(`
-          SELECT IFNULL(MAX(DPRC_SENO), 0) + 1 AS SENO
-          FROM BISH_DPRC_HIST
-          WHERE DPRC_CODE = ? AND DPRC_DATE = ?
-        `, [productCode, today]);
-        
+          SELECT IFNULL(MAX(SLIP_SENO), 0) + 1 AS SENO
+          FROM BISH_SLIP
+          WHERE SLIP_GUBN = ? AND SLIP_DATE = ?
+          LIMIT 1
+        `, [gubn, today]);
+
         const seqNo = seqResult[0]?.SENO || 1;
+
+        // BISH_SLIP에 연번 등록
+        await db.execute(`
+          INSERT INTO BISH_SLIP 
+          (SLIP_GUBN, SLIP_DATE, SLIP_SENO, SLIP_SLIP, SLIP_IUSR)
+          VALUES (?, ?, ?, '', ?)
+        `, [gubn, today, seqNo, user.username]);
+
+        console.log('✅ 연번 생성 완료:', seqNo);
         
         await db.execute(`
           INSERT INTO BISH_DPRC_HIST 

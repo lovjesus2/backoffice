@@ -1585,6 +1585,37 @@
     console.log('🔍 업데이트 후:', afterItem?.hasPresetCashPrice);
   }
 
+  // 가격 업데이트 핸들러
+  function handlePriceUpdated(event) {
+    const { productCode, cardPrice, cashPrice, deliveryPrice, cost } = event.detail;
+    
+    console.log('📄 매출등록: 가격 업데이트됨', event.detail);
+    
+    // detailItems 업데이트
+    detailItems = detailItems.map(item => {
+      if (item.itemCode === productCode) {
+        // ✅ 1. 가격 정보 업데이트
+        const updatedItem = {
+          ...item, 
+          cardPrice: cardPrice,
+          cashPrice: cashPrice,
+          deliveryPrice: deliveryPrice,
+          cost: cost
+        };
+        
+        // ✅ 2. 현재 결제 방식에 따라 금액 재계산
+        const newAmount = updatedItem.isCash ? cashPrice : cardPrice;
+        updatedItem.amount = newAmount * updatedItem.quantity;
+        
+        return updatedItem;
+      }
+      return item;
+    });
+    
+    // ✅ 3. 합계 재계산
+    updateSummary();
+  }
+
   onMount(async () => {
  
     layoutConstants = getLayoutConstants();
@@ -2320,7 +2351,7 @@
                           <!-- 삭제 버튼 (오른쪽 상단) -->
                           <button 
                             type="button"
-                            class="absolute top-2 right-2 px-2 py-1 flex items-center justify-center bg-gray-500 hover:bg-gray-600 text-white rounded text-xs font-bold transition-colors z-10"
+                            class="absolute top-2 right-2 px-1.5 py-1 flex items-center justify-center bg-gray-500 hover:bg-gray-600 text-white rounded text-[10px] font-bold transition-colors z-10"
                             on:click={() => removeDetailItem(index)}
                             title="항목 삭제"
                           >
@@ -2370,11 +2401,11 @@
                                 <div class="text-xs text-gray-600">{item.itemCode}</div>
                                 <button 
                                   type="button"
-                                  class="text-blue-600 hover:text-blue-800 transition-colors"
+                                  class="text-[10px] px-1.5 py-0.5 bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors"
                                   on:click={() => printBarcode(item)}
                                   title="바코드 출력"
                                 >
-                                  🖨️
+                                  바코드
                                 </button>
                               </div>
                               
@@ -2547,6 +2578,7 @@
   on:stockUsageUpdated={handleStockUsageUpdated}
   on:onlineUpdated={handleOnlineUpdated}
   on:cashStatusUpdated={handleCashStatusUpdated}
+  on:priceUpdated={handlePriceUpdated}  
 />
 
 <!-- 바코드 출력 컴포넌트 (숨겨져 있지만 직접 출력용) -->

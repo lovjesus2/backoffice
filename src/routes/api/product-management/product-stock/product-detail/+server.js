@@ -31,6 +31,7 @@ export async function GET({ url, locals }) {
             p.PROH_NAME,
             p.PROH_QRCD, 
             d.DPRC_SOPR, 
+            d.DPRC_DCPR,
             d.DPRC_BAPR,
             COALESCE(h.HYUN_QTY1, 0) as CURRENT_STOCK,
             MAX(CASE WHEN prod.PROD_COD2 = 'L3' THEN prod.PROD_TXT1 END) as cash_status,
@@ -93,6 +94,8 @@ export async function GET({ url, locals }) {
       qrCode: rows[0].PROH_QRCD || '',
       cost: user.role === 'admin' ? (parseInt(rows[0].DPRC_BAPR) || 0) : 0, // admin만 원가 조회 가능
       price: parseInt(rows[0].DPRC_SOPR) || 0,
+      cardPrice: parseInt(rows[0].DPRC_SOPR) || 0,
+      cashPrice: parseInt(rows[0].DPRC_DCPR) || 0,
       stock: parseInt(rows[0].CURRENT_STOCK) || 0,
       salesInfo: rows[0].SALES_INFO || '',
       cash_status: rows[0].cash_status === '1',        // 현금세팅!
